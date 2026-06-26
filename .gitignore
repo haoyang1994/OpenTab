@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 *.log
+*.crx
+*.pem
+*.zip
 
 # OS files
 .DS_Store
