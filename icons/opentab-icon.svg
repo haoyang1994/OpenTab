@@ -1,0 +1,33 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22C1FF"/>
+      <stop offset="1" stop-color="#0EA5A3"/>
+    </linearGradient>
+    <linearGradient id="tab" x1="156" y1="148" x2="364" y2="352" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FDFF"/>
+      <stop offset="1" stop-color="#DDF4FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#bg)"/>
+
+  <path
+    d="M148 166C148 152.745 158.745 142 172 142H250L282 176H340C353.255 176 364 186.745 364 200V316C364 329.255 353.255 340 340 340H172C158.745 340 148 329.255 148 316V166Z"
+    fill="url(#tab)"
+    fill-opacity="0.98"
+  />
+
+  <path
+    d="M186 232H326"
+    stroke="#0D3B66"
+    stroke-width="24"
+    stroke-linecap="round"
+  />
+  <path
+    d="M236 202V306"
+    stroke="#0D3B66"
+    stroke-width="24"
+    stroke-linecap="round"
+  />
+</svg>

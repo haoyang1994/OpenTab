@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenTab</title>
+  <link rel="stylesheet" href="node_modules/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="home.css">
+</head>
+<body>
+  <div id="homepage">
+    <div id="background-layer"></div>
+    <canvas id="particles-canvas"></canvas>
+    <video id="background-video" muted loop playsinline autoplay></video>
+
+    <div id="content">
+      <div id="clock-widget">
+        <button id="timezone-btn" class="widget-btn" title="切换时区">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+        </button>
+
+        <div id="timezone-selector" class="timezone-selector hidden">
+          <div class="timezone-list" id="timezone-list"></div>
+        </div>
+
+        <div id="time-display">
+          <div id="time">10:30</div>
+          <div id="ampm">AM</div>
+          <div id="timezone-label">北京 (UTC+8)</div>
+        </div>
+
+        <div id="welcome-text" aria-live="polite">上午好，今天也很顺利。</div>
+        <button id="date" class="date-btn" title="查看日历">2026年3月21日 星期六</button>
+        <div id="weather-pill" class="weather-pill" title="天气">
+          <span id="weather-icon" class="weather-icon" aria-hidden="true">☁</span>
+          <span id="weather-temp">--°C</span>
+          <span id="weather-location-inline" class="weather-location-inline">定位中...</span>
+        </div>
+
+        <div id="calendar-popover" class="calendar-popover hidden">
+          <input id="calendar-input" class="calendar-input" type="text" aria-label="日历">
+          <div class="calendar-legend">
+            <span class="legend-item"><i class="dot holiday"></i>节假日</span>
+            <span class="legend-item"><i class="dot solar-term"></i>节气</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="search-widget" class="glass-widget">
+        <div id="search-engine-switch" aria-label="搜索引擎">
+          <button class="engine-btn active" data-engine="google" type="button" title="Google" aria-label="Google">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.56-.2-2.3H12v4.36h6.45a5.51 5.51 0 0 1-2.4 3.62v3h3.88c2.27-2.08 3.56-5.16 3.56-8.68z"/>
+              <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.9l-3.88-3A7.17 7.17 0 0 1 12 19.4c-3.13 0-5.78-2.1-6.73-4.93H1.27v3.1A12 12 0 0 0 12 24z"/>
+              <path fill="#FBBC05" d="M5.27 14.47a7.2 7.2 0 0 1 0-4.94v-3.1H1.27a12 12 0 0 0 0 11.14l4-3.1z"/>
+              <path fill="#EA4335" d="M12 4.6c1.76 0 3.33.6 4.58 1.77l3.44-3.44A11.94 11.94 0 0 0 12 0 12 12 0 0 0 1.27 6.43l4 3.1C6.22 6.7 8.87 4.6 12 4.6z"/>
+            </svg>
+          </button>
+          <button class="engine-btn" data-engine="bing" type="button" title="Bing" aria-label="Bing">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#008373" d="M6 2v17.5c0 .64.66 1.06 1.24.79l11.2-5.2c.73-.34.73-1.38 0-1.72l-5.1-2.37 2.84-1.35c.74-.35.73-1.4-.02-1.73L8.3 4.53V2H6z"/>
+            </svg>
+          </button>
+          <button class="engine-btn" data-engine="github" type="button" title="GitHub Projects" aria-label="GitHub Projects">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#f0f6fc" d="M12 .5a11.5 11.5 0 0 0-3.64 22.42c.58.1.79-.25.79-.56v-2.2c-3.22.7-3.9-1.36-3.9-1.36-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.97.1-.76.4-1.26.72-1.55-2.57-.29-5.27-1.29-5.27-5.73 0-1.27.46-2.32 1.2-3.13-.12-.29-.52-1.47.12-3.06 0 0 .98-.31 3.2 1.2a11.06 11.06 0 0 1 5.82 0c2.22-1.5 3.2-1.2 3.2-1.2.64 1.59.24 2.77.12 3.06.75.81 1.2 1.86 1.2 3.13 0 4.45-2.71 5.44-5.3 5.73.42.36.79 1.06.79 2.14v3.18c0 .31.2.67.8.56A11.5 11.5 0 0 0 12 .5z"/>
+            </svg>
+          </button>
+        </div>
+        <input id="search-input" type="text" placeholder="输入关键词并回车搜索">
+      </div>
+
+      <aside id="todo-widget" class="glass-widget hidden">
+        <button id="todo-collapse-btn" type="button" title="关闭待办" aria-label="关闭待办">×</button>
+        <div class="todo-input-row">
+          <input id="todo-input" type="text" placeholder="输入待办后回车">
+          <button id="todo-add-btn" type="button" title="添加待办" aria-label="添加待办">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="todo-meta-hidden" aria-hidden="true">
+          <span id="todo-count">0/0</span>
+          <div id="todo-progress-track">
+            <div id="todo-progress-bar"></div>
+          </div>
+        </div>
+        <p id="todo-empty" class="todo-empty hidden">当前没有待办，今天从一件小事开始。</p>
+        <div id="todo-list"></div>
+      </aside>
+
+      <div id="icons-container"></div>
+    </div>
+
+    <div id="desktop-folder-label" aria-live="polite">主页</div>
+
+    <button id="workspace-btn" class="floating-btn" title="抽屉">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 7h5l2 2h11v10a2 2 0 0 1-2 2H3z"></path>
+        <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path>
+      </svg>
+    </button>
+
+    <button id="todo-toggle-btn" class="floating-btn" title="待办" aria-label="待办">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 11l3 3L22 4"></path>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+      </svg>
+    </button>
+
+    <aside id="workspace-drawer" class="workspace-drawer hidden">
+      <div class="workspace-header">
+        <div class="workspace-actions">
+          <button id="add-folder-btn" class="btn-small ghost icon-only" type="button" title="新建抽屉" aria-label="新建抽屉">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="workspace-folder-tabs" class="workspace-folder-tabs"></div>
+      <p class="workspace-hint">右键抽屉名可删除（默认主页不可删除）</p>
+      <div id="workspace-icons-container" class="workspace-icons-container"></div>
+      <p id="workspace-empty" class="workspace-empty hidden">这个文件夹还没有图标。</p>
+    </aside>
+
+    <button id="refresh-bg-btn" class="floating-btn" title="切换 Bing 壁纸">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M23 4v6h-6M1 20v-6h6"></path>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+    </button>
+
+    <button id="settings-btn" class="floating-btn" title="设置">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+
+    <div id="add-icon-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="icon-modal-title">添加快捷图标</h2>
+        <div class="form-group">
+          <label>类型</label>
+          <select id="icon-type">
+            <option value="shortcut">快捷链接</option>
+            <option value="ssh">SSH 链接</option>
+            <option value="tool">工具</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>名称</label>
+          <input type="text" id="icon-name" placeholder="例如：GitHub">
+        </div>
+
+        <div id="shortcut-fields" class="form-section">
+          <div class="form-group">
+            <label>网址</label>
+            <input type="url" id="icon-url" placeholder="https://example.com">
+            <p class="form-hint">会自动从网址获取站点 icon。</p>
+          </div>
+          <div class="form-group">
+            <label>自定义图标 URL（可选）</label>
+            <input type="url" id="icon-custom-url" placeholder="https://example.com/logo.png">
+            <p class="form-hint">填写后优先使用这个图标，不填则自动探测。</p>
+          </div>
+          <div class="form-group">
+            <label>本地图标上传（可选）</label>
+            <input type="file" id="icon-file" accept="image/*">
+            <p class="form-hint" id="icon-upload-status">支持 PNG / JPG / SVG / WebP。</p>
+          </div>
+        </div>
+
+        <div id="ssh-fields" class="form-section hidden">
+          <div class="form-group">
+            <label>SSH 网关 WebSocket 地址</label>
+            <input type="url" id="ssh-gateway-url" placeholder="wss://gateway.example.com/ssh">
+            <p class="form-hint">浏览器连接到网关，网关再连接 SSH 主机。</p>
+          </div>
+          <div class="form-group">
+            <label>SSH 主机</label>
+            <input type="text" id="ssh-host" placeholder="192.168.1.10">
+          </div>
+          <div class="form-group">
+            <label>SSH 端口</label>
+            <input type="number" id="ssh-port" min="1" max="65535" placeholder="22">
+          </div>
+          <div class="form-group">
+            <label>用户名</label>
+            <input type="text" id="ssh-username" placeholder="root">
+          </div>
+          <div class="form-group">
+            <label>密码（可选）</label>
+            <input type="password" id="ssh-password" placeholder="留空表示由网关决定认证方式" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>SOCKS5 代理主机（可选）</label>
+            <input type="text" id="ssh-socks-host" placeholder="127.0.0.1">
+          </div>
+          <div class="form-group">
+            <label>SOCKS5 代理端口（可选）</label>
+            <input type="number" id="ssh-socks-port" min="1" max="65535" placeholder="1080">
+          </div>
+          <div class="form-group">
+            <label>SOCKS5 用户名（可选）</label>
+            <input type="text" id="ssh-socks-username" placeholder="proxy-user">
+          </div>
+          <div class="form-group">
+            <label>SOCKS5 密码（可选）</label>
+            <input type="password" id="ssh-socks-password" placeholder="proxy-password" autocomplete="off">
+            <p class="form-hint">不填代理主机/端口则直连 SSH 主机。</p>
+          </div>
+        </div>
+
+        <div id="tool-fields" class="form-section hidden">
+          <div class="form-group">
+            <label>工具类型</label>
+            <select id="tool-subtype">
+              <option value="json-format">JSON 格式化/压缩</option>
+              <option value="fix-parser">FIX Parser</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-buttons">
+          <button id="cancel-btn" class="btn-secondary">取消</button>
+          <button id="save-btn" class="btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="icon-context-menu" class="icon-context-menu hidden">
+      <button id="edit-icon-btn" type="button">编辑</button>
+      <button id="delete-icon-btn" type="button" class="danger">删除</button>
+    </div>
+
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <h2>设置</h2>
+        <button id="close-settings" class="close-btn">&times;</button>
+      </div>
+
+      <div class="settings-content">
+        <div class="setting-section">
+          <h3>背景</h3>
+          <div class="bg-type-tabs">
+            <button class="tab-btn active" data-type="bing">Bing 每日壁纸</button>
+            <button class="tab-btn" data-type="gradient">渐变背景</button>
+            <button class="tab-btn" data-type="image">自定义图片 URL</button>
+          </div>
+          <div id="bing-section" class="bg-section active">
+            <p class="hint-text">点击右下角刷新按钮，可切换 Bing 当日与历史壁纸。</p>
+          </div>
+          <div id="gradient-section" class="bg-section">
+            <div id="background-presets" class="preset-grid">
+              <div class="preset-item active" data-bg="gradient" data-value="linear-gradient(135deg, #09203f 0%, #537895 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #09203f 0%, #537895 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(125deg, #0f2027 0%, #203a43 50%, #2c5364 100%)">
+                <div class="preset-preview" style="background: linear-gradient(125deg, #0f2027 0%, #203a43 50%, #2c5364 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #141e30 0%, #243b55 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #141e30 0%, #243b55 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #232526 0%, #414345 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #232526 0%, #414345 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #16222a 0%, #3a6073 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #16222a 0%, #3a6073 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #0b132b 0%, #1c2541 50%, #3a506b 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #0b132b 0%, #1c2541 50%, #3a506b 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(120deg, #2b2d42 0%, #3a506b 45%, #5b7c99 100%)">
+                <div class="preset-preview" style="background: linear-gradient(120deg, #2b2d42 0%, #3a506b 45%, #5b7c99 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #111827 0%, #1f2937 55%, #374151 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #111827 0%, #1f2937 55%, #374151 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #f4f7ff 0%, #dfe9f3 50%, #c6d4e1 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #f4f7ff 0%, #dfe9f3 50%, #c6d4e1 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #fef9f3 0%, #f5efe6 60%, #eadfd1 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #fef9f3 0%, #f5efe6 60%, #eadfd1 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #eef7ff 0%, #d8ecff 55%, #bedfff 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #eef7ff 0%, #d8ecff 55%, #bedfff 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #f4fff7 0%, #dcf8e8 52%, #bfeccc 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #f4fff7 0%, #dcf8e8 52%, #bfeccc 100%)"></div>
+              </div>
+              <div class="preset-item" data-bg="gradient" data-value="linear-gradient(135deg, #fff5f5 0%, #ffe4e6 52%, #ffcfd6 100%)">
+                <div class="preset-preview" style="background: linear-gradient(135deg, #fff5f5 0%, #ffe4e6 52%, #ffcfd6 100%)"></div>
+              </div>
+            </div>
+          </div>
+          <div id="image-section" class="bg-section">
+            <div id="image-presets" class="preset-grid">
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/pexels-pixabay-40896.jpg">
+                <div class="preset-preview" style="background-image: url('assets/default_background/pexels-pixabay-40896.jpg'); background-size: cover; background-position: center;"></div>
+              </div>
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/pexels-elina-sazonova-4275497.jpg">
+                <div class="preset-preview" style="background-image: url('assets/default_background/pexels-elina-sazonova-4275497.jpg'); background-size: cover; background-position: center;"></div>
+              </div>
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/pexels-souvenirpixels-417074.jpg">
+                <div class="preset-preview" style="background-image: url('assets/default_background/pexels-souvenirpixels-417074.jpg'); background-size: cover; background-position: center;"></div>
+              </div>
+            </div>
+            <div class="custom-bg">
+              <input type="url" id="custom-bg-url" placeholder="https://example.com/image.jpg 或 video.mp4">
+              <button id="apply-bg-btn" class="btn-small">应用</button>
+            </div>
+            <div class="custom-bg upload-row">
+              <input type="file" id="custom-bg-file" accept="image/*,video/mp4">
+              <button id="apply-bg-file-btn" class="btn-small">上传并应用</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-section">
+          <h3>时钟</h3>
+          <div class="setting-row">
+            <label>时间格式</label>
+            <select id="time-format">
+              <option value="12h">12 小时</option>
+              <option value="24h">24 小时</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>显示秒数</label>
+            <input type="checkbox" id="show-seconds">
+          </div>
+        </div>
+
+        <div class="setting-section">
+          <h3>主题</h3>
+          <div class="theme-mode-tabs">
+            <button class="theme-mode-tab active" data-theme="dark" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+              深色
+            </button>
+            <button class="theme-mode-tab" data-theme="light" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="5"></circle>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+              </svg>
+              浅色
+            </button>
+            <button class="theme-mode-tab" data-theme="auto" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <path d="M16 2v4M8 2v4M3 10h18"></path>
+              </svg>
+              自动
+            </button>
+          </div>
+
+          <div class="setting-row">
+            <label>主题色</label>
+          </div>
+          <div class="theme-color-presets" id="theme-color-presets">
+            <div class="theme-color-preset active" data-hue="200" style="--preset-color-1: #24b2ff; --preset-color-2: #0ce6b7;" title="极光蓝"></div>
+            <div class="theme-color-preset" data-hue="260" style="--preset-color-1: #a855f7; --preset-color-2: #ec4899;" title="梦幻紫"></div>
+            <div class="theme-color-preset" data-hue="30" style="--preset-color-1: #ff9500; --preset-color-2: #ff3b30;" title="日落橙"></div>
+            <div class="theme-color-preset" data-hue="140" style="--preset-color-1: #34d399; --preset-color-2: #10b981;" title="薄荷绿"></div>
+            <div class="theme-color-preset" data-hue="340" style="--preset-color-1: #f472b6; --preset-color-2: #c084fc;" title="樱花粉"></div>
+            <div class="theme-color-preset" data-hue="210" style="--preset-color-1: #60a5fa; --preset-color-2: #818cf8;" title="星空蓝"></div>
+          </div>
+
+          <div class="dynamic-effects-row">
+            <div class="setting-row">
+              <label>粒子背景</label>
+              <input type="checkbox" id="particles-enabled">
+            </div>
+            <div class="setting-row">
+              <label>渐变流动</label>
+              <input type="checkbox" id="gradient-flow-enabled">
+            </div>
+            <div class="setting-row">
+              <label>极简模式</label>
+              <input type="checkbox" id="minimal-mode-enabled">
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-section">
+          <h3>界面</h3>
+          <div class="setting-row setting-row-range">
+            <label>背景框不透明度</label>
+            <div class="range-wrap">
+              <input type="range" id="ui-opacity" min="12" max="70" step="1">
+              <span id="ui-opacity-value">32%</span>
+            </div>
+          </div>
+          <div class="setting-row setting-row-range">
+            <label>虚化程度</label>
+            <div class="range-wrap">
+              <input type="range" id="ui-blur" min="0" max="20" step="1">
+              <span id="ui-blur-value">10px</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-section">
+          <h3>图标</h3>
+          <div class="setting-row">
+            <label>显示图标背景框</label>
+            <input type="checkbox" id="icon-frame-enabled">
+          </div>
+        </div>
+
+        <div class="setting-section">
+          <h3>数据</h3>
+          <div class="setting-row backup-row">
+            <label>备份与恢复</label>
+            <div class="backup-actions">
+              <button id="backup-download-btn" class="btn-small" type="button">下载备份</button>
+              <button id="backup-import-btn" class="btn-small ghost" type="button">导入备份</button>
+              <button id="backup-save-snapshot-btn" class="btn-small ghost" type="button">保存快照</button>
+              <button id="backup-restore-snapshot-btn" class="btn-small ghost" type="button">恢复最近快照</button>
+            </div>
+          </div>
+          <p id="backup-status" class="backup-status">可导出 JSON 备份，或导入历史备份恢复。</p>
+          <input id="backup-import-file" type="file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="node_modules/flatpickr/dist/flatpickr.min.js"></script>
+  <script src="node_modules/flatpickr/dist/l10n/zh.js"></script>
+  <script src="home.js"></script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSON 工具</title>
+  <link rel="stylesheet" href="tool.css">
+</head>
+<body>
+  <div class="tool-page">
+    <header class="tool-header">
+      <h1 class="tool-title">JSON 格式化 / 压缩</h1>
+      <div class="tool-actions">
+        <button id="format-btn" class="primary">格式化</button>
+        <button id="minify-btn">压缩</button>
+        <button id="clear-btn">清空</button>
+      </div>
+    </header>
+    <main class="tool-main">
+      <section class="input-section">
+        <div class="input-header">
+          <span class="input-label">输入</span>
+          <span id="input-status" class="input-status"></span>
+        </div>
+        <textarea id="input-area" placeholder="粘贴 JSON 内容..."></textarea>
+      </section>
+
+      <section class="result-section">
+        <div class="panel">
+          <div class="panel-header">
+            <span>输出</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span id="output-status" class="input-status"></span>
+              <button id="copy-btn">复制</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <textarea id="output-area" placeholder="格式化/压缩后的结果" readonly></textarea>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="tool.js"></script>
+</body>
+</html>

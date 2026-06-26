@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FIX Parser</title>
+  <link rel="stylesheet" href="tool.css">
+</head>
+<body>
+  <div class="tool-page">
+    <header class="tool-header">
+      <h1 class="tool-title">FIX Parser</h1>
+      <div class="tool-actions">
+        <button id="parse-btn" class="primary">解析</button>
+        <button id="clear-btn">清空</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="input-section">
+        <textarea id="input-area" placeholder="粘贴 FIX 消息..."></textarea>
+      </section>
+
+      <section class="result-section">
+        <div class="panel">
+          <div class="panel-header">
+            <span>Timeline</span>
+          </div>
+          <div class="panel-body" id="timeline-container">
+            <div class="empty-state">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                <polyline points="13,2 13,9 20,9"></polyline>
+              </svg>
+              <span>解析后将显示消息列表</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <span>Details</span>
+          </div>
+          <div class="panel-body" id="detail-container">
+            <div class="empty-state">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span>点击时间线查看详情</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="fixparser.js"></script>
+</body>
+</html>

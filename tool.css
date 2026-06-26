@@ -1,0 +1,357 @@
+:root {
+  --bg: #f2f2f7;
+  --bg-card: #ffffff;
+  --text: #000000;
+  --text-secondary: #8e8e93;
+  --accent: #007aff;
+  --border: rgba(60, 60, 67, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tool-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 16px;
+  gap: 12px;
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.tool-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  letter-spacing: -0.5px;
+}
+
+.tool-title svg {
+  color: var(--accent);
+}
+
+.tool-actions {
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.15s;
+}
+
+button:hover {
+  background: #fafafa;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover {
+  background: #0066d6;
+}
+
+.tool-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.input-section {
+  flex-shrink: 0;
+}
+
+textarea {
+  width: 100%;
+  height: 120px;
+  padding: 16px;
+  border: none;
+  border-radius: 16px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+textarea:focus {
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+}
+
+textarea::placeholder {
+  color: var(--text-secondary);
+}
+
+.result-section {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  min-height: 0;
+}
+
+.result-section .panel:first-child {
+  flex: 1;
+}
+
+.result-section .panel:last-child {
+  flex: 2;
+}
+
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.panel-header {
+  padding: 14px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.panel-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 8px 8px;
+}
+
+/* Timeline */
+.timeline-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 15px;
+  font-family: -apple-system, sans-serif;
+  gap: 12px;
+  transition: all 0.15s;
+  margin-bottom: 4px;
+}
+
+.timeline-item:hover {
+  background: rgba(0, 122, 255, 0.08);
+}
+
+.timeline-item.selected {
+  background: rgba(0, 122, 255, 0.12);
+}
+
+.timeline-time {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  width: 65px;
+  font-size: 11px;
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.timeline-msgtype {
+  flex-shrink: 0;
+  min-width: 70px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.msgtype-admin { background: #e5e5ea; color: #3c3c43; }
+.msgtype-session { background: #e5e5ea; color: #3c3c43; }
+.msgtype-neworder { background: #34c75920; color: #34c759; }
+.msgtype-trade { background: #34c75920; color: #34c759; }
+.msgtype-order { background: #af52de20; color: #af52de; }
+.msgtype-other { background: #ff950020; color: #ff9500; }
+
+.timeline-sender {
+  color: var(--accent);
+  flex-shrink: 1;
+  min-width: 35px;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.timeline-target {
+  color: #af52de;
+  flex-shrink: 1;
+  min-width: 35px;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.timeline-summary {
+  flex: 1;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* Detail Table */
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-family: -apple-system, sans-serif;
+}
+
+.detail-table th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.detail-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-tag {
+  color: var(--accent);
+  font-weight: 600;
+  width: 50px;
+  font-family: 'SF Mono', Menlo, monospace;
+}
+
+.detail-tagname {
+  color: var(--text-secondary);
+  width: 140px;
+}
+
+.detail-value {
+  color: var(--text);
+  word-break: break-all;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-value .raw-value {
+  color: var(--text);
+}
+
+.detail-value .enum-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #007aff10, #5856d610);
+  border: 1px solid rgba(0, 122, 255, 0.2);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  font-family: -apple-system, sans-serif;
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-size: 15px;
+  gap: 12px;
+  padding: 40px;
+}
+
+.empty-state svg {
+  opacity: 0.3;
+  width: 48px;
+  height: 48px;
+}
+
+/* Stats */
+.stat-bar {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.stat-bar .count {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}

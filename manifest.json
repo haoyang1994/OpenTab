@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "OpenTab",
+  "version": "1.0.0",
+  "description": "OpenTab new tab page with clock, customizable backgrounds, and shortcut icons",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "activeTab",
+    "tabs",
+    "geolocation"
+  ],
+  "host_permissions": [
+    "https://www.bing.com/*",
+    "https://wttr.in/*"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "home.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' https: data:; connect-src 'self' https: ws: wss:;"
+  },
+  "action": {
+    "default_title": "添加到 OpenTab",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

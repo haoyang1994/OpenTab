@@ -1,0 +1,72 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'JetBrains Mono', 'Segoe UI', sans-serif;
+  background: #0b1220;
+  color: #e8f4ff;
+}
+
+.popup {
+  width: 320px;
+  padding: 14px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.url {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #a9c9dd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+label {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: 12px;
+  color: #bcd8ea;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(129, 193, 231, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8f4ff;
+}
+
+.actions {
+  margin-top: 12px;
+}
+
+.primary {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: linear-gradient(135deg, #2ebcff, #25d3b0);
+  color: #032033;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.status {
+  min-height: 18px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #9fdfb6;
+}
+
+.status.error {
+  color: #ff9aa9;
+}
