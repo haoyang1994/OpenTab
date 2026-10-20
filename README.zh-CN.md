@@ -57,7 +57,11 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 ### 搜索、天气、待办、备份
 
-- 搜索引擎：Google、Bing、GitHub
+- 搜索引擎：Google、Bing、百度、DuckDuckGo、GitHub，以及自定义 `%s` 引擎
+- 输入网址或域名直接打开；输入与快捷方式名称完全匹配时回车打开该快捷方式
+- 输入框获焦时 Tab / Shift+Tab 切换引擎；页面无焦点时按 `/` 或直接打字聚焦搜索框
+- 本地搜索历史（最多 20 条，可关、可清）
+- 「搜索结果在新标签页打开」，以及 Ctrl/Cmd+回车、中键
 - 天气胶囊：浏览器地理位置 + [wttr.in](https://wttr.in)
 - 侧边抽屉待办和进度条
 - JSON 备份导出 / 导入，以及本地快照
@@ -80,7 +84,8 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 ## 隐私说明
 
-- 偏好设置、快捷方式、待办和快照保存在当前浏览器配置的 `chrome.storage.local`。
+- 偏好设置、快捷方式、待办、快照和搜索历史保存在当前浏览器配置的 `chrome.storage.local`。
+- 搜索框不会向任何引擎请求联想或建议。
 - OpenTab 没有统计、没有广告、没有账号登录。
 - OpenTab 不会改写或拦截你打开的链接。
 - 可选功能会请求少量外部主机：
@@ -183,6 +188,7 @@ OpenTab/
 ├── package.json
 ├── background.js              # Service Worker
 ├── home.html / home.css / home.js
+├── search.js                  # 新标签页搜索框（引擎、历史、网址直达）
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js
 ├── fixparser.html / fixparser.js

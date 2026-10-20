@@ -57,7 +57,11 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 
 ### Search, weather, todos, backup
 
-- Search engines: Google, Bing, GitHub
+- Search engines: Google, Bing, Baidu, DuckDuckGo, GitHub, plus custom `%s` engines
+- Type a URL or domain to open it; Enter on an exact shortcut name opens that shortcut
+- Tab / Shift+Tab cycles engines; `/` or typing focuses search when nothing else is focused
+- Local search history (up to 20 items, can be disabled or cleared)
+- Option to open search results in a new tab (also Ctrl/Cmd+Enter and middle-click)
 - Weather pill via geolocation and [wttr.in](https://wttr.in)
 - Side-drawer todos with a progress bar
 - JSON backup export/import and a local snapshot
@@ -80,7 +84,8 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, and snapshots are stored in `chrome.storage.local` on this browser profile.
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile.
+- The search box does not fetch suggestions or typeahead from any engine.
 - OpenTab does not include analytics, ads, or account login.
 - OpenTab does not rewrite or intercept links you open.
 - The extension does request a small set of hosts for optional features:
@@ -183,6 +188,7 @@ OpenTab/
 ├── package.json
 ├── background.js              # service worker
 ├── home.html / home.css / home.js
+├── search.js                  # new-tab search box (engines, history, URL jump)
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js
 ├── fixparser.html / fixparser.js

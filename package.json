@@ -18,8 +18,8 @@
     "test": "node tests/repo-hygiene.test.mjs && npm run test:ssh-gateway && npm run test:e2e",
     "test:ssh-gateway": "node tests/ssh-gateway.test.mjs",
     "test:e2e": "bash scripts/run-e2e.sh",
-    "test:e2e:headed": "HEADLESS=false node tests/extension.test.mjs",
-    "test:e2e:headless": "HEADLESS=true node tests/extension.test.mjs",
+    "test:e2e:headed": "HEADLESS=false node tests/extension.test.mjs && HEADLESS=false node tests/search.test.mjs",
+    "test:e2e:headless": "HEADLESS=true node tests/extension.test.mjs && HEADLESS=true node tests/search.test.mjs",
     "test:ci": "node tests/repo-hygiene.test.mjs && npm run test:ssh-gateway && npm run test:e2e"
   },
   "devDependencies": {

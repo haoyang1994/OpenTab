@@ -63,6 +63,7 @@
   }
 
   async function loadCurrentTab() {
+    // Toolbar click grants activeTab; the broad `tabs` permission is not required.
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     state.tab = tab || null;
 
