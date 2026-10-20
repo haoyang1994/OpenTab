@@ -408,7 +408,7 @@
         label = normalized;
       }
     }
-    return {
+    const shortcut = {
       id: generateId(),
       name: label,
       type: 'shortcut',
@@ -419,6 +419,10 @@
       resolvedIconUrl: '',
       iconCandidates: []
     };
+    if (typeof OpenTabIcons !== 'undefined' && OpenTabIcons.prepareRecord) {
+      OpenTabIcons.prepareRecord(shortcut);
+    }
+    return shortcut;
   }
 
   function nextGroupName(desired, groups) {

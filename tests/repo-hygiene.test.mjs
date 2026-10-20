@@ -101,6 +101,7 @@ assert.ok(exists('assets/default_background/default.webp'), 'default.webp is the
 assert.ok(exists('layout.js'), 'layout.js must exist (iteration 7 layout settings)');
 assert.ok(exists('settings-nav.js'), 'settings-nav.js must exist (iteration 7 settings panel)');
 assert.ok(exists('specs/iter-7.md'), 'specs/iter-7.md must record iteration 7 acceptance criteria');
+assert.ok(exists('icons.js'), 'icons.js must exist (iteration 8 icon logic)');
 const homeHtml = read('home.html');
 assert.match(homeHtml, /<script src="search\.js"><\/script>/, 'home.html must load search.js');
 assert.match(homeHtml, /<script src="folders\.js"><\/script>/, 'home.html must load folders.js');
@@ -111,6 +112,7 @@ assert.match(homeHtml, /<script src="settings-nav\.js"><\/script>/, 'home.html m
 assert.match(homeHtml, /<script src="lib\/bing-daily\.js"><\/script>/, 'home.html must load lib/bing-daily.js');
 assert.match(homeHtml, /<script src="bing-cache\.js"><\/script>/, 'home.html must load bing-cache.js');
 assert.match(homeHtml, /<script src="boot\.js"><\/script>/, 'home.html must load boot.js');
+assert.match(homeHtml, /<script src="icons\.js"><\/script>/, 'home.html must load icons.js');
 assert.ok(
   homeHtml.indexOf('boot.js') < homeHtml.indexOf('id="content"'),
   'boot.js must load before #content'
@@ -140,8 +142,12 @@ assert.ok(
   'lib/bing-daily.js must load before bing-cache.js'
 );
 assert.ok(
-  homeHtml.indexOf('bing-cache.js') < homeHtml.indexOf('home.js'),
-  'bing-cache.js must load before home.js'
+  homeHtml.indexOf('bing-cache.js') < homeHtml.indexOf('icons.js'),
+  'bing-cache.js must load before icons.js'
+);
+assert.ok(
+  homeHtml.indexOf('icons.js') < homeHtml.indexOf('home.js'),
+  'icons.js must load before home.js'
 );
 assert.ok(
   homeHtml.indexOf('folders.js') < homeHtml.indexOf('home.js'),
@@ -172,7 +178,10 @@ const connectSrc = cspSources(csp, 'connect-src');
 const imgSrc = cspSources(csp, 'img-src');
 assert.equal(connectSrc.includes('ws:'), false, 'AC7: connect-src must not allow blanket ws:');
 assert.equal(connectSrc.includes('wss:'), false, 'AC7: connect-src must not allow blanket wss:');
-assert.equal(connectSrc.includes('https:'), false, 'AC7: connect-src must not allow all https');
+assert.ok(
+  connectSrc.includes('https:'),
+  'iter-8: connect-src includes https: so apple-touch-icon / favicon / manifest fetches can run (CORS still applies; no new host_permissions)'
+);
 assert.ok(
   connectSrc.some((src) => src.startsWith('ws://127.0.0.1')),
   'SSH loopback ws://127.0.0.1 must remain in connect-src'
@@ -258,8 +267,21 @@ if (masterHome) {
   const currentHome = fs.readFileSync(path.join(root, 'home.js'));
   assert.ok(
     currentHome.length <= masterHome.length,
-    `home.js is ${currentHome.length} bytes; baseline is ${masterHome.length}. The 12KB budget is exhausted — move settings/layout code to settings-nav.js and layout.js instead of growing home.js.`
+    `home.js is ${currentHome.length} bytes; baseline is ${masterHome.length}. The 12KB budget is exhausted — move settings/layout code to settings-nav.js and layout.js, and icon code to icons.js, instead of growing home.js.`
   );
 }
+
+const catalog = readJson('icons/library/catalog.json');
+assert.ok(Array.isArray(catalog) && catalog.length >= 40, 'icon library must cover at least 40 sites');
+const cn = catalog.filter((item) => item.region === 'cn').length;
+const intl = catalog.filter((item) => item.region === 'intl').length;
+assert.ok(cn >= 20 && intl >= 20, `icon library must be half Chinese / half international, got cn=${cn} intl=${intl}`);
+for (const item of catalog) {
+  assert.ok(exists(`icons/library/${item.slug}.svg`), `missing library tile: ${item.slug}.svg`);
+}
+assert.ok(exists('icons/library/SIMPLE-ICONS-LICENSE.md'), 'Simple Icons CC0 license must be vendored');
+const notice = read('NOTICE');
+assert.match(notice, /simple-icons/i, 'NOTICE must credit Simple Icons');
+assert.match(notice, /CC0-1\.0/, 'NOTICE must record the CC0-1.0 license for Simple Icons');
 
 console.log('repo-hygiene passed');

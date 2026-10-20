@@ -263,6 +263,27 @@ Status:      不在 Apache-2.0 授权范围内.
              No affiliation or endorsement is implied. Replacing them with
              generic icons is out of scope for this release.
 
+Name:        icons/library/*.svg (shortcut icon tiles)
+Used by:     home.html grid via icons.js
+How made:    Composed locally (128×128 rounded square, brand color fill +
+             monochrome glyph) from Simple Icons 16.35.0 SVG paths.
+             Builder: scripts/build-icon-library.py. Catalog:
+             icons/library/catalog.json.
+Source:      simple-icons npm package 16.35.0
+             https://github.com/simple-icons/simple-icons
+License:     Simple Icons project: CC0-1.0
+             License file: icons/library/SIMPLE-ICONS-LICENSE.md
+             Compatible with Apache-2.0. The rounded-square composition is
+             original OpenTab work under Apache-2.0.
+Status:      Brand marks remain 不在 Apache-2.0 授权范围内.
+             Site logos (Baidu, Taobao, GitHub, YouTube, Gmail, and the
+             others listed in icons/library/catalog.json) are trademarks of
+             their respective owners. They are used only to identify those
+             sites on the shortcut grid. No affiliation or endorsement is
+             implied. Individual Simple Icons entries with copyleft,
+             CC-BY-NC, or custom licenses were not included. Douban was
+             omitted because its SPDX field is custom.
+
 Name:        FIX tag / value dictionary embedded in fixparser.js
              (FIX_TAGS, FIX_VALUES)
 Used by:     fixparser.html
@@ -293,7 +314,9 @@ Emoji:       Rendered by the OS. No emoji font is packaged.
   used only to display a wallpaper. Image copyright remains with the original
   authors / Microsoft Bing.
 - wttr.in (https://wttr.in): weather text for the weather pill.
-- Favicons of websites the user adds as shortcuts: requested directly from
-  those sites.
+- Favicons / apple-touch-icon / web app manifest icons of websites the user
+  adds as shortcuts: fetched only when adding, refreshing, or migrating an
+  icon (CORS-limited; no extra host_permissions). The result is stored as a
+  local data URL. Opening a new tab does not re-request third-party icons.
 
 See README.md / README.zh-CN.md privacy sections.

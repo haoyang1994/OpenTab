@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-section and global 「恢复默认」 with the existing in-page confirm and undo toast (shortcuts are left untouched)
 - Advanced toggle for SSH / JSON / FIX entries (off by default; existing SSH/tool shortcuts keep it on)
 - `layout.js` / `settings-nav.js` plus `specs/iter-7.md`; weather nav/slot reserved for the parallel first-screen iteration
+- Built-in HD shortcut icon library (44 Simple Icons tiles, 22 Chinese / 22 international) with letter placeholders when a site is not in the library
+- Right-click **更换图标**: re-fetch, upload a local image, or pick a letter placeholder and color
+- Idle migration of existing remote favicon URLs into a local cache (`requestIdleCallback`, does not block first paint)
+- `icons.js` owns icon lookup / fetch / compression; `home.js` only wires it
 - Import Chrome bookmarks (optional `bookmarks` permission, requested on click) into a new folder/group
 - Import the first 12 Chrome most-visited sites (optional `topSites` permission)
 - Import Infinity / WeTab / iTab backup files, with an automatic snapshot and one-click undo
@@ -70,13 +74,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Folder/group `prompt` / `confirm` / `alert` replaced with in-page controls (the SSH incomplete-config `alert` remains)
 - README documents + add, drag reorder, folders, group tabs, middle-click, undo delete, and Esc
 - Replaced the application icon and three bundled default backgrounds with project-owned assets (Apache-2.0; stills and icon composition Created with Grok Imagine; SVG/PNGs hand-traced and rasterized). Saved Pexels preset paths migrate to the matching new images (or fall back to the Bing default) so existing installs do not 404.
-- Search logic lives in `search.js`; OpenTab backup import/export lives in `import.js`; `home.js` only wires icons into name matching
-- Settings panel logic lives in `settings-nav.js` and grid layout in `layout.js`; `home.js` only wires them so it can shrink instead of growing past the size budget
+- Search logic lives in `search.js`; OpenTab backup import/export lives in `import.js`; icon fetch/cache lives in `icons.js`; settings panel in `settings-nav.js` and grid layout in `layout.js`; `home.js` only wires them
+- Localized `data:` icons stay in `chrome.storage.local` and backups; `chrome.storage.sync` strips them so another device re-resolves from the bundled library or the site
+- New-tab first paint no longer loads third-party favicons (library tile, cached data URL, or letter placeholder only)
 
 ### Security
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
-- AC7: narrowed extension-page `connect-src` (dropped blanket `https:` / `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). `img-src` retains `https:` for shortcut favicons and custom wallpaper URLs (product decision). Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
+- AC7: narrowed extension-page `connect-src` (dropped blanket `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). Iter 8 adds `https:` to `connect-src` so apple-touch-icon, `/favicon.ico`, and web-app-manifest fetches can run when the site sends CORS; no new `host_permissions`. `img-src` retains `https:` for custom wallpaper URLs. Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
 - SSH / SOCKS passwords and gateway tokens are stripped from backup export and browser sync, and encrypted at rest with a non-extractable IndexedDB `CryptoKey` instead of plaintext in `chrome.storage.local`
 
 ### Breaking

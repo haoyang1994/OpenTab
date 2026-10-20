@@ -104,7 +104,8 @@
       dialogMessage: document.getElementById('inline-dialog-message'),
       dialogActions: document.getElementById('inline-dialog-actions'),
       openAllBtn: document.getElementById('open-all-icon-btn'),
-      editBtn: document.getElementById('edit-icon-btn')
+      editBtn: document.getElementById('edit-icon-btn'),
+      changeIconBtn: document.getElementById('change-icon-btn')
     };
   }
 
@@ -382,7 +383,9 @@
       getChildren(icon.id).slice(0, 4).forEach((child) => {
         const cell = document.createElement('span');
         cell.className = 'folder-preview-cell';
-        const imgUrl = child.resolvedIconUrl || child.uploadedIconDataUrl || child.customIconUrl || '';
+        const imgUrl = (typeof OpenTabIcons !== 'undefined' && OpenTabIcons.paintSrc)
+          ? OpenTabIcons.paintSrc(child)
+          : (child.uploadedIconDataUrl || '');
         if (imgUrl) {
           const img = document.createElement('img');
           img.src = imgUrl;
@@ -581,6 +584,10 @@
     const folder = isFolderId(iconId);
     if (ui.openAllBtn) ui.openAllBtn.classList.toggle('hidden', !folder);
     if (ui.editBtn) ui.editBtn.classList.toggle('hidden', folder);
+    if (ui.changeIconBtn) {
+      const icon = find(iconId);
+      ui.changeIconBtn.classList.toggle('hidden', !!(folder || (icon && icon.type === 'ssh')));
+    }
   }
 
   function onAuxClick(event) {

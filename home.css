@@ -901,6 +901,13 @@ body.theme-light .icon-widget:hover .icon-visual {
   display: block;
 }
 
+.icon-visual.has-image.icon-fill .icon-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
 body.layout-hide-names .icon-name {
   display: none;
 }
@@ -2639,6 +2646,63 @@ body.theme-light .calendar-popover .flatpickr-day.endRange {
 
 .icon-context-menu button.danger:hover {
   background: rgba(255, 100, 120, 0.16);
+}
+
+.change-icon-panel {
+  width: min(380px, calc(100vw - 32px));
+}
+
+.change-icon-preview {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 16px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.change-icon-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.change-icon-preview img[hidden] {
+  display: none;
+}
+
+.change-icon-placeholder-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.change-icon-placeholder-row input[type="text"] {
+  width: 52px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.change-icon-placeholder-row input[type="color"] {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.change-icon-actions {
+  flex-wrap: wrap;
+}
+
+.change-icon-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 /* ==========================================================================

@@ -1,0 +1,374 @@
+[
+  {
+    "slug": "baidu",
+    "hex": "2932E1",
+    "region": "cn",
+    "hosts": [
+      "baidu.com"
+    ]
+  },
+  {
+    "slug": "taobao",
+    "hex": "E94F20",
+    "region": "cn",
+    "hosts": [
+      "taobao.com"
+    ]
+  },
+  {
+    "slug": "bilibili",
+    "hex": "00A1D6",
+    "region": "cn",
+    "hosts": [
+      "bilibili.com",
+      "b23.tv"
+    ]
+  },
+  {
+    "slug": "zhihu",
+    "hex": "0084FF",
+    "region": "cn",
+    "hosts": [
+      "zhihu.com"
+    ]
+  },
+  {
+    "slug": "sinaweibo",
+    "hex": "E6162D",
+    "region": "cn",
+    "hosts": [
+      "weibo.com",
+      "weibo.cn"
+    ]
+  },
+  {
+    "slug": "wechat",
+    "hex": "07C160",
+    "region": "cn",
+    "hosts": [
+      "weixin.qq.com",
+      "wechat.com"
+    ]
+  },
+  {
+    "slug": "qq",
+    "hex": "1EBAFC",
+    "region": "cn",
+    "hosts": [
+      "qq.com",
+      "qzone.qq.com"
+    ]
+  },
+  {
+    "slug": "alipay",
+    "hex": "1677FF",
+    "region": "cn",
+    "hosts": [
+      "alipay.com"
+    ]
+  },
+  {
+    "slug": "xiaohongshu",
+    "hex": "FF2442",
+    "region": "cn",
+    "hosts": [
+      "xiaohongshu.com",
+      "xhslink.com"
+    ]
+  },
+  {
+    "slug": "gitee",
+    "hex": "C71D23",
+    "region": "cn",
+    "hosts": [
+      "gitee.com"
+    ]
+  },
+  {
+    "slug": "huawei",
+    "hex": "FF0000",
+    "region": "cn",
+    "hosts": [
+      "huawei.com",
+      "vmall.com"
+    ]
+  },
+  {
+    "slug": "xiaomi",
+    "hex": "FF6900",
+    "region": "cn",
+    "hosts": [
+      "mi.com",
+      "xiaomi.com"
+    ]
+  },
+  {
+    "slug": "meituan",
+    "hex": "FFD100",
+    "region": "cn",
+    "hosts": [
+      "meituan.com"
+    ]
+  },
+  {
+    "slug": "kuaishou",
+    "hex": "FF4906",
+    "region": "cn",
+    "hosts": [
+      "kuaishou.com"
+    ]
+  },
+  {
+    "slug": "neteasecloudmusic",
+    "hex": "D43C33",
+    "region": "cn",
+    "hosts": [
+      "music.163.com"
+    ]
+  },
+  {
+    "slug": "tripdotcom",
+    "hex": "287DFA",
+    "region": "cn",
+    "hosts": [
+      "trip.com",
+      "ctrip.com"
+    ]
+  },
+  {
+    "slug": "bytedance",
+    "hex": "3C8CFF",
+    "region": "cn",
+    "hosts": [
+      "bytedance.com"
+    ]
+  },
+  {
+    "slug": "alibabadotcom",
+    "hex": "FF6A00",
+    "region": "cn",
+    "hosts": [
+      "alibaba.com",
+      "1688.com"
+    ]
+  },
+  {
+    "slug": "alibabacloud",
+    "hex": "FF6A00",
+    "region": "cn",
+    "hosts": [
+      "aliyun.com",
+      "alibabacloud.com"
+    ]
+  },
+  {
+    "slug": "csdn",
+    "hex": "FC5531",
+    "region": "cn",
+    "hosts": [
+      "csdn.net"
+    ]
+  },
+  {
+    "slug": "juejin",
+    "hex": "007FFF",
+    "region": "cn",
+    "hosts": [
+      "juejin.cn"
+    ]
+  },
+  {
+    "slug": "v2ex",
+    "hex": "1F1F1F",
+    "region": "cn",
+    "hosts": [
+      "v2ex.com"
+    ]
+  },
+  {
+    "slug": "github",
+    "hex": "181717",
+    "region": "intl",
+    "hosts": [
+      "github.com",
+      "gist.github.com"
+    ]
+  },
+  {
+    "slug": "youtube",
+    "hex": "FF0000",
+    "region": "intl",
+    "hosts": [
+      "youtube.com",
+      "youtu.be"
+    ]
+  },
+  {
+    "slug": "google",
+    "hex": "4285F4",
+    "region": "intl",
+    "hosts": [
+      "google.com"
+    ]
+  },
+  {
+    "slug": "gmail",
+    "hex": "EA4335",
+    "region": "intl",
+    "hosts": [
+      "gmail.com",
+      "mail.google.com"
+    ]
+  },
+  {
+    "slug": "x",
+    "hex": "000000",
+    "region": "intl",
+    "hosts": [
+      "x.com",
+      "twitter.com"
+    ]
+  },
+  {
+    "slug": "facebook",
+    "hex": "0866FF",
+    "region": "intl",
+    "hosts": [
+      "facebook.com",
+      "fb.com"
+    ]
+  },
+  {
+    "slug": "instagram",
+    "hex": "FF0069",
+    "region": "intl",
+    "hosts": [
+      "instagram.com"
+    ]
+  },
+  {
+    "slug": "reddit",
+    "hex": "FF4500",
+    "region": "intl",
+    "hosts": [
+      "reddit.com"
+    ]
+  },
+  {
+    "slug": "wikipedia",
+    "hex": "000000",
+    "region": "intl",
+    "hosts": [
+      "wikipedia.org"
+    ]
+  },
+  {
+    "slug": "netflix",
+    "hex": "E50914",
+    "region": "intl",
+    "hosts": [
+      "netflix.com"
+    ]
+  },
+  {
+    "slug": "apple",
+    "hex": "000000",
+    "region": "intl",
+    "hosts": [
+      "apple.com"
+    ]
+  },
+  {
+    "slug": "icloud",
+    "hex": "3693F3",
+    "region": "intl",
+    "hosts": [
+      "icloud.com"
+    ]
+  },
+  {
+    "slug": "stackoverflow",
+    "hex": "F58025",
+    "region": "intl",
+    "hosts": [
+      "stackoverflow.com"
+    ]
+  },
+  {
+    "slug": "discord",
+    "hex": "5865F2",
+    "region": "intl",
+    "hosts": [
+      "discord.com",
+      "discord.gg"
+    ]
+  },
+  {
+    "slug": "telegram",
+    "hex": "26A5E4",
+    "region": "intl",
+    "hosts": [
+      "telegram.org",
+      "web.telegram.org",
+      "t.me"
+    ]
+  },
+  {
+    "slug": "whatsapp",
+    "hex": "25D366",
+    "region": "intl",
+    "hosts": [
+      "whatsapp.com",
+      "wa.me"
+    ]
+  },
+  {
+    "slug": "twitch",
+    "hex": "9146FF",
+    "region": "intl",
+    "hosts": [
+      "twitch.tv"
+    ]
+  },
+  {
+    "slug": "spotify",
+    "hex": "1ED760",
+    "region": "intl",
+    "hosts": [
+      "spotify.com"
+    ]
+  },
+  {
+    "slug": "duckduckgo",
+    "hex": "DE5833",
+    "region": "intl",
+    "hosts": [
+      "duckduckgo.com"
+    ]
+  },
+  {
+    "slug": "gitlab",
+    "hex": "FC6D26",
+    "region": "intl",
+    "hosts": [
+      "gitlab.com"
+    ]
+  },
+  {
+    "slug": "tiktok",
+    "hex": "000000",
+    "region": "intl",
+    "hosts": [
+      "tiktok.com",
+      "douyin.com"
+    ]
+  },
+  {
+    "slug": "pinterest",
+    "hex": "BD081C",
+    "region": "intl",
+    "hosts": [
+      "pinterest.com"
+    ]
+  }
+]

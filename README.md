@@ -52,6 +52,7 @@ First paint applies the saved theme, clock, and wallpaper from a local boot mirr
 - **Drag to reorder**: mouse drag on the desktop grid, or Alt+←/→ when a shortcut is focused
 - **Folders**: hover one shortcut on another for about 500ms to make a folder named 文件夹 (undoable). Drop onto an existing folder to add. Click a folder to open an overlay where you can reorder, drag out, and rename. Middle-click or **Open all** opens every link (confirms in-page above 10). A folder with one leftover icon dissolves.
 - **Groups**: tabs above the grid (click, mouse wheel, Alt+1–9). Create, rename, and delete groups in-page; deleting asks whether to move icons to the default group or delete them too (undoable). The old left drawer and 6px edge hover are gone.
+- **Icons**: bundled HD tiles for 40+ common sites; other sites get a letter placeholder (color from the domain). Right-click **更换图标** to re-fetch, upload a picture, or change the placeholder. Cached as local data URLs so a new tab does not contact those sites
 - **Real links**: middle-click / Ctrl / Cmd opens a new tab; hover shows the URL
 - **Undo delete**: deleting a shortcut shows a toast with Undo for 6 seconds
 - **Esc**: closes menus, dialogs, folder overlay, settings, and calendar one layer at a time and restores focus
@@ -109,7 +110,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 | --- | --- | --- |
 | Bing homepage image API (`www.bing.com`) | Daily wallpaper, **only if you choose Bing wallpaper** | Image URL/metadata. Photo copyright stays with the original authors; OpenTab only displays the image. First install uses a local wallpaper and does not contact Bing. |
 | [wttr.in](https://wttr.in) | Weather pill | Approximate location from the browser geolocation permission. |
-| Favicons of sites you add | Shortcut icons | Direct request to that site for its icon. |
+| Favicons of sites you add | Shortcut icons | Requested only when adding, refreshing, or migrating an icon, then cached locally. A new tab does not contact those sites. |
 
 SSH connections go through a **local** WebSocket gateway you start yourself (`ssh-gateway.mjs`). They are not proxied by an OpenTab cloud service.
 
@@ -209,6 +210,7 @@ OpenTab/
 ├── search.js                  # new-tab search box (engines, history, URL jump)
 ├── folders.js                 # desktop folders and group tabs
 ├── import.js / sync.js        # backup import and chrome.storage.sync
+├── icons.js                   # shortcut icon library, cache, 更换图标
 ├── layout.js / settings-nav.js
 ├── specs/                     # iteration acceptance criteria
 ├── popup.html / popup.css / popup.js

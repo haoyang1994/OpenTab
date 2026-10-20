@@ -203,6 +203,23 @@ function isExemptConsoleError(text) {
   return isAllowedConsoleError(text);
 }
 
+function isAllowedNetwork(url) {
+  return url.startsWith('chrome-extension://')
+    || url.startsWith('data:')
+    || url.startsWith('blob:')
+    || url.includes('bing.com')
+    || url.includes('wttr.in');
+}
+
+function isThirdPartyIconRequest(url, resourceType) {
+  if (isAllowedNetwork(url)) return false;
+  if (!/^https?:/i.test(url)) return false;
+  return resourceType === 'image'
+    || resourceType === 'fetch'
+    || resourceType === 'xhr'
+    || /favicon|apple-touch|manifest\.webmanifest|site\.webmanifest|\/manifest\.json|\.ico(\?|$)/i.test(url);
+}
+
 function shortcut(id, name, url, folderId = HOME, extra = {}) {
   return {
     id,
@@ -528,10 +545,19 @@ async function runExtensionE2E() {
       ) {
         return route.continue();
       }
+      if (/manifest\.webmanifest|site\.webmanifest|\/manifest\.json(\?|$)/i.test(url)) {
+        return route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          body: '{}'
+        });
+      }
       if (/\.(ico|png|jpe?g|svg|webp|gif)(\?|$)/i.test(url) || url.includes('favicon') || url.includes('apple-touch')) {
         return route.fulfill({
           status: 200,
           contentType: 'image/gif',
+          headers: { 'Access-Control-Allow-Origin': '*' },
           body: Buffer.from(PIXEL.split(',')[1], 'base64')
         });
       }
@@ -1951,6 +1977,107 @@ async function runExtensionE2E() {
     assert.ok(!localManifest.permissions.includes('bookmarks'));
     assert.ok(!localManifest.permissions.includes('topSites'));
     console.log('AC7 optional permissions passed');
+
+    const remoteSeed = {
+      folders: folders(),
+      currentFolderId: HOME,
+      background: { type: 'gradient', value: 'linear-gradient(135deg, #09203f 0%, #537895 100%)', source: 'gradient' },
+      icons: [
+        {
+          id: 'gh-remote',
+          name: 'GitHub',
+          url: 'https://github.com',
+          folderId: HOME,
+          type: 'shortcut',
+          parentId: '',
+          customIconUrl: '',
+          emoji: '',
+          uploadedIconDataUrl: '',
+          resolvedIconUrl: 'https://github.com/favicon.ico',
+          iconCandidates: ['https://github.com/favicon.ico']
+        },
+        {
+          id: 'ex-remote',
+          name: 'Example',
+          url: 'https://example.com',
+          folderId: HOME,
+          type: 'shortcut',
+          parentId: '',
+          customIconUrl: '',
+          emoji: '',
+          uploadedIconDataUrl: '',
+          resolvedIconUrl: 'https://example.com/favicon.ico',
+          iconCandidates: ['https://example.com/apple-touch-icon.png', 'https://example.com/favicon.ico']
+        }
+      ]
+    };
+    const homeUrl = page.url();
+    await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await writeHomeStorage(page, remoteSeed, true);
+    const firstScreenIconReqs = [];
+    const onFirstScreenReq = (req) => {
+      if (isThirdPartyIconRequest(req.url(), req.resourceType())) firstScreenIconReqs.push(req.url());
+    };
+    page.on('request', onFirstScreenReq);
+    await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForSelector('#time', { timeout: 10000 });
+    await waitForGrid(page);
+    page.off('request', onFirstScreenReq);
+    assert.equal(
+      firstScreenIconReqs.length,
+      0,
+      `AC5: first-screen third-party icon requests: ${firstScreenIconReqs.join(' | ')}`
+    );
+    const ghSrc = await page.locator('#icons-container .icon-widget[data-id="gh-remote"] img.icon-image').getAttribute('src');
+    assert.ok(
+      ghSrc && !/^https?:/i.test(ghSrc) && (ghSrc.includes('icons/library/github') || ghSrc.startsWith('data:')),
+      `AC1/AC2: GitHub should paint a bundled tile, got ${ghSrc}`
+    );
+    const exSrc = await page.locator('#icons-container .icon-widget[data-id="ex-remote"] img.icon-image').getAttribute('src');
+    assert.ok(exSrc && !/^https?:/i.test(exSrc), `AC1: example.com must not paint http(s), got ${exSrc}`);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'grid-after-icons.png') });
+    await page.waitForFunction(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      const icon = (result.icons || []).find((item) => item.id === 'ex-remote');
+      return icon && typeof icon.resolvedIconUrl === 'string' && icon.resolvedIconUrl.startsWith('data:');
+    }, null, { timeout: 8000 });
+    console.log('AC1/AC2/AC3/AC5 icon first-screen + idle cache passed');
+
+    await page.locator('#icons-container .icon-widget[data-id="ex-remote"]').click({ button: 'right' });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#change-icon-btn');
+    await page.waitForSelector('#change-icon-modal:not(.hidden)', { timeout: 5000 });
+    await page.fill('#change-icon-letter', 'Z');
+    await page.locator('#change-icon-color').evaluate((el) => {
+      el.value = '#2266aa';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.click('#change-icon-placeholder');
+    await page.waitForTimeout(200);
+    const afterPlaceholder = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      return (result.icons || []).find((item) => item.id === 'ex-remote') || null;
+    });
+    assert.equal(afterPlaceholder.iconSource, 'placeholder');
+    assert.equal((afterPlaceholder.placeholderLetter || '').toUpperCase(), 'Z');
+    await page.click('#change-icon-close');
+    await page.waitForSelector('#change-icon-modal.hidden');
+    console.log('AC4 change-icon placeholder passed');
+
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.fill('#icon-name', 'GitHub HD');
+    await page.fill('#icon-url', 'https://github.com');
+    await page.click('#save-btn');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    const addedSrc = await page.locator('#icons-container .icon-widget[data-id] img.icon-image').getAttribute('src');
+    assert.ok(
+      addedSrc && !/^https?:/i.test(addedSrc),
+      `AC1: new GitHub shortcut must paint locally, got ${addedSrc}`
+    );
+    console.log('AC1 add-shortcut library hit passed');
 
     const leftoverPageErrors = errorBuckets.page.filter(error => !isExemptConsoleError(error));
     const leftoverConsole = errorBuckets.console.filter(error => !isExemptConsoleError(error));
