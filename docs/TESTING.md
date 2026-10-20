@@ -18,6 +18,8 @@
 - 能加载扩展页面（`chrome-extension://<id>/home.html`）
 - 核心节点存在：`#time`、`#settings-btn`、`#refresh-bg-btn`、`#timezone-btn`
 - 时钟文本非空
+- 点击日期后日历（flatpickr）可打开
+- `home.html` / `ssh_terminal.html` 不从 `node_modules/` 加载运行时资源；`vendor/` 文件存在且 SSH 页 xterm 可加载
 - 设置面板可打开
 - 时间格式切换为 24h 后 `#ampm` 隐藏
 - 无异常 console error（已知网络类 Bing 错误可豁免）
