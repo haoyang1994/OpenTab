@@ -279,21 +279,33 @@ async function waitForGrid(page) {
   );
 }
 
-async function resetHome(page, payload) {
-  await page.evaluate(async (data) => {
-    await chrome.storage.local.clear();
+async function writeHomeStorage(page, payload, clear) {
+  const worker = page.context().serviceWorkers()[0];
+  const target = worker || page;
+  await target.evaluate(async ({ data, shouldClear }) => {
+    if (shouldClear) await chrome.storage.local.clear();
     await chrome.storage.local.set(data);
-  }, payload);
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+  }, { data: payload, shouldClear: clear });
+}
+
+async function resetHome(page, payload, options = {}) {
+  const homeUrl = page.url();
+  await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await writeHomeStorage(page, payload, options.clear !== false);
+  await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForSelector('#time', { timeout: 10000 });
   await waitForGrid(page);
   const currentId = payload.currentFolderId || HOME;
-  const expected = (payload.icons || []).filter((icon) => (
+  const expectedIds = (payload.icons || []).filter((icon) => (
     (icon.folderId || HOME) === currentId && !(icon.parentId)
-  )).length;
+  )).map((icon) => icon.id);
   await page.waitForFunction(
-    (count) => document.querySelectorAll('#icons-container .icon-widget[data-id]').length === count,
-    expected,
+    (ids) => {
+      const nodes = [...document.querySelectorAll('#icons-container .icon-widget[data-id]')];
+      if (nodes.length !== ids.length) return false;
+      return ids.every((id) => nodes.some((node) => node.dataset.id === id));
+    },
+    expectedIds,
     { timeout: 10000 }
   );
 }
@@ -307,6 +319,96 @@ async function storageIconIds(page) {
     const result = await chrome.storage.local.get(['icons']);
     return (result.icons || []).map(icon => icon.id);
   });
+}
+
+async function storedIconGraph(page) {
+  return page.evaluate(async () => {
+    const result = await chrome.storage.local.get(['icons']);
+    return (result.icons || []).map((icon) => ({
+      id: icon.id,
+      type: icon.type,
+      parentId: icon.parentId || ''
+    }));
+  });
+}
+
+async function overlayIconIds(page) {
+  return page.$$eval('#folder-icons-container .icon-widget[data-id]', (els) => els.map((el) => el.dataset.id));
+}
+
+async function exportBackupJson(page) {
+  await page.click('#settings-btn');
+  await page.waitForSelector('#settings-panel:not(.hidden)');
+  const text = await page.evaluate(() => new Promise((resolve, reject) => {
+    const orig = URL.createObjectURL.bind(URL);
+    const timer = setTimeout(() => {
+      URL.createObjectURL = orig;
+      reject(new Error('backup export timed out'));
+    }, 4000);
+    URL.createObjectURL = (blob) => {
+      clearTimeout(timer);
+      URL.createObjectURL = orig;
+      blob.text().then(resolve, reject);
+      return orig(blob);
+    };
+    document.getElementById('backup-download-btn').click();
+  }));
+  await page.click('#close-settings');
+  await page.waitForFunction(() => document.getElementById('settings-panel').classList.contains('hidden'));
+  return text;
+}
+
+async function importBackupJson(page, jsonText) {
+  await page.click('#settings-btn');
+  await page.waitForSelector('#settings-panel:not(.hidden)');
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+    page.setInputFiles('#backup-import-file', {
+      name: 'opentab-backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(jsonText)
+    })
+  ]);
+  await page.waitForSelector('#time', { timeout: 10000 });
+  await waitForGrid(page);
+}
+
+async function restoreLatestSnapshot(page) {
+  await page.click('#settings-btn');
+  await page.waitForSelector('#settings-panel:not(.hidden)');
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+    page.click('#backup-restore-snapshot-btn')
+  ]);
+  await page.waitForSelector('#time', { timeout: 10000 });
+  await waitForGrid(page);
+}
+
+function nestedFolderFixture() {
+  return {
+    folders: folders(),
+    currentFolderId: HOME,
+    icons: [
+      folderIcon('pack', '文件夹'),
+      shortcut('p1', 'P1', 'https://example.com/p1', HOME, { parentId: 'pack' }),
+      shortcut('p2', 'P2', 'https://example.com/p2', HOME, { parentId: 'pack' }),
+      shortcut('solo', 'Solo', 'https://example.com/solo')
+    ]
+  };
+}
+
+async function assertNestedFolderKept(page, label) {
+  await page.waitForSelector(widgetSelector('pack'), { timeout: 10000 });
+  assert.deepEqual(await desktopOrder(page), ['pack', 'solo'], `${label}: folder stays on desktop`);
+  await page.locator(widgetSelector('pack')).click();
+  await page.waitForSelector('#folder-overlay:not(.hidden)');
+  assert.deepEqual(await overlayIconIds(page), ['p1', 'p2'], `${label}: children stay in the folder`);
+  const graph = await storedIconGraph(page);
+  assert.equal(graph.find((icon) => icon.id === 'pack')?.type, 'folder', `${label}: folder type persisted`);
+  assert.equal(graph.find((icon) => icon.id === 'p1')?.parentId, 'pack', `${label}: p1 parentId persisted`);
+  assert.equal(graph.find((icon) => icon.id === 'p2')?.parentId, 'pack', `${label}: p2 parentId persisted`);
+  await page.keyboard.press('Escape');
+  await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
 }
 
 function cssEscape(value) {
@@ -1405,6 +1507,53 @@ async function runExtensionE2E() {
     assert.equal(migrated.find((icon) => icon.id === 'old-c')?.folderId, HOME, 'AC6: invalid drawer id remapped in memory');
     assert.ok(migrated.every((icon) => icon.parentId === ''), 'AC6: missing parentId becomes empty');
     console.log('AC6 passed');
+
+    // --- BUG-021 import backup / restore snapshot keeps nested folders ---
+    await resetHome(page, nestedFolderFixture());
+    const exportedBackup = await exportBackupJson(page);
+    const exportedPayload = JSON.parse(exportedBackup);
+    const exportedIcons = Array.isArray(exportedPayload.icons) ? exportedPayload.icons : [];
+    assert.equal(exportedIcons.find((icon) => icon.id === 'pack')?.type, 'folder', 'BUG-021: export includes the folder');
+    assert.equal(exportedIcons.find((icon) => icon.id === 'p1')?.parentId, 'pack', 'BUG-021: export includes nested parentId');
+
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
+    assert.deepEqual(await desktopOrder(page), [], 'BUG-021: desktop is empty before import');
+    await importBackupJson(page, exportedBackup);
+    await assertNestedFolderKept(page, 'BUG-021 import');
+    console.log('BUG-021 import passed');
+
+    await resetHome(page, nestedFolderFixture());
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.click('#backup-save-snapshot-btn');
+    await page.waitForFunction(() => (document.getElementById('backup-status')?.textContent || '').includes('已保存快照'));
+    await page.click('#close-settings');
+    await page.waitForFunction(() => document.getElementById('settings-panel').classList.contains('hidden'));
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME }, { clear: false });
+    assert.deepEqual(await desktopOrder(page), [], 'BUG-021: desktop is empty before snapshot restore');
+    await restoreLatestSnapshot(page);
+    await assertNestedFolderKept(page, 'BUG-021 snapshot restore');
+    console.log('BUG-021 snapshot restore passed');
+
+    // Search Enter on a folder opens the overlay, not "网址无效"
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        folderIcon('pack', '工作夹'),
+        shortcut('p1', 'P1', 'https://example.com/p1', HOME, { parentId: 'pack' }),
+        shortcut('p2', 'P2', 'https://example.com/p2', HOME, { parentId: 'pack' })
+      ]
+    });
+    await page.fill('#search-input', '工作夹');
+    await page.locator('#search-input').press('Enter');
+    await page.waitForSelector('#folder-overlay:not(.hidden)');
+    assert.deepEqual(await overlayIconIds(page), ['p1', 'p2'], 'search Enter on a folder opens overlay children');
+    const searchToast = ((await page.locator('#toast').textContent()) || '');
+    assert.equal(searchToast.includes('网址无效'), false, 'search Enter on a folder does not toast 网址无效');
+    await page.keyboard.press('Escape');
+    await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
+    console.log('search folder Enter passed');
 
     const leftoverPageErrors = errorBuckets.page.filter(error => !isExemptConsoleError(error));
     const leftoverConsole = errorBuckets.console.filter(error => !isExemptConsoleError(error));

@@ -1634,7 +1634,10 @@
       ['dragend', endDesktopDrag], ['click', onGridClick], ['contextmenu', onGridContextMenu], ['keydown', onGridKeydown]
     ].forEach(([type, fn]) => container.addEventListener(type, fn));
     container.addEventListener('dragleave', (event) => {
-      if (!container.contains(event.relatedTarget)) hideDropIndicator();
+      if (!container.contains(event.relatedTarget)) {
+        hideDropIndicator();
+        if (window.OpenTabFolders) OpenTabFolders.clearMergeHover();
+      }
     });
   }
 
@@ -2648,7 +2651,13 @@
 
   OpenTabSearch.init({
     getIcons: () => state.icons,
-    openMatchedIcon: (icon) => openIconTarget(icon)
+    openMatchedIcon: (icon) => {
+      if (window.OpenTabFolders && OpenTabFolders.isFolder(icon)) {
+        OpenTabFolders.openOverlay(icon.id);
+        return;
+      }
+      openIconTarget(icon);
+    }
   });
   if (window.OpenTabFolders) {
     OpenTabFolders.init({

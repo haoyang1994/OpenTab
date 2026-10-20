@@ -2,6 +2,7 @@
   const ICON_TYPE_FOLDER = 'folder';
   const DEFAULT_FOLDER_NAME = '文件夹';
   const MERGE_HOVER_MS = 500;
+  const WHEEL_THROTTLE_MS = 250;
   const OPEN_ALL_CONFIRM_LIMIT = 10;
   const HOME_GROUP_ID = 'folder-home';
   const LEGACY_PRESET_GROUP_IDS = ['folder-blog', 'folder-tools', 'folder-ops'];
@@ -79,6 +80,7 @@
   let mergeTimer = 0;
   let mergeTargetId = null;
   let mergeSourceId = null;
+  let lastWheelAt = 0;
   let openFolderId = null;
   let activeRoot = null;
   let dialogResolver = null;
@@ -129,10 +131,6 @@
     ));
   }
 
-  function folderIds() {
-    return new Set(state().icons.filter(isFolder).map((icon) => icon.id));
-  }
-
   function snapshot() {
     return {
       icons: state().icons.map((icon) => ({ ...icon })),
@@ -171,13 +169,14 @@
   }
 
   function repairIconGraph(icons) {
-    const folders = folderIds();
-    icons.forEach((icon) => {
+    const list = Array.isArray(icons) ? icons : [];
+    const folders = new Set(list.filter(isFolder).map((icon) => icon.id));
+    list.forEach((icon) => {
       if (icon.parentId && !folders.has(icon.parentId)) icon.parentId = '';
       if (icon.parentId === icon.id) icon.parentId = '';
       if (isFolder(icon)) icon.parentId = '';
     });
-    return icons;
+    return list;
   }
 
   function normalizeLoadedIcon(icon, validFolderIds, homeId, normalizeType) {
@@ -615,6 +614,7 @@
     if (!icon) return;
     if (icon.folderId === groupId && !icon.parentId) return;
     const before = snapshot();
+    const fromParent = icon.parentId || '';
     const moving = isFolder(icon)
       ? [icon, ...getChildren(icon.id)]
       : [icon];
@@ -622,6 +622,7 @@
       item.folderId = groupId;
       if (item.id === icon.id) item.parentId = '';
     });
+    if (fromParent) dissolveIfNeeded(fromParent);
     persistUndo(before, '已移动到分组');
     host.refreshIconViews(true);
   }
@@ -822,6 +823,9 @@
       ui.tabsBar.addEventListener('wheel', (event) => {
         if (!event.deltaY) return;
         event.preventDefault();
+        const now = Date.now();
+        if (now - lastWheelAt < WHEEL_THROTTLE_MS) return;
+        lastWheelAt = now;
         switchGroupByOffset(event.deltaY > 0 ? 1 : -1);
       }, { passive: false });
     }

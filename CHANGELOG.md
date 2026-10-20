@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Type-to-search no longer intercepts keys when focus is on a `button`, `a[href]`, `[role=button]`, `summary`, or `[tabindex]`. Space on the + tile, toast Undo, engine buttons, or the todo toggle activates the control instead of inserting a space in the search box. Chinese IME (`Process` / keyCode 229 / `compositionstart`) focuses search without `preventDefault`.
+- Importing a backup or restoring a snapshot keeps nested folder children (`repairIconGraph` now uses the payload's own folder ids)
+- Search Enter on a folder name opens the folder overlay instead of "网址无效"
+- Dragging a nested icon onto a group tab dissolves a leftover-1 folder
+- Merge-hover timer clears on `dragleave`; group-tab wheel switching is throttled
 
 ### Changed
 
