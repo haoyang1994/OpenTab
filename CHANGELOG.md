@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local search history (20 items, deduped, can be disabled or cleared)
 - Open search results in a new tab, plus Ctrl/Cmd+Enter and middle-click
 - E2E coverage for the search flow in `tests/search.test.mjs`
+- Desktop folders: hover one shortcut on another for ~500ms to create a folder named 「文件夹」; drop onto a folder to add; both are undoable
+- Folder overlay: reorder, drag out to the desktop, inline rename, Esc/outside to close; a folder with one leftover icon dissolves
+- Open all: folder middle-click and context menu; in-page confirm when opening more than 10 tabs
+- Group tabs above the grid (click, wheel, Alt+1–9, create/rename/delete). Deleting a group asks whether to move icons to the default group or delete them too (undoable)
+- `folders.js` groups API (`HOME_GROUP_ID`, `STORAGE_KEYS`, `ensureGroups`, `addGroupRecord`, `removeGroupRecord`, `iconsInGroup`, `assignIconGroup`) for later bookmark import
 
 ### Fixed
 
@@ -28,8 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Shortcut, tool, and SSH icons render as real `<a href>` links (middle-click / Ctrl / Cmd open a new tab)
-- Escape closes the topmost UI layer (context menu, modal, settings, timezone, calendar, drawer, todos)
-- README documents + add, drag reorder, middle-click, undo delete, and Esc
+- Escape closes the topmost UI layer (context menu, modal, folder overlay, inline dialog, settings, timezone, calendar, todos) and restores focus from a stack
+- Icon `data-id` selectors use `CSS.escape`
+- Folder/group `prompt` / `confirm` / `alert` replaced with in-page controls (the SSH incomplete-config `alert` remains)
+- README documents + add, drag reorder, folders, group tabs, middle-click, undo delete, and Esc
 - Replaced the application icon and three bundled default backgrounds with project-owned assets (Apache-2.0; stills and icon composition Created with Grok Imagine; SVG/PNGs hand-traced and rasterized). Saved Pexels preset paths migrate to the matching new images (or fall back to the Bing default) so existing installs do not 404.
 - Search logic lives in `search.js`; `home.js` only wires icons into name matching and backup
 
@@ -45,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `contextMenus` permission and the unused page context-menu item “Add Icon”
+- Left workspace drawer and the 6px left-edge hover that auto-opened it
 
 ## [1.1.0] - 2026-10-20
 

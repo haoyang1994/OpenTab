@@ -208,23 +208,45 @@ function isExemptConsoleError(text) {
   return text.includes('Failed to fetch Bing image');
 }
 
-function shortcut(id, name, url, folderId = HOME) {
+function shortcut(id, name, url, folderId = HOME, extra = {}) {
   return {
     id,
     name,
     url,
     folderId,
     type: 'shortcut',
+    parentId: '',
     customIconUrl: '',
     emoji: '',
     uploadedIconDataUrl: PIXEL,
     resolvedIconUrl: PIXEL,
-    iconCandidates: [PIXEL]
+    iconCandidates: [PIXEL],
+    ...extra
+  };
+}
+
+function folderIcon(id, name, folderId = HOME) {
+  return {
+    id,
+    name,
+    type: 'folder',
+    folderId,
+    parentId: '',
+    url: '',
+    emoji: '',
+    customIconUrl: '',
+    uploadedIconDataUrl: '',
+    resolvedIconUrl: '',
+    iconCandidates: []
   };
 }
 
 function folders(...extra) {
   return [{ id: HOME, name: '主页' }, ...extra];
+}
+
+function groupSelector(id) {
+  return `#group-tabs [data-group-id="${cssEscape(id)}"]`;
 }
 
 function readMasterManifest() {
@@ -249,6 +271,7 @@ function readMasterManifest() {
 
 async function waitForGrid(page) {
   await page.waitForSelector('#add-shortcut-tile', { timeout: 10000 });
+  await page.waitForSelector('#group-tabs .group-tab', { timeout: 10000 });
   await page.waitForFunction(
     () => performance.getEntriesByName('opentab:grid-ready').length > 0,
     null,
@@ -264,6 +287,15 @@ async function resetHome(page, payload) {
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForSelector('#time', { timeout: 10000 });
   await waitForGrid(page);
+  const currentId = payload.currentFolderId || HOME;
+  const expected = (payload.icons || []).filter((icon) => (
+    (icon.folderId || HOME) === currentId && !(icon.parentId)
+  )).length;
+  await page.waitForFunction(
+    (count) => document.querySelectorAll('#icons-container .icon-widget[data-id]').length === count,
+    expected,
+    { timeout: 10000 }
+  );
 }
 
 async function desktopOrder(page) {
@@ -277,9 +309,42 @@ async function storageIconIds(page) {
   });
 }
 
-async function html5Drag(page, fromId, toSelector, where = 'left') {
-  await page.evaluate(({ fromId, toSelector, where }) => {
-    const src = document.querySelector(`#icons-container .icon-widget[data-id="${fromId}"]`);
+function cssEscape(value) {
+  const string = String(value);
+  let result = '';
+  for (let index = 0; index < string.length; index += 1) {
+    const code = string.charCodeAt(index);
+    const char = string[index];
+    if (code === 0) {
+      result += '\uFFFD';
+    } else if (
+      (code >= 1 && code <= 31) || code === 127
+      || (index === 0 && code >= 48 && code <= 57)
+      || (index === 1 && code >= 48 && code <= 57 && string.charCodeAt(0) === 45)
+    ) {
+      result += `\\${code.toString(16)} `;
+    } else if (
+      code >= 128
+      || char === '-' || char === '_'
+      || (code >= 48 && code <= 57)
+      || (code >= 65 && code <= 90)
+      || (code >= 97 && code <= 122)
+    ) {
+      result += char;
+    } else {
+      result += `\\${char}`;
+    }
+  }
+  return result;
+}
+
+function widgetSelector(id, root = '#icons-container') {
+  return `${root} .icon-widget[data-id="${cssEscape(id)}"]`;
+}
+
+async function html5Drag(page, fromId, toSelector, where = 'left', fromRoot = '#icons-container') {
+  await page.evaluate(({ fromId, toSelector, where, fromRoot }) => {
+    const src = document.querySelector(`${fromRoot} .icon-widget[data-id="${CSS.escape(fromId)}"]`);
     const dst = document.querySelector(toSelector);
     if (!src || !dst) throw new Error(`drag nodes missing ${fromId} -> ${toSelector}`);
     const dt = new DataTransfer();
@@ -291,7 +356,50 @@ async function html5Drag(page, fromId, toSelector, where = 'left') {
     dst.dispatchEvent(new DragEvent('dragover', opts));
     dst.dispatchEvent(new DragEvent('drop', opts));
     src.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
-  }, { fromId, toSelector, where });
+  }, { fromId, toSelector, where, fromRoot });
+}
+
+async function html5DragHover(page, fromId, toId, hoverMs = 650) {
+  await page.evaluate(async ({ fromId, toId, hoverMs }) => {
+    const src = document.querySelector(`#icons-container .icon-widget[data-id="${CSS.escape(fromId)}"]`);
+    const dst = document.querySelector(`#icons-container .icon-widget[data-id="${CSS.escape(toId)}"]`);
+    if (!src || !dst) throw new Error(`hover nodes missing ${fromId} -> ${toId}`);
+    const dt = new DataTransfer();
+    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const rect = dst.getBoundingClientRect();
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer: dt,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2
+    };
+    dst.dispatchEvent(new DragEvent('dragover', opts));
+    await new Promise((resolve) => setTimeout(resolve, hoverMs));
+    src.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  }, { fromId, toId, hoverMs });
+}
+
+async function interceptTabCreates(page) {
+  await page.evaluate(() => {
+    window.__opentabCreatedTabs = [];
+    if (chrome.tabs && typeof chrome.tabs.create === 'function') {
+      chrome.tabs.create = (opts, cb) => {
+        window.__opentabCreatedTabs.push(opts && opts.url);
+        const tab = { id: window.__opentabCreatedTabs.length };
+        if (typeof cb === 'function') cb(tab);
+        return Promise.resolve(tab);
+      };
+    }
+    window.open = (url) => {
+      window.__opentabCreatedTabs.push(url);
+      return null;
+    };
+  });
+}
+
+async function createdTabUrls(page) {
+  return page.evaluate(() => window.__opentabCreatedTabs || []);
 }
 
 async function runExtensionE2E() {
@@ -764,13 +872,10 @@ async function runExtensionE2E() {
         shortcut('b', 'B', 'https://example.com/b')
       ]
     });
-    await page.click('#workspace-btn');
-    await page.waitForSelector('#workspace-drawer:not(.hidden)');
     await page.evaluate(() => {
-      const src = document.querySelector('#workspace-icons-container .icon-widget[data-id="b"]');
-      const dst = [...document.querySelectorAll('#workspace-folder-tabs .folder-tab')]
-        .find(tab => (tab.textContent || '').includes('X'));
-      if (!src || !dst) throw new Error('chip or folder tab missing');
+      const src = document.querySelector(`#icons-container .icon-widget[data-id="${CSS.escape('b')}"]`);
+      const dst = document.querySelector(`#group-tabs [data-group-id="${CSS.escape('folder-x')}"]`);
+      if (!src || !dst) throw new Error('icon or group tab missing');
       const dt = new DataTransfer();
       src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
       const rect = dst.getBoundingClientRect();
@@ -957,6 +1062,349 @@ async function runExtensionE2E() {
       `T11: popup-created icon visible, got ${popupNames.join(',')}`
     );
     console.log('T11 passed');
+
+    // --- CSS.escape: ids with CSS special characters ---
+    const specialId = 'id.with:special';
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        shortcut(specialId, 'Special', 'https://example.com/special'),
+        shortcut('b', 'B', 'https://example.com/b')
+      ]
+    });
+    const producedSelector = await page.evaluate((id) => window.OpenTabFolders.iconSelector(id), specialId);
+    assert.equal(
+      producedSelector,
+      `.icon-widget[data-id="${cssEscape(specialId)}"]`,
+      'iconSelector must CSS.escape ids'
+    );
+    assert.equal(
+      await page.locator(widgetSelector(specialId)).count(),
+      1,
+      'CSS.escape selector finds the special-id icon'
+    );
+    await html5Drag(page, specialId, widgetSelector('b'), 'left');
+    await page.waitForTimeout(120);
+    assert.deepEqual(await desktopOrder(page), [specialId, 'b'], 'special-id icon can be dragged via escaped selector');
+    console.log('CSS.escape special-id passed');
+
+    // --- Esc focus restore stack (nested layers) ---
+    await resetHome(page, {
+      folders: folders({ id: 'folder-x', name: 'X' }),
+      currentFolderId: HOME,
+      icons: [
+        folderIcon('pack', '文件夹'),
+        shortcut('p1', 'P1', 'https://example.com/p1', HOME, { parentId: 'pack' }),
+        shortcut('p2', 'P2', 'https://example.com/p2', HOME, { parentId: 'pack' }),
+        shortcut('solo', 'Solo', 'https://example.com/solo')
+      ]
+    });
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    assert.equal(await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden')), false);
+    assert.equal(
+      await page.evaluate(() => document.activeElement && document.activeElement.id),
+      'add-shortcut-tile',
+      'focus stack: closing modal restores the add tile'
+    );
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#settings-panel.hidden');
+    assert.equal(
+      await page.evaluate(() => document.activeElement && document.activeElement.id),
+      'settings-btn',
+      'focus stack: closing settings restores the settings button'
+    );
+
+    await page.locator(widgetSelector('pack')).click();
+    await page.waitForSelector('#folder-overlay:not(.hidden)');
+    await page.locator('#folder-icons-container .add-shortcut-tile').click();
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    assert.equal(
+      await page.locator('#folder-overlay').evaluate((el) => el.classList.contains('hidden')),
+      false,
+      'focus stack: first Esc closes the modal only'
+    );
+    assert.equal(
+      await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('add-shortcut-tile')),
+      true,
+      'focus stack: closing modal restores the overlay add tile'
+    );
+    await page.keyboard.press('Escape');
+    await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
+    assert.equal(
+      await page.evaluate(() => document.activeElement && document.activeElement.dataset.id),
+      'pack',
+      'focus stack: closing overlay restores the folder tile'
+    );
+    console.log('focus stack passed');
+
+    // --- AC1 merge into folder ---
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('a', 'A', 'https://example.com/a'),
+        shortcut('b', 'B', 'https://example.com/b'),
+        shortcut('c', 'C', 'https://example.com/c')
+      ]
+    });
+    await html5DragHover(page, 'b', 'a');
+    await page.waitForSelector('#icons-container .icon-widget.icon-folder', { timeout: 5000 });
+    const ac1Desktop = await desktopOrder(page);
+    assert.equal(ac1Desktop.length, 2, 'AC1: desktop has folder + leftover C');
+    assert.ok(ac1Desktop.includes('c'), 'AC1: C stays on desktop');
+    const folderId = ac1Desktop.find((id) => id !== 'c');
+    const folderName = await page.locator(`${widgetSelector(folderId)} .icon-name`).textContent();
+    assert.equal((folderName || '').trim(), '文件夹', 'AC1: default folder name');
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.ok(((await page.locator('#toast').textContent()) || '').includes('撤销'), 'AC1: undo toast');
+    await page.screenshot({ path: path.join(ARTIFACTS, 'ac1-folder-merge.png') });
+    await page.locator('#toast button').click();
+    await page.waitForTimeout(200);
+    assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c'], 'AC1: undo restores A and B');
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        folderIcon('pack', '文件夹'),
+        shortcut('a', 'A', 'https://example.com/a', HOME, { parentId: 'pack' }),
+        shortcut('b', 'B', 'https://example.com/b', HOME, { parentId: 'pack' }),
+        shortcut('c', 'C', 'https://example.com/c')
+      ]
+    });
+    await html5DragHover(page, 'c', 'pack');
+    await page.waitForTimeout(200);
+    assert.deepEqual(await desktopOrder(page), ['pack'], 'AC1: drop onto folder hides C');
+    const storedAfterJoin = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      return (result.icons || []).map((icon) => ({ id: icon.id, parentId: icon.parentId || '' }));
+    });
+    assert.equal(storedAfterJoin.find((icon) => icon.id === 'c')?.parentId, 'pack', 'AC1: C parentId is the folder');
+    console.log('AC1 passed');
+
+    // --- AC2 overlay, rename, drag-out, dissolve ---
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        folderIcon('pack', '文件夹'),
+        shortcut('a', 'A', 'https://example.com/a', HOME, { parentId: 'pack' }),
+        shortcut('b', 'B', 'https://example.com/b', HOME, { parentId: 'pack' }),
+        shortcut('c', 'C', 'https://example.com/c', HOME, { parentId: 'pack' })
+      ]
+    });
+    await page.locator(widgetSelector('pack')).click();
+    await page.waitForSelector('#folder-overlay:not(.hidden)');
+    const overlayOrder = await page.$$eval('#folder-icons-container .icon-widget[data-id]', (els) => els.map((el) => el.dataset.id));
+    assert.deepEqual(overlayOrder, ['a', 'b', 'c'], 'AC2: overlay lists children');
+    await html5Drag(page, 'c', widgetSelector('a', '#folder-icons-container'), 'left', '#folder-icons-container');
+    await page.waitForTimeout(120);
+    assert.deepEqual(
+      await page.$$eval('#folder-icons-container .icon-widget[data-id]', (els) => els.map((el) => el.dataset.id)),
+      ['c', 'a', 'b'],
+      'AC2: reorder inside overlay'
+    );
+    await page.fill('#folder-title-input', '工作');
+    await page.locator('#folder-title-input').press('Enter');
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'ac2-folder-overlay.png') });
+    await html5Drag(page, 'c', '#folder-overlay-backdrop', 'center', '#folder-icons-container');
+    await page.waitForTimeout(200);
+    assert.ok((await desktopOrder(page)).includes('c'), 'AC2: dragged-out icon returns to desktop');
+    assert.equal(await page.locator('#folder-overlay').evaluate((el) => el.classList.contains('hidden')), false, 'AC2: overlay stays open with 2 children');
+    await page.keyboard.press('Escape');
+    await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
+    await page.locator(widgetSelector('pack')).click();
+    await page.waitForSelector('#folder-overlay:not(.hidden)');
+    await page.locator('#folder-overlay-backdrop').click({ position: { x: 8, y: 8 } });
+    await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
+    const renamed = await page.locator(`${widgetSelector('pack')} .icon-name`).textContent();
+    assert.equal((renamed || '').trim(), '工作', 'AC2: inline rename persisted');
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        folderIcon('pack', '文件夹'),
+        shortcut('a', 'A', 'https://example.com/a', HOME, { parentId: 'pack' }),
+        shortcut('b', 'B', 'https://example.com/b', HOME, { parentId: 'pack' })
+      ]
+    });
+    await page.locator(widgetSelector('pack')).click();
+    await page.waitForSelector('#folder-overlay:not(.hidden)');
+    await html5Drag(page, 'a', '#folder-overlay-backdrop', 'center', '#folder-icons-container');
+    await page.waitForTimeout(250);
+    assert.equal(await page.locator(widgetSelector('pack')).count(), 0, 'AC2: folder dissolves at one leftover icon');
+    assert.ok((await desktopOrder(page)).includes('b'), 'AC2: leftover icon lands on desktop');
+    console.log('AC2 passed');
+
+    // --- AC3 open all ---
+    const manyChildren = Array.from({ length: 11 }, (_, i) => (
+      shortcut(`n${i}`, `N${i}`, `https://example.com/n${i}`, HOME, { parentId: 'pack' })
+    ));
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        folderIcon('pack', '工作'),
+        shortcut('a', 'A', 'https://example.com/a', HOME, { parentId: 'pack' }),
+        shortcut('b', 'B', 'https://example.com/b', HOME, { parentId: 'pack' })
+      ]
+    });
+    await interceptTabCreates(page);
+    await page.locator(widgetSelector('pack')).click({ button: 'right' });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    assert.equal(await page.locator('#open-all-icon-btn').evaluate((el) => el.classList.contains('hidden')), false, 'AC3: 全部打开 visible');
+    await page.click('#open-all-icon-btn');
+    await page.waitForTimeout(200);
+    assert.deepEqual(await createdTabUrls(page), ['https://example.com/a', 'https://example.com/b'], 'AC3: context open-all opens N tabs');
+    await interceptTabCreates(page);
+    await page.locator(widgetSelector('pack')).click({ button: 'middle' });
+    await page.waitForTimeout(200);
+    assert.equal((await createdTabUrls(page)).length, 2, 'AC3: middle-click opens N tabs');
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [folderIcon('pack', '工作'), ...manyChildren]
+    });
+    await interceptTabCreates(page);
+    await page.locator(widgetSelector('pack')).click({ button: 'right' });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#open-all-icon-btn');
+    await page.waitForSelector('#inline-dialog:not(.hidden)');
+    assert.ok(((await page.locator('#inline-dialog-message').textContent()) || '').includes('11'), 'AC3: confirm when >10');
+    await page.locator('#inline-dialog-actions button', { hasText: '取消' }).click();
+    await page.locator('#inline-dialog').waitFor({ state: 'hidden' });
+    assert.equal((await createdTabUrls(page)).length, 0, 'AC3: cancel does not open tabs');
+    await page.locator(widgetSelector('pack')).click({ button: 'right' });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#open-all-icon-btn');
+    await page.waitForSelector('#inline-dialog:not(.hidden)');
+    await page.locator('#inline-dialog-actions button', { hasText: '打开' }).click();
+    await page.waitForTimeout(200);
+    assert.equal((await createdTabUrls(page)).length, 11, 'AC3: confirm opens 11 tabs');
+    console.log('AC3 passed');
+
+    // --- AC4 group tabs replace drawers ---
+    await resetHome(page, {
+      folders: folders({ id: 'folder-x', name: 'X' }),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('a', 'A', 'https://example.com/a'),
+        shortcut('x1', 'X1', 'https://example.com/x1', 'folder-x')
+      ]
+    });
+    assert.equal(await page.locator('#workspace-drawer').count(), 0, 'AC4: drawer removed');
+    assert.equal(await page.locator('#workspace-btn').count(), 0, 'AC4: drawer button removed');
+    assert.ok(await page.locator(groupSelector(HOME)).isVisible(), 'AC4: home group tab visible');
+    await page.locator(groupSelector('folder-x')).click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(await desktopOrder(page), ['x1'], 'AC4: click group tab switches grid');
+    await page.locator('#group-tabs-bar').hover();
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(400);
+    assert.deepEqual(await desktopOrder(page), ['a'], 'AC4: wheel switches group');
+    await page.keyboard.press('Alt+Digit2');
+    await page.waitForTimeout(400);
+    assert.deepEqual(await desktopOrder(page), ['x1'], 'AC4: Alt+2 jumps to second group');
+    await page.screenshot({ path: path.join(ARTIFACTS, 'ac4-group-tabs.png') });
+
+    await page.click('#add-group-btn');
+    await page.waitForSelector('#new-group-input');
+    await page.fill('#new-group-input', '新组');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => [...document.querySelectorAll('.group-tab')].some((tab) => tab.textContent.includes('新组')));
+    const newGroupId = await page.evaluate(() => {
+      const tab = [...document.querySelectorAll('.group-tab')].find((node) => node.textContent.includes('新组'));
+      return tab ? tab.dataset.groupId : '';
+    });
+    assert.ok(newGroupId, 'AC4: created group tab');
+    await page.locator(groupSelector(newGroupId)).dblclick();
+    await page.waitForSelector('.group-rename-input');
+    await page.fill('.group-rename-input', '改名组');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => [...document.querySelectorAll('.group-tab')].some((tab) => tab.textContent.includes('改名组')));
+    const renamedGroupId = await page.evaluate(() => {
+      const tab = [...document.querySelectorAll('.group-tab')].find((node) => node.textContent.includes('改名组'));
+      return tab ? tab.dataset.groupId : '';
+    });
+    await page.locator(groupSelector(HOME)).click();
+    await page.waitForTimeout(400);
+    await html5Drag(page, 'a', groupSelector(renamedGroupId), 'center');
+    await page.waitForTimeout(400);
+    await page.locator(groupSelector(renamedGroupId)).click({ button: 'right' });
+    await page.waitForSelector('#inline-dialog:not(.hidden)');
+    await page.locator('#inline-dialog-actions button', { hasText: '移到默认分组' }).click();
+    await page.locator('#inline-dialog').waitFor({ state: 'hidden' });
+    await page.locator(groupSelector(HOME)).click();
+    await page.waitForTimeout(200);
+    assert.ok((await desktopOrder(page)).includes('a'), 'AC4: move-to-default keeps icon');
+    await page.waitForSelector('#toast:not(.hidden)');
+    await page.locator('#toast button').click();
+    await page.waitForTimeout(200);
+    assert.ok(
+      await page.evaluate(() => [...document.querySelectorAll('.group-tab')].some((tab) => tab.textContent.includes('改名组'))),
+      'AC4: undo restores group'
+    );
+
+    const againId = await page.evaluate(() => {
+      const tab = [...document.querySelectorAll('.group-tab')].find((node) => node.textContent.includes('改名组'));
+      return tab ? tab.dataset.groupId : '';
+    });
+    await page.locator(groupSelector(againId)).click({ button: 'right' });
+    await page.waitForSelector('#inline-dialog:not(.hidden)');
+    await page.locator('#inline-dialog-actions button', { hasText: '一起删除' }).click();
+    await page.locator('#inline-dialog').waitFor({ state: 'hidden' });
+    await page.locator(groupSelector(HOME)).click();
+    await page.waitForTimeout(200);
+    assert.ok(!(await desktopOrder(page)).includes('a'), 'AC4: delete-with-icons removes A');
+
+    await page.mouse.move(2, 240);
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('#workspace-drawer').count(), 0, 'AC4: left-edge hover does not open a drawer');
+    assert.ok(await page.locator('#group-tabs-bar').isVisible(), 'AC4: group tabs remain');
+    console.log('AC4 passed');
+
+    // --- AC6 lossless drawer migration ---
+    await resetHome(page, {
+      folders: [
+        { id: HOME, name: '主页' },
+        { id: 'folder-blog', name: '博客' },
+        { id: 'folder-work', name: '工作' },
+        { id: 'folder-tools', name: '工具' }
+      ],
+      currentFolderId: 'folder-work',
+      icons: [
+        { id: 'old-a', name: 'OldA', url: 'https://example.com/a', folderId: HOME, type: 'shortcut', uploadedIconDataUrl: PIXEL, resolvedIconUrl: PIXEL },
+        { id: 'old-b', name: 'OldB', url: 'https://example.com/b', folderId: 'folder-work', type: 'shortcut', uploadedIconDataUrl: PIXEL, resolvedIconUrl: PIXEL },
+        { id: 'old-c', name: 'OldC', url: 'https://example.com/c', folderId: 'folder-blog', type: 'shortcut', uploadedIconDataUrl: PIXEL, resolvedIconUrl: PIXEL }
+      ]
+    });
+    const tabNames = await page.$$eval('#group-tabs .group-tab', (els) => els.map((el) => el.childNodes[0].textContent.trim()));
+    assert.deepEqual(tabNames, ['主页', '工作'], 'AC6: legacy preset drawers dropped, custom kept');
+    assert.deepEqual(await desktopOrder(page), ['old-b'], 'AC6: currentFolderId still selects 工作');
+    await page.locator(groupSelector(HOME)).click();
+    await page.waitForTimeout(250);
+    assert.deepEqual(await desktopOrder(page), ['old-a', 'old-c'], 'AC6: blog icons move to home, order kept');
+    const migrated = await page.evaluate(() => (
+      window.OpenTabFolders.visibleIcons('folder-home').map((icon) => ({
+        id: icon.id,
+        folderId: icon.folderId,
+        parentId: icon.parentId || ''
+      }))
+    ));
+    assert.equal(migrated.find((icon) => icon.id === 'old-c')?.folderId, HOME, 'AC6: invalid drawer id remapped in memory');
+    assert.ok(migrated.every((icon) => icon.parentId === ''), 'AC6: missing parentId becomes empty');
+    console.log('AC6 passed');
 
     const leftoverPageErrors = errorBuckets.page.filter(error => !isExemptConsoleError(error));
     const leftoverConsole = errorBuckets.console.filter(error => !isExemptConsoleError(error));

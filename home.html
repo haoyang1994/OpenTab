@@ -113,19 +113,14 @@
         <div id="todo-list"></div>
       </aside>
 
+      <div id="group-tabs-bar" class="group-tabs-bar">
+        <div id="group-tabs" class="group-tabs" role="tablist" aria-label="分组"></div>
+        <button id="add-group-btn" class="group-add-btn" type="button" title="新建分组" aria-label="新建分组">+</button>
+      </div>
       <div id="icons-container"></div>
       <p id="icons-empty-hint" class="icons-empty-hint hidden">点击 + 添加常用网站，或在空白处右键</p>
       <div id="drag-live" class="sr-only" aria-live="polite"></div>
     </div>
-
-    <div id="desktop-folder-label" aria-live="polite">主页</div>
-
-    <button id="workspace-btn" class="floating-btn" title="抽屉">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M3 7h5l2 2h11v10a2 2 0 0 1-2 2H3z"></path>
-        <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path>
-      </svg>
-    </button>
 
     <button id="todo-toggle-btn" class="floating-btn" title="待办" aria-label="待办">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -133,22 +128,6 @@
         <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
       </svg>
     </button>
-
-    <aside id="workspace-drawer" class="workspace-drawer hidden">
-      <div class="workspace-header">
-        <div class="workspace-actions">
-          <button id="add-folder-btn" class="btn-small ghost icon-only" type="button" title="新建抽屉" aria-label="新建抽屉">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 5v14M5 12h14"></path>
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div id="workspace-folder-tabs" class="workspace-folder-tabs"></div>
-      <p class="workspace-hint">右键抽屉名可删除（默认主页不可删除）</p>
-      <div id="workspace-icons-container" class="workspace-icons-container"></div>
-      <p id="workspace-empty" class="workspace-empty hidden">这个文件夹还没有图标。</p>
-    </aside>
 
     <button id="refresh-bg-btn" class="floating-btn" title="切换 Bing 壁纸">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -261,8 +240,22 @@
     </div>
 
     <div id="icon-context-menu" class="icon-context-menu hidden">
+      <button id="open-all-icon-btn" type="button" class="hidden">全部打开</button>
       <button id="edit-icon-btn" type="button">编辑</button>
       <button id="delete-icon-btn" type="button" class="danger">删除</button>
+    </div>
+
+    <div id="folder-overlay" class="folder-overlay hidden">
+      <div id="folder-overlay-backdrop" class="folder-overlay-backdrop"></div>
+      <div id="folder-panel" class="folder-panel" role="dialog" aria-modal="true" aria-labelledby="folder-title-input">
+        <input id="folder-title-input" class="folder-title-input" type="text" maxlength="24" aria-label="文件夹名称">
+        <div id="folder-icons-container" class="folder-icons-container"></div>
+      </div>
+    </div>
+
+    <div id="inline-dialog" class="inline-dialog hidden" role="dialog" aria-modal="true">
+      <p id="inline-dialog-message" class="inline-dialog-message"></p>
+      <div id="inline-dialog-actions" class="inline-dialog-actions"></div>
     </div>
 
     <div id="icon-drop-indicator" hidden></div>
@@ -504,6 +497,7 @@
   <script src="vendor/flatpickr/flatpickr.min.js"></script>
   <script src="vendor/flatpickr/l10n/zh.js"></script>
   <script src="search.js"></script>
+  <script src="folders.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

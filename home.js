@@ -189,14 +189,6 @@
     weatherLocationInline: document.getElementById('weather-location-inline'),
     weatherTemp: document.getElementById('weather-temp'),
 
-    workspaceBtn: document.getElementById('workspace-btn'),
-    desktopFolderLabel: document.getElementById('desktop-folder-label'),
-    workspaceDrawer: document.getElementById('workspace-drawer'),
-    workspaceFolderTabs: document.getElementById('workspace-folder-tabs'),
-    workspaceIconsContainer: document.getElementById('workspace-icons-container'),
-    workspaceEmpty: document.getElementById('workspace-empty'),
-    addFolderBtn: document.getElementById('add-folder-btn'),
-
     refreshBgBtn: document.getElementById('refresh-bg-btn'),
     settingsBtn: document.getElementById('settings-btn'),
     settingsPanel: document.getElementById('settings-panel'),
@@ -329,8 +321,6 @@
   const focusStack = [];
   let gridEventsBound = false;
   const ICON_DND_TYPE = 'application/x-opentab-icon';
-  let workspaceEdgeOpenTimer = null;
-  let suppressWorkspaceAutoCloseUntil = 0;
   let clockTimerId = null;
   let weatherTimerId = null;
   let weatherAbortController = null;
@@ -340,18 +330,7 @@
   }
 
   function ensureFolders(folders) {
-    const normalized = Array.isArray(folders)
-      ? folders
-        .filter((f) => f && f.id && f.name)
-        .map((f) => ({ id: f.id, name: f.name }))
-      : [];
-
-    const byId = new Map(normalized.map((f) => [f.id, f]));
-    DEFAULT_FOLDERS.forEach((f) => {
-      if (!byId.has(f.id)) byId.set(f.id, { ...f });
-    });
-
-    return Array.from(byId.values());
+    return window.OpenTabFolders ? OpenTabFolders.ensureGroups(folders) : (Array.isArray(folders) ? folders : DEFAULT_FOLDERS.slice());
   }
 
   function getFolderById(folderId) {
@@ -374,6 +353,7 @@
   function normalizeIconType(rawType) {
     if (rawType === ICON_TYPE_SSH) return ICON_TYPE_SSH;
     if (rawType === ICON_TYPE_TOOL) return ICON_TYPE_TOOL;
+    if (rawType === 'folder') return 'folder';
     return ICON_TYPE_SHORTCUT;
   }
 
@@ -458,7 +438,8 @@
     const validFolderIds = new Set(normalized.folders.map((folder) => folder.id));
     normalized.icons = Array.isArray(normalized.icons) ? normalized.icons.map((icon) => ({
       ...icon,
-      type: normalizeIconType(icon.type),
+      type: icon.type === 'folder' ? 'folder' : normalizeIconType(icon.type),
+      parentId: typeof icon.parentId === 'string' ? icon.parentId : '',
       folderId: validFolderIds.has(icon.folderId) ? icon.folderId : HOME_FOLDER_ID,
       customIconUrl: icon.customIconUrl || '',
       emoji: icon.emoji || '',
@@ -496,6 +477,7 @@
     normalized.gradientFlow = Boolean(normalized.gradientFlow);
     normalized.minimalMode = Boolean(normalized.minimalMode);
     normalized.background = migrateBackground(normalized.background);
+    if (window.OpenTabFolders) OpenTabFolders.repairIconGraph(normalized.icons);
     return normalized;
   }
 
@@ -660,18 +642,35 @@
     toastTimer = setTimeout(() => { toast.classList.add('hidden'); pendingUndo = null; }, opts.duration || 6000);
   }
 
-  function rememberFocus(el) { focusStack.push(el || document.activeElement); }
+  function isFocusable(el) {
+    if (!el || !document.contains(el) || typeof el.focus !== 'function' || el.disabled) return false;
+    if (el.closest && el.closest('.hidden')) return false;
+    const style = window.getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  }
+  function rememberFocus(el) {
+    const target = el || document.activeElement;
+    if (target && target !== document.body) focusStack.push(target);
+  }
   function restoreFocus() {
-    const el = focusStack.pop();
-    if (el && document.contains(el) && el.focus) el.focus();
+    while (focusStack.length) {
+      const el = focusStack.pop();
+      if (isFocusable(el)) {
+        el.focus();
+        return el;
+      }
+    }
+    return null;
   }
   function hideDropIndicator() {
     if (elements.dropIndicator) elements.dropIndicator.style.display = 'none';
   }
   function refreshIconViews(animated) {
-    renderFolderTabs();
-    renderWorkspacePreview();
+    if (window.OpenTabFolders) OpenTabFolders.renderChrome();
     renderIconsForCurrentFolder(animated);
+  }
+  function iconSelector(id) {
+    return `.icon-widget[data-id="${CSS.escape(String(id))}"]`;
   }
 
   function readFileAsDataUrl(file) {
@@ -684,7 +683,8 @@
   }
 
   function getIconsForFolder(folderId) {
-    return state.icons.filter((icon) => icon.folderId === folderId);
+    if (window.OpenTabFolders) return OpenTabFolders.visibleIcons(folderId);
+    return state.icons.filter((icon) => icon.folderId === folderId && !(icon.parentId));
   }
 
   function getIconLabel(icon) {
@@ -961,7 +961,6 @@
       clearInterval(weatherTimerId);
       weatherTimerId = null;
     }
-    clearWorkspaceEdgeTimer();
     if (weatherAbortController) {
       weatherAbortController.abort();
       weatherAbortController = null;
@@ -980,12 +979,6 @@
         img.removeAttribute('src');
       });
       elements.iconsContainer.innerHTML = '';
-    }
-    if (elements.workspaceIconsContainer) {
-      elements.workspaceIconsContainer.querySelectorAll('img').forEach((img) => {
-        img.removeAttribute('src');
-      });
-      elements.workspaceIconsContainer.innerHTML = '';
     }
     state.icons = [];
     state.todos = [];
@@ -1410,7 +1403,7 @@
       }
     });
 
-    if (candidates.length > 0) setCandidateSource();
+    if (icon.type !== 'folder' && candidates.length > 0) setCandidateSource();
 
     iconVisual.appendChild(iconImg);
 
@@ -1420,6 +1413,7 @@
 
     iconEl.appendChild(iconVisual);
     iconEl.appendChild(nameEl);
+    if (window.OpenTabFolders) OpenTabFolders.decorateWidget(iconEl, icon);
     return iconEl;
   }
 
@@ -1433,14 +1427,24 @@
     return btn;
   }
 
-  function getFolderIconEls() {
-    return Array.from(elements.iconsContainer.querySelectorAll('.icon-widget[data-id]'));
+  function gridRoot(event) {
+    if (event && event.currentTarget && event.currentTarget.querySelectorAll) return event.currentTarget;
+    if (window.OpenTabFolders) return OpenTabFolders.activeGridRoot() || elements.iconsContainer;
+    return elements.iconsContainer;
+  }
+
+  function getFolderIconEls(event) {
+    return Array.from(gridRoot(event).querySelectorAll('.icon-widget[data-id]'));
   }
 
   function folderIconSlots() {
     const indices = [], items = [];
+    const parentId = window.OpenTabFolders ? OpenTabFolders.slotsParentId() : '';
     state.icons.forEach((icon, i) => {
-      if (icon.folderId === state.currentFolderId) { indices.push(i); items.push(icon); }
+      if (icon.folderId === state.currentFolderId && (icon.parentId || '') === parentId) {
+        indices.push(i);
+        items.push(icon);
+      }
     });
     return { indices, items };
   }
@@ -1460,7 +1464,7 @@
 
   function computeInsertIndex(event) {
     const icons = getFolderIconEls();
-    if (event.target.closest('#add-shortcut-tile') || !icons.length) return icons.length;
+    if (event.target.closest('#add-shortcut-tile, .add-shortcut-tile') || !icons.length) return icons.length;
     const target = event.target.closest('.icon-widget[data-id]');
     if (!target) return icons.length;
     const rect = target.getBoundingClientRect();
@@ -1470,8 +1474,8 @@
   function updateDropLine(event) {
     const indicator = elements.dropIndicator;
     if (!indicator) return;
-    const addTile = elements.iconsContainer.querySelector('#add-shortcut-tile');
-    let ref = event.target.closest('#add-shortcut-tile') ? addTile : event.target.closest('.icon-widget[data-id]');
+    const addTile = gridRoot(event).querySelector('#add-shortcut-tile, .add-shortcut-tile');
+    let ref = event.target.closest('#add-shortcut-tile, .add-shortcut-tile') ? addTile : event.target.closest('.icon-widget[data-id]');
     let before = true;
     if (!ref) {
       if (!addTile) { hideDropIndicator(); return; }
@@ -1497,10 +1501,15 @@
 
   function endDesktopDrag() {
     draggingIconId = null;
-    getFolderIconEls().forEach((n) => { n.style.opacity = ''; });
+    if (window.OpenTabFolders) OpenTabFolders.clearMergeHover();
+    document.querySelectorAll('#icons-container .icon-widget[data-id], #folder-icons-container .icon-widget[data-id]').forEach((n) => {
+      n.style.opacity = '';
+    });
     hideDropIndicator();
     if (dragScrollRaf) { cancelAnimationFrame(dragScrollRaf); dragScrollRaf = 0; }
-    document.querySelectorAll('.drop-target,.dragging').forEach((n) => n.classList.remove('drop-target', 'dragging'));
+    document.querySelectorAll('.drop-target,.dragging,.folder-merge-target').forEach((n) => {
+      n.classList.remove('drop-target', 'dragging', 'folder-merge-target');
+    });
   }
 
   function persistOrRollback(beforeIcons) {
@@ -1515,16 +1524,16 @@
     const position = reorderFolderIcons(iconId, insertIndex);
     if (!position) { endDesktopDrag(); return false; }
     persistOrRollback(before);
-    const container = elements.iconsContainer;
-    const add = container.querySelector('#add-shortcut-tile');
+    const container = gridRoot();
+    const add = container.querySelector('#add-shortcut-tile, .add-shortcut-tile');
     folderIconSlots().items.forEach((icon) => {
-      const node = container.querySelector(`[data-id="${CSS.escape(icon.id)}"]`);
+      const node = container.querySelector(iconSelector(icon.id));
       if (node && add) container.insertBefore(node, add);
     });
     endDesktopDrag();
-    if (!elements.workspaceDrawer.classList.contains('hidden')) renderWorkspacePreview();
+    if (window.OpenTabFolders) OpenTabFolders.renderChrome();
     if (announce) {
-      const node = container.querySelector(`[data-id="${CSS.escape(iconId)}"]`);
+      const node = container.querySelector(iconSelector(iconId));
       if (node) node.focus();
       if (elements.dragLive) elements.dragLive.textContent = `已移动到第 ${position} 位`;
     }
@@ -1537,6 +1546,7 @@
     const icon = state.icons.find((item) => item.id === widget.dataset.id);
     if (!icon) return;
     draggingIconId = icon.id;
+    if (window.OpenTabFolders) OpenTabFolders.setActiveGrid(event.currentTarget);
     widget.style.opacity = '0.4';
     const transfer = event.dataTransfer;
     if (!transfer) return;
@@ -1554,6 +1564,8 @@
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     dragPointerY = event.clientY;
+    if (window.OpenTabFolders) OpenTabFolders.setActiveGrid(event.currentTarget);
+    if (window.OpenTabFolders && OpenTabFolders.handleGridDragOver(event, draggingIconId)) return;
     updateDropLine(event);
     if (!dragScrollRaf) dragScrollRaf = requestAnimationFrame(tickDragScroll);
   }
@@ -1562,17 +1574,24 @@
     if (!draggingIconId) return;
     event.preventDefault();
     const iconId = (event.dataTransfer && event.dataTransfer.getData(ICON_DND_TYPE)) || draggingIconId;
+    if (window.OpenTabFolders) OpenTabFolders.setActiveGrid(event.currentTarget);
+    if (window.OpenTabFolders && OpenTabFolders.handleGridDrop(event, iconId)) {
+      endDesktopDrag();
+      return;
+    }
     endDesktopDrag();
     commitFolderReorder(iconId, computeInsertIndex(event), false);
   }
 
   function onGridClick(event) {
-    const addTile = event.target.closest('#add-shortcut-tile');
+    const addTile = event.target.closest('#add-shortcut-tile, .add-shortcut-tile');
     if (addTile) { rememberFocus(addTile); openAddIconModal(); return; }
     const widget = event.target.closest('.icon-widget[data-id]');
     if (!widget) return;
     const icon = state.icons.find((item) => item.id === widget.dataset.id);
-    if (icon && !getIconHref(icon)) { event.preventDefault(); showToast(disabledIconToast(icon)); }
+    if (!icon) return;
+    if (window.OpenTabFolders && OpenTabFolders.handleGridClick(event, icon)) return;
+    if (!getIconHref(icon)) { event.preventDefault(); showToast(disabledIconToast(icon)); }
   }
 
   function onGridContextMenu(event) {
@@ -1586,6 +1605,11 @@
   function onGridKeydown(event) {
     const widget = event.target.closest('.icon-widget[data-id]');
     if (!widget) return;
+    if ((event.key === 'Enter' || event.key === ' ') && window.OpenTabFolders && OpenTabFolders.isFolderId(widget.dataset.id)) {
+      event.preventDefault();
+      OpenTabFolders.openOverlay(widget.dataset.id);
+      return;
+    }
     if ((event.key === 'Enter' || event.key === ' ') && widget.getAttribute('aria-disabled') === 'true') {
       event.preventDefault();
       const icon = state.icons.find((item) => item.id === widget.dataset.id);
@@ -1602,166 +1626,22 @@
     commitFolderReorder(widget.dataset.id, dir > 0 ? to + 1 : to, true);
   }
 
-  function bindDesktopGridEvents() {
-    if (gridEventsBound) return;
-    gridEventsBound = true;
-    const c = elements.iconsContainer;
+  function bindGrid(container) {
+    if (!container || container.dataset.gridBound === '1') return;
+    container.dataset.gridBound = '1';
     [
       ['dragstart', onGridDragStart], ['dragover', onGridDragOver], ['drop', onGridDrop],
       ['dragend', endDesktopDrag], ['click', onGridClick], ['contextmenu', onGridContextMenu], ['keydown', onGridKeydown]
-    ].forEach(([type, fn]) => c.addEventListener(type, fn));
-    c.addEventListener('dragleave', (event) => { if (!c.contains(event.relatedTarget)) hideDropIndicator(); });
-  }
-
-  function renderWorkspacePreview() {
-    const icons = getIconsForFolder(state.currentFolderId);
-    elements.workspaceIconsContainer.innerHTML = '';
-
-    icons.slice(0, 12).forEach((icon) => {
-      const chip = document.createElement('div');
-      chip.className = 'icon-widget';
-      chip.style.width = '86px';
-      chip.style.padding = '12px 8px';
-      chip.draggable = true;
-      chip.dataset.id = icon.id;
-      chip.appendChild(createIconWidget(icon).querySelector('.icon-visual'));
-      const name = document.createElement('span');
-      name.className = 'icon-name';
-      name.textContent = icon.name;
-      chip.appendChild(name);
-      chip.addEventListener('click', () => openIconTarget(icon));
-      chip.addEventListener('dragstart', (event) => {
-        draggingIconId = icon.id;
-        chip.classList.add('dragging');
-        if (event.dataTransfer) {
-          event.dataTransfer.effectAllowed = 'move';
-          event.dataTransfer.setData('text/plain', icon.id);
-        }
-      });
-      chip.addEventListener('dragend', endDesktopDrag);
-      chip.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        deleteIcon(icon.id);
-      });
-      elements.workspaceIconsContainer.appendChild(chip);
-    });
-
-    elements.workspaceEmpty.classList.toggle('hidden', icons.length > 0);
-  }
-
-  function updateWorkspaceButtonLabel() {
-    const folder = getFolderById(state.currentFolderId);
-    const label = folder ? `抽屉：${folder.name}` : '抽屉';
-    elements.workspaceBtn.title = label;
-    elements.workspaceBtn.setAttribute('aria-label', label);
-    if (elements.desktopFolderLabel) {
-      const isHome = !folder || folder.id === HOME_FOLDER_ID;
-      elements.desktopFolderLabel.textContent = folder ? folder.name : '主页';
-      elements.desktopFolderLabel.style.display = isHome ? 'none' : 'block';
-    }
-  }
-
-  function renderFolderTabs() {
-    elements.workspaceFolderTabs.innerHTML = '';
-
-    state.folders.forEach((folder) => {
-      const tab = document.createElement('button');
-      tab.type = 'button';
-      tab.className = `folder-tab${folder.id === state.currentFolderId ? ' active' : ''}`;
-      const count = getIconsForFolder(folder.id).length;
-      tab.textContent = `${folder.name} (${count})`;
-      if (folder.id !== HOME_FOLDER_ID) tab.title = '右键删除抽屉';
-      tab.addEventListener('click', () => {
-        suppressWorkspaceAutoCloseUntil = Date.now() + 300;
-        selectFolder(folder.id, true);
-      });
-      tab.addEventListener('dblclick', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        handleRenameFolder(folder.id);
-      });
-      tab.addEventListener('dragover', (event) => {
-        if (!draggingIconId) return;
-        event.preventDefault();
-        tab.classList.add('drop-target');
-      });
-      tab.addEventListener('dragleave', () => {
-        tab.classList.remove('drop-target');
-      });
-      tab.addEventListener('drop', (event) => {
-        event.preventDefault();
-        const iconId = (event.dataTransfer && event.dataTransfer.getData(ICON_DND_TYPE)) || draggingIconId;
-        endDesktopDrag();
-        if (iconId) moveIconToFolder(iconId, folder.id);
-      });
-      tab.addEventListener('contextmenu', (event) => {
-        if (folder.id === HOME_FOLDER_ID) return;
-        event.preventDefault();
-        event.stopPropagation();
-        handleDeleteFolder(folder.id);
-      });
-      elements.workspaceFolderTabs.appendChild(tab);
+    ].forEach(([type, fn]) => container.addEventListener(type, fn));
+    container.addEventListener('dragleave', (event) => {
+      if (!container.contains(event.relatedTarget)) hideDropIndicator();
     });
   }
 
-  function handleDeleteFolder(folderId) {
-    const folder = getFolderById(folderId);
-    if (!folder || folder.id === HOME_FOLDER_ID) return;
-
-    const iconsInFolder = getIconsForFolder(folderId);
-    const shouldDelete = confirm(`删除抽屉「${folder.name}」？`);
-    if (!shouldDelete) return;
-
-    if (iconsInFolder.length > 0) {
-      const moveToDefault = confirm(
-        `这个抽屉包含 ${iconsInFolder.length} 个图标。\n\n选择“确定”：移动到默认（主页）\n选择“取消”：连同图标一并删除`
-      );
-
-      if (moveToDefault) {
-        state.icons = state.icons.map((icon) => (
-          icon.folderId === folderId ? { ...icon, folderId: HOME_FOLDER_ID } : icon
-        ));
-      } else {
-        state.icons = state.icons.filter((icon) => icon.folderId !== folderId);
-      }
-    }
-
-    state.folders = state.folders.filter((item) => item.id !== folderId);
-    if (state.currentFolderId === folderId) state.currentFolderId = HOME_FOLDER_ID;
-
-    saveState();
-    updateWorkspaceButtonLabel();
-    renderFolderTabs();
-    renderWorkspacePreview();
-    renderIconsForCurrentFolder(true);
-  }
-
-  function handleRenameFolder(folderId) {
-    const folder = getFolderById(folderId);
-    if (!folder) return;
-
-    const nextName = prompt('输入新的文件夹名称', folder.name || '');
-    if (!nextName) return;
-
-    const trimmed = nextName.trim();
-    if (!trimmed || trimmed === folder.name) return;
-
-    folder.name = trimmed;
-    saveState();
-    updateWorkspaceButtonLabel();
-    renderFolderTabs();
-    renderWorkspacePreview();
-  }
-
-  function moveIconToFolder(iconId, targetFolderId) {
-    endDesktopDrag();
-    if (!getFolderById(targetFolderId)) return;
-    const icon = state.icons.find((item) => item.id === iconId);
-    if (!icon || icon.folderId === targetFolderId) return;
-    icon.folderId = targetFolderId;
-    saveState();
-    refreshIconViews(true);
+  function bindDesktopGridEvents() {
+    if (gridEventsBound) return;
+    gridEventsBound = true;
+    bindGrid(elements.iconsContainer);
   }
 
   function renderIconsForCurrentFolder(animated = false) {
@@ -1815,43 +1695,7 @@
     if (!getFolderById(folderId)) return;
     state.currentFolderId = folderId;
     saveState();
-    updateWorkspaceButtonLabel();
     refreshIconViews(animated);
-  }
-
-  function openWorkspaceDrawer() {
-    rememberFocus(elements.workspaceBtn);
-    elements.workspaceDrawer.classList.remove('hidden');
-    updateWorkspaceButtonLabel();
-    renderFolderTabs();
-    renderWorkspacePreview();
-  }
-
-  function closeWorkspaceDrawer() {
-    elements.workspaceDrawer.classList.add('hidden');
-  }
-
-  function toggleWorkspaceDrawer() {
-    const isHidden = elements.workspaceDrawer.classList.contains('hidden');
-    if (isHidden) openWorkspaceDrawer();
-    else closeWorkspaceDrawer();
-  }
-
-  function clearWorkspaceEdgeTimer() {
-    if (!workspaceEdgeOpenTimer) return;
-    clearTimeout(workspaceEdgeOpenTimer);
-    workspaceEdgeOpenTimer = null;
-  }
-
-  function tryOpenWorkspaceFromEdge() {
-    if (!elements.workspaceDrawer.classList.contains('hidden')) return;
-    if (workspaceEdgeOpenTimer) return;
-    workspaceEdgeOpenTimer = setTimeout(() => {
-      workspaceEdgeOpenTimer = null;
-      if (elements.workspaceDrawer.classList.contains('hidden')) {
-        openWorkspaceDrawer();
-      }
-    }, 120);
   }
 
   function addIcon(payload) {
@@ -1881,6 +1725,7 @@
       sshSocksUsername: isSsh ? normalizeOptionalText(payload.sshSocksUsername) : '',
       sshSocksPassword: isSsh ? (payload.sshSocksPassword || '') : '',
       folderId,
+      parentId: (window.OpenTabFolders && OpenTabFolders.currentOpenParentId()) || '',
       customIconUrl: isSsh ? '' : customIconUrl,
       emoji: isSsh ? '>_' : (isTool ? '{ }' : emoji),
       uploadedIconDataUrl: isSsh ? '' : uploadedIconDataUrl,
@@ -1951,6 +1796,7 @@
   }
 
   function deleteIcon(iconId) {
+    if (window.OpenTabFolders && OpenTabFolders.handleDeleteIcon(iconId)) return;
     const index = state.icons.findIndex((icon) => icon.id === iconId);
     if (index < 0) return;
     const snapshot = { icon: { ...state.icons[index] }, index };
@@ -2012,7 +1858,8 @@
         state.icons = Array.isArray(result.icons)
           ? result.icons.map((icon) => ({
             ...icon,
-            type: normalizeIconType(icon.type),
+            type: icon.type === 'folder' ? 'folder' : normalizeIconType(icon.type),
+            parentId: typeof icon.parentId === 'string' ? icon.parentId : '',
             folderId: validFolderIds.has(icon.folderId) ? icon.folderId : HOME_FOLDER_ID,
             customIconUrl: icon.customIconUrl || '',
             emoji: icon.emoji || '',
@@ -2059,6 +1906,7 @@
         if (result.gradientFlow !== undefined) state.gradientFlow = Boolean(result.gradientFlow);
         if (result.minimalMode !== undefined) state.minimalMode = Boolean(result.minimalMode);
 
+        if (window.OpenTabFolders) OpenTabFolders.repairIconGraph(state.icons);
         const requestedFolderId = result.currentFolderId || HOME_FOLDER_ID;
         state.currentFolderId = getFolderById(requestedFolderId) ? requestedFolderId : HOME_FOLDER_ID;
 
@@ -2085,10 +1933,7 @@
 
         updatePresetSelection();
         updateBgTabs();
-        updateWorkspaceButtonLabel();
-        renderFolderTabs();
-        renderWorkspacePreview();
-        renderIconsForCurrentFolder(false);
+        refreshIconViews(false);
         renderTodos();
         setTodoPanelOpen(state.todoPanelOpen);
 
@@ -2279,7 +2124,8 @@
       if (isTool) {
         // tool 类型不需要验证
       } else {
-        alert(isSsh ? '请输入有效的 SSH 配置。' : '请输入有效的网址。');
+        if (isSsh) alert('请输入有效的 SSH 配置。');
+        else showToast('请输入有效的网址。');
         if (isSsh) elements.sshGatewayUrl.focus();
         else if (rawCustomUrl) elements.iconCustomUrl.focus();
         else elements.iconUrl.focus();
@@ -2362,6 +2208,7 @@
     elements.iconContextMenu.style.left = `${event.clientX}px`;
     elements.iconContextMenu.style.top = `${event.clientY}px`;
     elements.iconContextMenu.classList.remove('hidden');
+    if (window.OpenTabFolders) OpenTabFolders.syncContextMenu(iconId);
   }
 
   function openSettings() {
@@ -2418,7 +2265,7 @@
     try {
       url = normalizeUrl(raw);
     } catch (error) {
-      alert('请输入有效的图片网址。');
+      showToast('请输入有效的图片网址。');
       elements.customBgUrl.focus();
       return;
     }
@@ -2446,7 +2293,7 @@
       updateBgTabs();
       updatePresetSelection();
     } catch (error) {
-      alert('读取本地图片失败，请重试。');
+      showToast('读取本地图片失败，请重试。');
     }
   }
 
@@ -2489,13 +2336,17 @@
   function handleEscape(event) {
     if (event.key !== 'Escape') return;
     endDesktopDrag();
+    if (window.OpenTabFolders && OpenTabFolders.handleEscape()) {
+      event.preventDefault();
+      restoreFocus();
+      return;
+    }
     const layers = [
       [elements.iconContextMenu, hideIconContextMenu],
       [elements.addIconModal, closeAddIconModal],
       [elements.settingsPanel, closeSettingsPanel],
       [elements.timezoneSelector, () => toggleTimezoneSelector(false)],
-      [elements.calendarPopover, () => toggleCalendar(false)],
-      [elements.workspaceDrawer, closeWorkspaceDrawer]
+      [elements.calendarPopover, () => toggleCalendar(false)]
     ];
     for (const [el, close] of layers) {
       if (el && !el.classList.contains('hidden')) {
@@ -2632,25 +2483,12 @@
     }
   }
 
-  function handleAddFolder() {
-    const name = prompt('输入文件夹名称（例如：阅读 / 学习）');
-    if (!name) return;
-
-    const trimmed = name.trim();
-    if (!trimmed) return;
-
-    const newFolder = { id: `folder-${generateId()}`, name: trimmed };
-    state.folders.push(newFolder);
-    saveState();
-    renderFolderTabs();
-  }
-
   document.addEventListener('contextmenu', (event) => {
     if (event.altKey || (window.getSelection && String(window.getSelection()))) return;
-    if (event.target.closest('input, textarea, [contenteditable], #search-widget-wrap, #search-widget, #todo-widget, .icon-widget[data-id], .modal, .icon-context-menu, .settings-panel, .timezone-selector, .calendar-popover, .workspace-drawer')) return;
+    if (event.target.closest('input, textarea, [contenteditable], #search-widget-wrap, #search-widget, #todo-widget, .icon-widget[data-id], .modal, .icon-context-menu, .settings-panel, .timezone-selector, .calendar-popover, #folder-overlay, #group-tabs-bar, #inline-dialog')) return;
     event.preventDefault();
     hideIconContextMenu();
-    focusStack.length = 0;
+    rememberFocus();
     openAddIconModal();
   });
 
@@ -2661,14 +2499,6 @@
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.icon-context-menu')) hideIconContextMenu();
 
-    if (
-      Date.now() >= suppressWorkspaceAutoCloseUntil
-      && !event.target.closest('#workspace-drawer')
-      && !event.target.closest('#workspace-btn')
-    ) {
-      closeWorkspaceDrawer();
-    }
-
     if (!event.target.closest('#timezone-selector') && !event.target.closest('#timezone-btn')) {
       toggleTimezoneSelector(false);
     }
@@ -2676,21 +2506,6 @@
     if (!event.target.closest('#calendar-popover') && !event.target.closest('#date')) {
       toggleCalendar(false);
     }
-  });
-
-  document.addEventListener('mousemove', (event) => {
-    const blockingLayerOpen = !elements.settingsPanel.classList.contains('hidden')
-      || !elements.addIconModal.classList.contains('hidden');
-    if (blockingLayerOpen) {
-      clearWorkspaceEdgeTimer();
-      return;
-    }
-
-    if (event.clientX <= 6) {
-      tryOpenWorkspaceFromEdge();
-      return;
-    }
-    clearWorkspaceEdgeTimer();
   });
 
   elements.timezoneBtn.addEventListener('click', (event) => {
@@ -2703,8 +2518,6 @@
     toggleCalendar();
   });
 
-  elements.workspaceBtn.addEventListener('click', toggleWorkspaceDrawer);
-  elements.addFolderBtn.addEventListener('click', handleAddFolder);
   elements.todoToggleBtn.addEventListener('click', toggleTodoPanel);
   elements.todoCollapseBtn.addEventListener('click', closeTodoPanel);
 
@@ -2837,6 +2650,35 @@
     getIcons: () => state.icons,
     openMatchedIcon: (icon) => openIconTarget(icon)
   });
+  if (window.OpenTabFolders) {
+    OpenTabFolders.init({
+      state,
+      HOME_FOLDER_ID,
+      ICON_DND_TYPE,
+      generateId,
+      saveState,
+      showToast,
+      refreshIconViews,
+      renderIconsForCurrentFolder,
+      createIconWidget,
+      createAddShortcutTile,
+      getIconHref,
+      openIconTarget,
+      rememberFocus,
+      restoreFocus,
+      getDraggingIconId: () => draggingIconId,
+      setDraggingIconId: (id) => { draggingIconId = id; },
+      endDesktopDrag,
+      commitFolderReorder,
+      computeInsertIndex,
+      hideDropIndicator,
+      hideIconContextMenu,
+      getContextMenuIconId: () => contextMenuIconId,
+      selectFolder,
+      bindGrid,
+      getIconsContainer: () => elements.iconsContainer
+    });
+  }
 
   loadState();
   fetchWeather();
