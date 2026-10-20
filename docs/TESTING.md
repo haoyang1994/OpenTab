@@ -44,6 +44,8 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 
 仓库规范：`tests/repo-hygiene.test.mjs`（LICENSE / NOTICE / 社区文件 / 删除清单 / 根目录 html 本地引用）
 
+导入与同步：`tests/import-sync.test.mjs`（`npm test` 会跑）。覆盖书签/常用网站 optional 权限 mock、Infinity/WeTab/iTab 解析、无法识别的备份、撤销快照、带文件夹的 OpenTab 备份导入、sync 按存储后 JSON 大小分片（含中文/引号至少 3 片且每片 ≤8KB）与超配额降级、按 id 合并远端图标、deviceId/内容哈希去环、第二台设备开启同步时的冲突选择与快照撤销、密钥存非导出 IndexedDB `CryptoKey`、启动时迁移明文秘密，以及导入/恢复不清空 vault。E2E（`tests/extension.test.mjs`）再走入口、导入/撤销、同步开关、用量、两个标签页开启同步后 10 秒不 reload，以及同步冲突「用云端」选择。
+
 ### 2.2 当前未覆盖（需要手工/后续自动化）
 
 - 右键新增图标完整流程（emoji/name/url 输入校验）
@@ -61,7 +63,7 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 npm test
 ```
 
-用途：确认仓库规范、SSH 网关安全测试与主流程均未损坏。`npm test` 顺序：`tests/repo-hygiene.test.mjs` → `test:ssh-gateway` → Playwright E2E。
+用途：确认仓库规范、导入/同步单元测试、SSH 网关安全测试与主流程均未损坏。`npm test` 顺序：`tests/repo-hygiene.test.mjs` → `tests/import-sync.test.mjs` → `test:ssh-gateway` → Playwright E2E。
 
 ### 3.2 CI 一致性执行
 
@@ -69,7 +71,7 @@ npm test
 npm test
 ```
 
-说明：CI 与本地使用同一条命令。`npm test` 先跑 repo-hygiene 和 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
+说明：CI 与本地使用同一条命令。`npm test` 先跑 repo-hygiene、`tests/import-sync.test.mjs` 和 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
 
 ### 3.3 本地调试模式
 
@@ -89,6 +91,8 @@ npm run test:ssh-gateway
 - `home.css`
 - `home.js`
 - `search.js`
+- `import.js`
+- `sync.js`
 - `background.js`
 - `manifest.json`
 - `ssh-gateway.mjs`
@@ -135,7 +139,7 @@ npm run test:ssh-gateway
 - 强制步骤：
 1. `npm ci`
 2. `npx playwright install --with-deps chromium`
-3. `npm test`（repo-hygiene、SSH 网关安全测试、E2E；E2E 在无显示器时由 `scripts/run-e2e.sh` 套 xvfb）
+3. `npm test`（repo-hygiene、import-sync 单元测试、SSH 网关安全测试、E2E；E2E 在无显示器时由 `scripts/run-e2e.sh` 套 xvfb）
 
 ## 8. 失败分级与处理
 

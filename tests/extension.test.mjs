@@ -1102,6 +1102,8 @@ async function runExtensionE2E() {
     const localManifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_PATH, 'manifest.json'), 'utf8'));
     assert.ok(!localManifest.permissions.includes('contextMenus'), 'T10: contextMenus removed');
     assert.ok(!localManifest.permissions.includes('tabs'), 'T10: tabs removed; popup uses activeTab');
+    assert.ok(!localManifest.permissions.includes('bookmarks'), 'T10: bookmarks not required');
+    assert.ok(!localManifest.permissions.includes('topSites'), 'T10: topSites not required');
     const masterManifest = readMasterManifest();
     if (masterManifest) {
       const expectedPerms = masterManifest.permissions.filter((item) => item !== 'contextMenus' && item !== 'tabs');
@@ -1271,7 +1273,6 @@ async function runExtensionE2E() {
     await page.locator('#toast button').click();
     await page.waitForTimeout(200);
     assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c'], 'AC1: undo restores A and B');
-
     await resetHome(page, {
       folders: folders(),
       currentFolderId: HOME,
@@ -1554,6 +1555,407 @@ async function runExtensionE2E() {
     await page.keyboard.press('Escape');
     await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
     console.log('search folder Enter passed');
+
+    await resetHome(page, nestedFolderFixture());
+    await page.locator(widgetSelector('pack')).click();
+    await page.waitForSelector('#folder-overlay:not(.hidden)');
+    await page.evaluate(() => {
+      document.dispatchEvent(new CustomEvent('opentab-sync-applied'));
+    });
+    await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
+    console.log('sync-applied closes folder overlay');
+
+    const bookmarkTree = [{
+      id: '0',
+      title: '',
+      children: [{
+        id: '1',
+        title: '书签栏',
+        children: [{
+          id: '10',
+          title: 'Work',
+          children: [
+            { id: '101', title: 'GitHub', url: 'https://github.com/' },
+            { id: '102', title: 'Docs', url: 'https://docs.example.com/' }
+          ]
+        }]
+      }]
+    }];
+    const topSites = Array.from({ length: 15 }, (_, i) => ({
+      title: `Site ${i}`,
+      url: `https://example.com/top/${i}`
+    }));
+
+    async function mockOptionalApis(granted = {}) {
+      await page.evaluate(({ bookmarksGranted, topSitesGranted, tree, sites }) => {
+        chrome.permissions = chrome.permissions || {};
+        chrome.permissions.request = (spec, cb) => {
+          const name = (spec && spec.permissions && spec.permissions[0]) || '';
+          const ok = name === 'bookmarks' ? bookmarksGranted : name === 'topSites' ? topSitesGranted : false;
+          if (typeof cb === 'function') cb(ok);
+          return Promise.resolve(ok);
+        };
+        chrome.bookmarks = {
+          getTree: (cb) => {
+            if (typeof cb === 'function') cb(tree);
+            return Promise.resolve(tree);
+          }
+        };
+        chrome.topSites = {
+          get: (cb) => {
+            if (typeof cb === 'function') cb(sites);
+            return Promise.resolve(sites);
+          }
+        };
+      }, {
+        bookmarksGranted: granted.bookmarks !== false,
+        topSitesGranted: granted.topSites !== false,
+        tree: bookmarkTree,
+        sites: topSites
+      });
+    }
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [shortcut('keep', 'Keep', 'https://keep.example.com/')],
+      clockFormat: '24h'
+    });
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => {
+      const text = document.getElementById('storage-usage')?.textContent || '';
+      return text.includes('本地存储') && !text.includes('计算中');
+    }, null, { timeout: 5000 });
+    assert.equal(await page.locator('#import-bookmarks-btn').isVisible(), true, 'AC1: import bookmarks entry');
+    assert.equal(await page.locator('#import-topsites-btn').isVisible(), true, 'AC2: import top sites entry');
+    assert.equal(await page.locator('#import-file-btn').isVisible(), true, 'AC3: import file entry');
+    assert.equal(await page.locator('#browser-sync-enabled').isVisible(), true, 'AC4: sync toggle');
+    const usageText = ((await page.locator('#storage-usage').textContent()) || '').trim();
+    assert.match(usageText, /本地存储/, 'AC5: local storage usage');
+    await page.locator('#import-sync-section').screenshot({ path: path.join(ARTIFACTS, 'import_sync_entry.png') });
+
+    await mockOptionalApis({ bookmarks: false });
+    await page.click('#import-bookmarks-btn');
+    await page.waitForFunction(() => {
+      const text = document.getElementById('import-sync-status')?.textContent || '';
+      return text.includes('书签权限');
+    }, null, { timeout: 5000 });
+    const deniedFolders = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['folders']);
+      return (result.folders || []).map((folder) => folder.name);
+    });
+    assert.deepEqual(deniedFolders.filter((name) => name === 'Work'), [], 'AC1: deny does not import');
+    console.log('AC1 deny passed');
+
+    await mockOptionalApis({ bookmarks: true });
+    await page.click('#import-bookmarks-btn');
+    await page.waitForSelector('#bookmark-folder-row:not(.hidden)', { timeout: 5000 });
+    await page.waitForFunction(
+      () => document.querySelectorAll('#bookmark-folder-select option').length > 0,
+      null,
+      { timeout: 5000 }
+    );
+    await page.selectOption('#bookmark-folder-select', '10');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+      page.click('#import-bookmarks-confirm-btn')
+    ]);
+    await waitForGrid(page);
+    const afterBookmark = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons', 'folders']);
+      return {
+        names: (result.icons || []).map((icon) => icon.name),
+        folders: (result.folders || []).map((folder) => folder.name)
+      };
+    });
+    assert.ok(afterBookmark.names.includes('Keep'), 'AC1: existing shortcut remains');
+    assert.ok(afterBookmark.names.includes('GitHub'), 'AC1: bookmark imported');
+    assert.ok(afterBookmark.folders.includes('Work'), 'AC1: bookmark folder becomes a group');
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => !document.getElementById('import-undo-btn')?.disabled, null, { timeout: 5000 });
+    const importStatus = ((await page.locator('#import-sync-status').textContent()) || '');
+    assert.match(importStatus, /已导入/, 'AC3: import result copy');
+    await page.locator('#import-sync-section').screenshot({ path: path.join(ARTIFACTS, 'import_result_and_undo.png') });
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+      page.click('#import-undo-btn')
+    ]);
+    await waitForGrid(page);
+    const afterUndo = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons', 'folders']);
+      return {
+        names: (result.icons || []).map((icon) => icon.name),
+        folders: (result.folders || []).map((folder) => folder.name)
+      };
+    });
+    assert.deepEqual(afterUndo.names, ['Keep'], 'AC3: undo restores icons');
+    assert.ok(!afterUndo.folders.includes('Work'), 'AC3: undo removes imported group');
+    console.log('AC1 bookmark import + undo passed');
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [shortcut('keep', 'Keep', 'https://keep.example.com/')]
+    });
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await mockOptionalApis({ topSites: true });
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+      page.click('#import-topsites-btn')
+    ]);
+    await waitForGrid(page);
+    const afterTop = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons', 'folders']);
+      return {
+        names: (result.icons || []).map((icon) => icon.name),
+        folders: (result.folders || []).map((folder) => folder.name)
+      };
+    });
+    assert.ok(afterTop.folders.includes('常用网站'), 'AC2: top sites become a group');
+    assert.equal(afterTop.names.filter((name) => name.startsWith('Site ')).length, 12, 'AC2: first 12 top sites');
+    console.log('AC2 top sites passed');
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [shortcut('keep', 'Keep', 'https://keep.example.com/')]
+    });
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    const beforeUnknown = await storageIconIds(page);
+    await page.setInputFiles('#import-file-input', {
+      name: 'mystery.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"foo":1}')
+    });
+    await page.waitForFunction(() => {
+      const text = document.getElementById('import-sync-status')?.textContent || '';
+      return text.includes('无法识别');
+    }, null, { timeout: 5000 });
+    assert.deepEqual(await storageIconIds(page), beforeUnknown, 'AC3: unrecognized file leaves data');
+    console.log('AC3 unrecognized passed');
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+      page.setInputFiles('#import-file-input', {
+        name: 'backup.infinity',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify({
+          data: {
+            site: {
+              sites: [[{ type: 'web', name: 'InfinitySite', target: 'https://infinity.example/' }]]
+            }
+          }
+        }))
+      })
+    ]);
+    await waitForGrid(page);
+    const afterInfinity = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons', 'folders']);
+      return (result.icons || []).map((icon) => icon.name);
+    });
+    assert.ok(afterInfinity.includes('Keep'), 'AC3: Infinity import is additive');
+    assert.ok(afterInfinity.includes('InfinitySite'), 'AC3: Infinity site imported');
+    console.log('AC3 Infinity import passed');
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('sync-a', 'SyncA', 'https://example.com/sync-a'),
+        {
+          id: 'ssh-sync',
+          name: 'SSH',
+          type: 'ssh',
+          folderId: HOME,
+          sshHost: '10.0.0.8',
+          sshUsername: 'root',
+          sshPassword: 'plain-password',
+          sshGatewayToken: 'plain-token',
+          sshSocksPassword: 'plain-socks',
+          uploadedIconDataUrl: PIXEL,
+          resolvedIconUrl: PIXEL
+        }
+      ],
+      background: { type: 'image', value: TINY_PNG_DATA_URL, source: 'local-upload' },
+      clockFormat: '24h'
+    });
+    await page.waitForFunction(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      const ssh = (result.icons || []).find((icon) => icon.id === 'ssh-sync');
+      return Boolean(ssh) && !ssh.sshPassword && !ssh.sshGatewayToken;
+    }, null, { timeout: 8000 });
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
+    await page.check('#browser-sync-enabled');
+    try {
+      await page.waitForFunction(async () => {
+        const all = await chrome.storage.sync.get(null);
+        return Boolean(all && all['ot.s.meta']);
+      }, null, { timeout: 8000 });
+    } catch (error) {
+      await page.waitForSelector('#time', { timeout: 10000 });
+    }
+    await page.waitForSelector('#time', { timeout: 10000 });
+    await waitForGrid(page);
+    await page.waitForFunction(async () => {
+      const all = await chrome.storage.sync.get(null);
+      return Boolean(all && all['ot.s.meta']);
+    }, null, { timeout: 8000 });
+    if (await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden'))) {
+      await page.click('#settings-btn');
+      await page.waitForSelector('#settings-panel:not(.hidden)');
+    }
+    await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => {
+      const box = document.getElementById('browser-sync-enabled');
+      return Boolean(box && box.checked);
+    }, null, { timeout: 5000 });
+    const syncAll = await page.evaluate(async () => chrome.storage.sync.get(null));
+    const syncBlob = JSON.stringify(syncAll);
+    assert.equal(syncBlob.includes('plain-password'), false, 'AC6: sync strips ssh password');
+    assert.equal(syncBlob.includes('plain-token'), false, 'AC6: sync strips gateway token');
+    assert.equal(syncBlob.includes(TINY_PNG_DATA_URL), false, 'AC4: sync skips wallpaper');
+    const localIcons = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      return result.icons || [];
+    });
+    const sshStored = localIcons.find((icon) => icon.id === 'ssh-sync');
+    assert.equal(sshStored?.sshPassword || '', '', 'AC6: local icons do not store plaintext password');
+    const localCryptoKey = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['opentab.cryptoKey']);
+      return result['opentab.cryptoKey'] || '';
+    });
+    assert.equal(localCryptoKey, '', 'BUG-019: raw wrapping key is not stored in chrome.storage.local');
+    const keyNonExtractable = await page.evaluate(async () => {
+      const key = await OpenTabSync.getCryptoKey();
+      if (!key || key.extractable) return false;
+      try {
+        await crypto.subtle.exportKey('raw', key);
+        return false;
+      } catch (error) {
+        return true;
+      }
+    });
+    assert.equal(keyNonExtractable, true, 'BUG-019: CryptoKey is non-extractable');
+    await page.waitForFunction(() => {
+      const text = document.getElementById('storage-usage')?.textContent || '';
+      return text.includes('本地存储') && text.includes('浏览器同步');
+    }, null, { timeout: 8000 });
+    const usageAfterSync = ((await page.locator('#storage-usage').textContent()) || '');
+    assert.match(usageAfterSync, /本地存储/, 'AC5: usage after sync');
+    assert.match(usageAfterSync, /浏览器同步/, 'AC4: sync usage shown');
+    await page.locator('#import-sync-section').screenshot({ path: path.join(ARTIFACTS, 'sync_toggle_and_usage.png') });
+    console.log('AC4/AC5/AC6 sync + secrets passed');
+
+    const writesBeforeLoop = await page.evaluate(() => window.OpenTabSync.getWriteCount());
+    const page2 = await context.newPage();
+    attachErrorCollectors(page2, errorBuckets);
+    await page2.goto(`chrome-extension://${extensionId}/home.html`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 15000
+    });
+    await page2.waitForSelector('#time', { timeout: 10000 });
+    await page2.click('#settings-btn');
+    await page2.waitForSelector('#settings-panel:not(.hidden)');
+    if (!(await page2.locator('#browser-sync-enabled').isChecked())) {
+      await page2.check('#browser-sync-enabled');
+    }
+    let extraDcl1 = 0;
+    let extraDcl2 = 0;
+    const onDcl1 = () => { extraDcl1 += 1; };
+    const onDcl2 = () => { extraDcl2 += 1; };
+    page.on('domcontentloaded', onDcl1);
+    page2.on('domcontentloaded', onDcl2);
+    await page.waitForTimeout(10000);
+    page.off('domcontentloaded', onDcl1);
+    page2.off('domcontentloaded', onDcl2);
+    assert.equal(extraDcl1, 0, 'BUG-016: first synced tab does not reload while idle');
+    assert.equal(extraDcl2, 0, 'BUG-016: second synced tab does not reload while idle');
+    const writesAfterLoop = await page.evaluate(() => window.OpenTabSync.getWriteCount());
+    assert.ok(
+      writesAfterLoop - writesBeforeLoop <= 2,
+      `BUG-016: sync writes should stay bounded, grew ${writesAfterLoop - writesBeforeLoop}`
+    );
+    assert.ok(writesAfterLoop <= 6, `BUG-016: total sync writes ${writesAfterLoop}`);
+    await page2.close();
+    console.log('BUG-016 two-tab sync idle passed');
+
+    if (!(await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden')))) {
+      await page.click('#close-settings');
+    }
+    const sshIcon = page.locator('#icons-container .icon-widget[data-id="ssh-sync"]');
+    await sshIcon.click({ button: 'right', force: true });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#edit-icon-btn');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    assert.equal(
+      await page.locator('#ssh-password').getAttribute('placeholder'),
+      '已保存，留空则不修改'
+    );
+    await page.click('#cancel-btn');
+    await page.waitForSelector('#add-icon-modal.hidden');
+
+    const conflictResult = await page.evaluate(async () => {
+      await OpenTabSync.setEnabled(false);
+      await chrome.storage.local.set({
+        icons: [{
+          id: 'only-local',
+          name: '本机独有',
+          url: 'https://local.example/',
+          folderId: 'folder-home',
+          type: 'shortcut'
+        }],
+        folders: [{ id: 'folder-home', name: '主页' }]
+      });
+      const remote = OpenTabSync.buildSyncPayload({
+        icons: [
+          { id: 'cloud-1', name: '云端一', url: 'https://cloud.example/', folderId: 'folder-home', type: 'shortcut' },
+          { id: 'cloud-2', name: '云端二', url: 'https://cloud2.example/', folderId: 'folder-home', type: 'shortcut' }
+        ],
+        folders: [{ id: 'folder-home', name: '主页' }]
+      });
+      remote.deviceId = 'dev-other-device';
+      remote.hash = 'conflict-e2e';
+      const plan = OpenTabSync.planSyncWrite(remote);
+      const toSet = {};
+      plan.items.forEach((item) => { toSet[item.key] = item.value; });
+      await chrome.storage.sync.set(toSet);
+      return OpenTabSync.setEnabled(true);
+    });
+    assert.equal(conflictResult.conflict, true, 'BUG-023: enabling sync with remote data offers a choice');
+    const idsBeforeChoice = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      return (result.icons || []).map((icon) => icon.id);
+    });
+    assert.deepEqual(idsBeforeChoice, ['only-local']);
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
+    await page.waitForSelector('#sync-conflict-row:not(.hidden)');
+    await page.locator('#import-sync-section').screenshot({ path: path.join(ARTIFACTS, 'sync_conflict_choice.png') });
+    await page.click('#sync-use-remote-btn');
+    await page.waitForFunction(async () => {
+      const result = await chrome.storage.local.get(['icons', 'backupSnapshots']);
+      const ids = (result.icons || []).map((icon) => icon.id);
+      return ids.includes('cloud-1') && (result.backupSnapshots || []).length > 0;
+    }, null, { timeout: 8000 });
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.match((await page.locator('#toast').textContent()) || '', /云端/);
+    console.log('BUG-023 sync conflict choice passed');
+
+    assert.ok(Array.isArray(localManifest.optional_permissions), 'AC7: optional_permissions present');
+    assert.ok(localManifest.optional_permissions.includes('bookmarks'));
+    assert.ok(localManifest.optional_permissions.includes('topSites'));
+    assert.ok(!localManifest.permissions.includes('bookmarks'));
+    assert.ok(!localManifest.permissions.includes('topSites'));
+    console.log('AC7 optional permissions passed');
 
     const leftoverPageErrors = errorBuckets.page.filter(error => !isExemptConsoleError(error));
     const leftoverConsole = errorBuckets.console.filter(error => !isExemptConsoleError(error));

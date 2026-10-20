@@ -247,12 +247,6 @@
     gradientFlowEnabled: document.getElementById('gradient-flow-enabled'),
     minimalModeEnabled: document.getElementById('minimal-mode-enabled'),
     particlesCanvas: document.getElementById('particles-canvas'),
-    backupDownloadBtn: document.getElementById('backup-download-btn'),
-    backupImportBtn: document.getElementById('backup-import-btn'),
-    backupImportFile: document.getElementById('backup-import-file'),
-    backupSaveSnapshotBtn: document.getElementById('backup-save-snapshot-btn'),
-    backupRestoreSnapshotBtn: document.getElementById('backup-restore-snapshot-btn'),
-    backupStatus: document.getElementById('backup-status'),
 
     calendarPopover: document.getElementById('calendar-popover'),
     calendarInput: document.getElementById('calendar-input')
@@ -283,30 +277,6 @@
     gradientFlow: false,
     minimalMode: false
   };
-  const BACKUP_SNAPSHOTS_KEY = 'backupSnapshots';
-  const BACKUP_MAX_SNAPSHOTS = 20;
-  const BACKUP_STATE_KEYS = [
-    'icons',
-    'folders',
-    'currentFolderId',
-    ...OpenTabSearch.STORAGE_KEYS,
-    'todos',
-    'todoPanelOpen',
-    'background',
-    'clockFormat',
-    'showSeconds',
-    'uiOpacity',
-    'uiBlur',
-    'iconFrameEnabled',
-    'openInNewTab',
-    'timezone',
-    'bingIndex',
-    'themeMode',
-    'accentHue',
-    'particlesEnabled',
-    'gradientFlow',
-    'minimalMode'
-  ];
 
   let calendarPicker = null;
   let editingIconId = null;
@@ -371,196 +341,6 @@
   function normalizeOptionalText(raw) {
     const text = String(raw || '').trim();
     return text || '';
-  }
-
-  function updateBackupStatus(message, isError = false) {
-    if (!elements.backupStatus) return;
-    elements.backupStatus.textContent = message;
-    elements.backupStatus.style.color = isError ? '#ffb4b4' : 'rgba(255, 255, 255, 0.65)';
-  }
-
-  function storageGet(keys) {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(keys, (result) => resolve(result));
-    });
-  }
-
-  function storageSet(payload) {
-    return new Promise((resolve) => {
-      chrome.storage.local.set(payload, () => resolve());
-    });
-  }
-
-  function getBackupPayloadFromState() {
-    return {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      icons: state.icons,
-      folders: state.folders,
-      currentFolderId: state.currentFolderId,
-      ...OpenTabSearch.getBackupSlice(),
-      todos: state.todos,
-      todoPanelOpen: state.todoPanelOpen,
-      background: state.background,
-      clockFormat: state.clockFormat,
-      showSeconds: state.showSeconds,
-      uiOpacity: state.uiOpacity,
-      uiBlur: state.uiBlur,
-      iconFrameEnabled: state.iconFrameEnabled,
-      openInNewTab: state.openInNewTab,
-      timezone: state.timezone,
-      bingIndex: state.bingIndex,
-      themeMode: state.themeMode,
-      accentHue: state.accentHue,
-      particlesEnabled: state.particlesEnabled,
-      gradientFlow: state.gradientFlow,
-      minimalMode: state.minimalMode
-    };
-  }
-
-  function normalizeBackupPayload(rawPayload) {
-    const payload = rawPayload && typeof rawPayload === 'object'
-      ? (rawPayload.data && typeof rawPayload.data === 'object' ? rawPayload.data : rawPayload)
-      : {};
-
-    const normalized = { ...getBackupPayloadFromState() };
-    BACKUP_STATE_KEYS.forEach((key) => {
-      if (payload[key] !== undefined) normalized[key] = payload[key];
-    });
-
-    normalized.folders = ensureFolders(normalized.folders).filter(
-      (folder) => !LEGACY_PRESET_FOLDER_IDS.has(folder.id)
-    );
-    if (!normalized.folders.some((folder) => folder.id === HOME_FOLDER_ID)) {
-      normalized.folders.unshift({ id: HOME_FOLDER_ID, name: '主页' });
-    }
-
-    const validFolderIds = new Set(normalized.folders.map((folder) => folder.id));
-    normalized.icons = Array.isArray(normalized.icons) ? normalized.icons.map((icon) => ({
-      ...icon,
-      type: icon.type === 'folder' ? 'folder' : normalizeIconType(icon.type),
-      parentId: typeof icon.parentId === 'string' ? icon.parentId : '',
-      folderId: validFolderIds.has(icon.folderId) ? icon.folderId : HOME_FOLDER_ID,
-      customIconUrl: icon.customIconUrl || '',
-      emoji: icon.emoji || '',
-      uploadedIconDataUrl: icon.uploadedIconDataUrl || '',
-      resolvedIconUrl: icon.resolvedIconUrl || '',
-      sshGatewayUrl: icon.sshGatewayUrl || '',
-      sshGatewayToken: icon.sshGatewayToken || '',
-      sshHost: icon.sshHost || '',
-      sshPort: Number.isInteger(icon.sshPort) ? icon.sshPort : 22,
-      sshUsername: icon.sshUsername || '',
-      sshPassword: icon.sshPassword || '',
-      sshSocksHost: icon.sshSocksHost || '',
-      sshSocksPort: Number.isInteger(icon.sshSocksPort) ? icon.sshSocksPort : 1080,
-      sshSocksUsername: icon.sshSocksUsername || '',
-      sshSocksPassword: icon.sshSocksPassword || ''
-    })) : [];
-
-    normalized.currentFolderId = validFolderIds.has(normalized.currentFolderId)
-      ? normalized.currentFolderId
-      : HOME_FOLDER_ID;
-    Object.assign(normalized, OpenTabSearch.normalizeBackup(normalized));
-    normalized.todos = Array.isArray(normalized.todos) ? normalized.todos : [];
-    normalized.todoPanelOpen = Boolean(normalized.todoPanelOpen);
-    normalized.clockFormat = normalized.clockFormat === '24h' ? '24h' : '12h';
-    normalized.showSeconds = Boolean(normalized.showSeconds);
-    normalized.uiOpacity = Number.isFinite(Number(normalized.uiOpacity)) ? Number(normalized.uiOpacity) : 32;
-    normalized.uiBlur = Number.isFinite(Number(normalized.uiBlur)) ? Number(normalized.uiBlur) : 10;
-    normalized.iconFrameEnabled = Boolean(normalized.iconFrameEnabled);
-    normalized.openInNewTab = Boolean(normalized.openInNewTab);
-    normalized.timezone = normalized.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-    normalized.bingIndex = Number.isInteger(normalized.bingIndex) ? normalized.bingIndex : 0;
-    normalized.themeMode = ['dark', 'light', 'auto'].includes(normalized.themeMode) ? normalized.themeMode : 'dark';
-    normalized.accentHue = Number.isFinite(Number(normalized.accentHue)) ? Number(normalized.accentHue) : 200;
-    normalized.particlesEnabled = Boolean(normalized.particlesEnabled);
-    normalized.gradientFlow = Boolean(normalized.gradientFlow);
-    normalized.minimalMode = Boolean(normalized.minimalMode);
-    normalized.background = migrateBackground(normalized.background);
-    if (window.OpenTabFolders) OpenTabFolders.repairIconGraph(normalized.icons);
-    return normalized;
-  }
-
-  function makeBackupFilename(prefix = 'opentab-backup') {
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    return `${prefix}-${ts}.json`;
-  }
-
-  async function handleDownloadBackup() {
-    const payload = getBackupPayloadFromState();
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = makeBackupFilename();
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-    updateBackupStatus('已下载备份文件。');
-  }
-
-  async function saveSnapshotRecord(reason = 'manual') {
-    const result = await storageGet([BACKUP_SNAPSHOTS_KEY]);
-    const list = Array.isArray(result[BACKUP_SNAPSHOTS_KEY]) ? result[BACKUP_SNAPSHOTS_KEY] : [];
-    list.unshift({
-      id: generateId(),
-      createdAt: new Date().toISOString(),
-      reason,
-      data: getBackupPayloadFromState()
-    });
-    await storageSet({ [BACKUP_SNAPSHOTS_KEY]: list.slice(0, BACKUP_MAX_SNAPSHOTS) });
-    return list[0];
-  }
-
-  async function applyBackupPayloadAndReload(rawPayload) {
-    const normalized = normalizeBackupPayload(rawPayload);
-    const writePayload = {};
-    BACKUP_STATE_KEYS.forEach((key) => {
-      writePayload[key] = normalized[key];
-    });
-    await storageSet(writePayload);
-    location.reload();
-  }
-
-  async function handleSaveSnapshot() {
-    await saveSnapshotRecord('manual');
-    updateBackupStatus('已保存快照。');
-  }
-
-  async function handleRestoreLatestSnapshot() {
-    const result = await storageGet([BACKUP_SNAPSHOTS_KEY]);
-    const list = Array.isArray(result[BACKUP_SNAPSHOTS_KEY]) ? result[BACKUP_SNAPSHOTS_KEY] : [];
-    if (list.length === 0) {
-      updateBackupStatus('没有可恢复的快照。', true);
-      return;
-    }
-    await saveSnapshotRecord('before-restore');
-    await applyBackupPayloadAndReload(list[0].data || {});
-  }
-
-  function handleChooseImportFile() {
-    elements.backupImportFile.value = '';
-    elements.backupImportFile.click();
-  }
-
-  async function handleImportBackupFile() {
-    const [file] = elements.backupImportFile.files || [];
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      const raw = JSON.parse(text);
-      await saveSnapshotRecord('before-import');
-      updateBackupStatus('正在导入备份并刷新页面...');
-      await applyBackupPayloadAndReload(raw);
-    } catch (error) {
-      updateBackupStatus('导入失败：JSON 无效或结构不支持。', true);
-    } finally {
-      elements.backupImportFile.value = '';
-    }
   }
 
   function updateIconModalTypeView() {
@@ -1988,6 +1768,7 @@
     elements.sshPort.value = '22';
     elements.sshUsername.value = '';
     elements.sshPassword.value = '';
+    elements.sshPassword.placeholder = '留空表示由网关决定认证方式';
     elements.sshSocksHost.value = '';
     elements.sshSocksPort.value = '';
     elements.sshSocksUsername.value = '';
@@ -2020,6 +1801,7 @@
     elements.sshPort.value = String(icon.sshPort || 22);
     elements.sshUsername.value = icon.sshUsername || '';
     elements.sshPassword.value = icon.sshPassword || '';
+    elements.sshPassword.placeholder = '已保存，留空则不修改';
     elements.sshSocksHost.value = icon.sshSocksHost || '';
     elements.sshSocksPort.value = icon.sshSocksHost ? String(icon.sshSocksPort || 1080) : '';
     elements.sshSocksUsername.value = icon.sshSocksUsername || '';
@@ -2600,11 +2382,6 @@
     });
   }
 
-  elements.backupDownloadBtn.addEventListener('click', handleDownloadBackup);
-  elements.backupImportBtn.addEventListener('click', handleChooseImportFile);
-  elements.backupImportFile.addEventListener('change', handleImportBackupFile);
-  elements.backupSaveSnapshotBtn.addEventListener('click', handleSaveSnapshot);
-  elements.backupRestoreSnapshotBtn.addEventListener('click', handleRestoreLatestSnapshot);
   elements.todoAddBtn.addEventListener('click', handleAddTodo);
 
   elements.iconUrl.addEventListener('keydown', (event) => {
@@ -2688,6 +2465,11 @@
       getIconsContainer: () => elements.iconsContainer
     });
   }
+
+  document.addEventListener('opentab-sync-applied', () => {
+    if (window.OpenTabFolders && OpenTabFolders.closeOverlay) OpenTabFolders.closeOverlay();
+    loadState();
+  });
 
   loadState();
   fetchWeather();

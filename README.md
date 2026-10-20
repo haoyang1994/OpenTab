@@ -66,6 +66,8 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 - Weather pill via geolocation and [wttr.in](https://wttr.in)
 - Side-drawer todos with a progress bar
 - JSON backup export/import and a local snapshot
+- Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
+- Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks 用云端 / 用本机. Settings shows local storage usage
 
 ## Screenshots
 
@@ -85,8 +87,9 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile.
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, search history, the current folder, or SSH secrets). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
 - The search box does not fetch suggestions or typeahead from any engine.
+- Bookmarks and most-visited sites are `optional_permissions`: Chrome does not prompt for them at install. OpenTab requests each one when you click the matching import button.
 - OpenTab does not include analytics, ads, or account login.
 - OpenTab does not rewrite or intercept links you open.
 - The extension does request a small set of hosts for optional features:
@@ -129,7 +132,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` runs `tests/repo-hygiene.test.mjs`, then SSH gateway security tests (`npm run test:ssh-gateway`), then the Playwright E2E suite (`scripts/run-e2e.sh`). On Linux without a display, that script wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. Details: [docs/TESTING.md](docs/TESTING.md).
+`npm test` runs `tests/repo-hygiene.test.mjs`, then `tests/import-sync.test.mjs`, then SSH gateway security tests (`npm run test:ssh-gateway`), then the Playwright E2E suite (`scripts/run-e2e.sh`). On Linux without a display, that script wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. Details: [docs/TESTING.md](docs/TESTING.md).
 
 After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
 
@@ -170,7 +173,7 @@ Environment variables:
 - `SSH_PRIVATE_KEY_PATH` — **explicit** private-key path; omitting it does **not** fall back to `~/.ssh/id_rsa`
 - `SSH_PRIVATE_KEY_PASSPHRASE` — key passphrase, if any
 
-SOCKS5 proxies are supported from the shortcut editor. SSH passwords are currently stored in `chrome.storage.local` as plaintext; treat that as a known limitation.
+SOCKS5 proxies are supported from the shortcut editor. SSH / SOCKS passwords and gateway tokens are encrypted with AES-GCM. The wrapping `CryptoKey` is generated with `extractable: false` and stored in IndexedDB (not exported as raw bytes next to the ciphertext). Remaining risk: anyone who can run code as this extension (or read this profile’s IndexedDB and storage while Chrome will still unwrap the key for the extension) can still decrypt secrets. Backups and `chrome.storage.sync` never include those secrets.
 
 Upgrading existing SSH shortcuts:
 
@@ -190,6 +193,7 @@ OpenTab/
 ├── package.json
 ├── background.js              # service worker
 ├── home.html / home.css / home.js
+├── search.js / import.js / sync.js
 ├── search.js                  # new-tab search box (engines, history, URL jump)
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js

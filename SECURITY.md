@@ -46,4 +46,5 @@ Out of scope:
 
 Known limitations that are tracked as product work rather than vulnerability reports:
 
-- SSH passwords currently stored in `chrome.storage.local` as plaintext
+- SSH / SOCKS secrets are encrypted at rest with AES-GCM. The wrapping key is a non-extractable `CryptoKey` (`generateKey` / `importKey` with `extractable: false`) stored in IndexedDB, not as raw key bytes in `chrome.storage.local` next to the ciphertext. Secrets are never written to JSON backups or `chrome.storage.sync`.
+- This is not a defense against a local attacker who can execute as the OpenTab extension, use Chrome’s debugger on this profile, or otherwise get Chrome to unwrap the IndexedDB key for this origin. It only stops the raw wrapping key from sitting beside the vault blob in `chrome.storage.local`.

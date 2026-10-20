@@ -490,6 +490,40 @@
           <p id="backup-status" class="backup-status">可导出 JSON 备份，或导入历史备份恢复。</p>
           <input id="backup-import-file" type="file" accept="application/json,.json" hidden>
         </div>
+
+        <div class="setting-section" id="import-sync-section">
+          <h3>导入与同步</h3>
+          <div class="setting-row backup-row">
+            <label>从其他主页导入</label>
+            <div class="backup-actions">
+              <button id="import-bookmarks-btn" class="btn-small" type="button">从 Chrome 书签导入</button>
+              <button id="import-topsites-btn" class="btn-small ghost" type="button">导入常用网站</button>
+              <button id="import-file-btn" class="btn-small ghost" type="button">导入备份文件</button>
+              <button id="import-undo-btn" class="btn-small ghost" type="button" disabled>撤销上次导入</button>
+            </div>
+          </div>
+          <div id="bookmark-folder-row" class="setting-row backup-row hidden">
+            <label for="bookmark-folder-select">书签文件夹</label>
+            <div class="backup-actions">
+              <select id="bookmark-folder-select" aria-label="选择书签文件夹"></select>
+              <button id="import-bookmarks-confirm-btn" class="btn-small" type="button">导入所选文件夹</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label for="browser-sync-enabled">浏览器同步</label>
+            <input type="checkbox" id="browser-sync-enabled">
+          </div>
+          <div id="sync-conflict-row" class="setting-row backup-row hidden">
+            <label>同步冲突</label>
+            <div class="backup-actions">
+              <button id="sync-use-remote-btn" class="btn-small" type="button">用云端</button>
+              <button id="sync-use-local-btn" class="btn-small ghost" type="button">用本机</button>
+            </div>
+          </div>
+          <p id="storage-usage" class="backup-status">本地存储用量：计算中…</p>
+          <p id="import-sync-status" class="backup-status">可导入 Chrome 书签、常用网站，或 Infinity / WeTab / iTab 备份。书签和常用网站权限仅在点击时申请。</p>
+          <input id="import-file-input" type="file" accept="application/json,.json,.infinity,.data,text/json" hidden>
+        </div>
       </div>
     </div>
   </div>
@@ -498,6 +532,8 @@
   <script src="vendor/flatpickr/l10n/zh.js"></script>
   <script src="search.js"></script>
   <script src="folders.js"></script>
+  <script src="import.js"></script>
+  <script src="sync.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Import Chrome bookmarks (optional `bookmarks` permission, requested on click) into a new folder/group
+- Import the first 12 Chrome most-visited sites (optional `topSites` permission)
+- Import Infinity / WeTab / iTab backup files, with an automatic snapshot and one-click undo
+- Optional `chrome.storage.sync` for shortcuts, folders/groups, and settings (sharded near the 100KB / 8KB quotas; falls back to local-only when over quota)
+- Local storage usage in Settings → 导入与同步
 - Shortcut grid **+** tile and empty-state hint for adding sites
 - HTML5 drag-and-drop reorder on the desktop grid, with Alt+←/→ keyboard swap
 - Undo toast after deleting a shortcut (6 seconds)
@@ -33,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search Enter on a folder name opens the folder overlay instead of "网址无效"
 - Dragging a nested icon onto a group tab dissolves a leftover-1 folder
 - Merge-hover timer clears on `dragleave`; group-tab wheel switching is throttled
+- Browser sync no longer reloads in a loop: payloads carry `deviceId` and a content hash, local echoes are ignored, pages do not push on load, remote applies re-render in place, and writes are debounced 2s (BUG-016)
+- Applying a sync payload merges icons by id and keeps local-only `data:` icon fields (BUG-017)
+- Sync shards and quota checks use UTF-8 bytes with 7800-byte chunks (BUG-018)
+- Sync shards are sized by stored `JSON.stringify(chunk)` UTF-8 bytes plus the key, so escaped quotes and backslashes cannot blow the 8KB item cap (BUG-022)
+- Enabling browser sync on a second device with local shortcuts no longer silently overwrites them; choose 用云端 / 用本机, and 用云端 first writes a local snapshot with an undo toast (BUG-023)
+- Applying remote sync data closes an open folder overlay and re-renders from storage
+- `currentFolderId` stays on the local device and is not written to `chrome.storage.sync`
+- Startup migrates leftover plaintext SSH secrets into the encrypted vault
+- Importing or restoring a backup no longer deletes SSH secrets that were only absent from the file (BUG-020)
 
 ### Changed
 
@@ -42,12 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Folder/group `prompt` / `confirm` / `alert` replaced with in-page controls (the SSH incomplete-config `alert` remains)
 - README documents + add, drag reorder, folders, group tabs, middle-click, undo delete, and Esc
 - Replaced the application icon and three bundled default backgrounds with project-owned assets (Apache-2.0; stills and icon composition Created with Grok Imagine; SVG/PNGs hand-traced and rasterized). Saved Pexels preset paths migrate to the matching new images (or fall back to the Bing default) so existing installs do not 404.
-- Search logic lives in `search.js`; `home.js` only wires icons into name matching and backup
+- Search logic lives in `search.js`; OpenTab backup import/export lives in `import.js`; `home.js` only wires icons into name matching
 
 ### Security
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
 - AC7: narrowed extension-page `connect-src` (dropped blanket `https:` / `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). `img-src` retains `https:` for shortcut favicons and custom wallpaper URLs (product decision). Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
+- SSH / SOCKS passwords and gateway tokens are stripped from backup export and browser sync, and encrypted at rest with a non-extractable IndexedDB `CryptoKey` instead of plaintext in `chrome.storage.local`
 
 ### Breaking
 
@@ -82,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- SSH / SOCKS passwords and gateway tokens are omitted from backup export and browser sync, and are encrypted at rest instead of stored as plaintext in `chrome.storage.local`
 - Local SSH gateway requires an extension-ID Origin allowlist and an access token; it does not load `~/.ssh/id_rsa` unless `SSH_PRIVATE_KEY_PATH` is set; compress arguments are POSIX single-quoted (#3)
 
 ### Removed

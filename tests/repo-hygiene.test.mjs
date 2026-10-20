@@ -92,12 +92,24 @@ for (const file of htmlFiles) {
 
 assert.ok(exists('search.js'), 'search.js must exist (iteration 4 search logic)');
 assert.ok(exists('folders.js'), 'folders.js must exist so home.js can stay within the 12KB budget');
+assert.ok(exists('import.js'), 'import.js must exist (iteration 6 import logic)');
+assert.ok(exists('sync.js'), 'sync.js must exist (iteration 6 sync logic)');
 const homeHtml = read('home.html');
 assert.match(homeHtml, /<script src="search\.js"><\/script>/, 'home.html must load search.js');
 assert.match(homeHtml, /<script src="folders\.js"><\/script>/, 'home.html must load folders.js');
+assert.match(homeHtml, /<script src="import\.js"><\/script>/, 'home.html must load import.js');
+assert.match(homeHtml, /<script src="sync\.js"><\/script>/, 'home.html must load sync.js');
 assert.ok(
-  homeHtml.indexOf('search.js') < homeHtml.indexOf('home.js'),
-  'search.js must load before home.js'
+  homeHtml.indexOf('search.js') < homeHtml.indexOf('import.js'),
+  'search.js must load before import.js'
+);
+assert.ok(
+  homeHtml.indexOf('import.js') < homeHtml.indexOf('sync.js'),
+  'import.js must load before sync.js'
+);
+assert.ok(
+  homeHtml.indexOf('sync.js') < homeHtml.indexOf('home.js'),
+  'sync.js must load before home.js'
 );
 assert.ok(
   homeHtml.indexOf('folders.js') < homeHtml.indexOf('home.js'),
