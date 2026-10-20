@@ -11,6 +11,7 @@
     "test:ci": "bash scripts/run-e2e.sh"
   },
   "devDependencies": {
+    "crx": "^5.0.1",
     "playwright": "^1.58.2"
   },
   "dependencies": {

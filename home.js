@@ -694,7 +694,13 @@
     };
 
     if (state.showSeconds) options.second = '2-digit';
-    elements.time.textContent = now.toLocaleTimeString('zh-CN', options);
+    // Strip the localized day period; #ampm renders AM/PM separately.
+    elements.time.textContent = new Intl.DateTimeFormat('zh-CN', options)
+      .formatToParts(now)
+      .filter((part) => part.type !== 'dayPeriod')
+      .map((part) => part.value)
+      .join('')
+      .trim();
 
     if (state.clockFormat === '12h') {
       const hours = now.toLocaleTimeString('zh-CN', {
