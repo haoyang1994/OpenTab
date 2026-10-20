@@ -56,6 +56,8 @@ npm run test:e2e:headed
 npm run test:e2e:headless
 ```
 
+`test:e2e:headless` 不推荐：Playwright 无头使用 `chrome-headless-shell`，MV3 `--load-extension` 可能失败。需要看浏览器窗口时用 `test:e2e:headed`；无显示器环境请用 `npm test`（自动 xvfb）。
+
 ## 4. 触发规则（Agent Gate）
 
 当以下文件有改动时，必须至少执行一次 `npm test`：
@@ -125,8 +127,8 @@ npm run test:e2e:headless
 1. `Executable doesn't exist`
 - 执行 `npm run pw:install`
 
-2. `xvfb-run: command not found`
-- 在 Linux 安装 `xvfb`，或改在带 GUI 环境执行
+2. `xvfb-run` 缺失（`npm test` 会打印友好提示并 exit 1）
+- 在 Linux 安装 `xvfb`（如 `sudo apt-get install xvfb`），或改在带 GUI 环境执行 `npm run test:e2e:headed`
 
 3. 扩展未加载
 - 确认 `manifest_version` 为 3

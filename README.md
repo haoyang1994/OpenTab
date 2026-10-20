@@ -179,7 +179,7 @@ npm test
 # 强制有头模式（需要显示器，便于本地调试）
 npm run test:e2e:headed
 
-# 无头模式
+# 无头模式（不推荐，MV3 扩展在 headless Chromium 下可能失败）
 npm run test:e2e:headless
 ```
 
