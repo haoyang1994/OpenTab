@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a problem with OpenTab
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in every field so we can reproduce it.
+  - type: input
+    id: opentab_version
+    attributes:
+      label: OpenTab version
+      description: The `version` field in `manifest.json`, or the value shown in `chrome://extensions`.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: chrome_version
+    attributes:
+      label: Chrome version
+      description: Chrome → About Chrome, or `chrome://version`.
+      placeholder: "131.0.6778.86"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 / macOS 15 / Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps starting from opening a new tab.
+      placeholder: |
+        1. Open a new tab
+        2. Click ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors / screenshots
+      description: Open DevTools → Console, paste any red errors, and drag screenshots here.
+    validations:
+      required: false

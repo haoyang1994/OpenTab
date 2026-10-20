@@ -1,13 +1,22 @@
-name: Extension E2E
+name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  e2e:
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -23,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: npx playwright install --with-deps chromium
 
-      - name: Run extension E2E test
+      - name: Run tests
         run: npm test
