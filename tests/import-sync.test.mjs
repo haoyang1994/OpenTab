@@ -326,6 +326,19 @@ async function run() {
     folders: [{ id: 'folder-home', name: '主页' }],
     background: { type: 'image', value: 'data:image/png;base64,AAAA' }
   };
+  const snapIcons = OpenTabImport.stripSnapshotIconData([{
+    id: 'fat',
+    uploadedIconDataUrl: 'data:image/png;base64,AAAA',
+    resolvedIconUrl: 'data:image/gif;base64,BBBB',
+    customIconUrl: 'blob:https://example.com/1',
+    iconCacheState: 'local',
+    url: 'https://example.com/'
+  }]);
+  assert.equal(snapIcons[0].uploadedIconDataUrl, '');
+  assert.equal(snapIcons[0].resolvedIconUrl, '');
+  assert.equal(snapIcons[0].customIconUrl, '');
+  assert.equal('iconCacheState' in snapIcons[0], false);
+
   const stripped = OpenTabImport.stripSecretsFromState(secretState);
   assert.equal(stripped.icons[0].sshPassword, '');
   assert.equal(stripped.icons[0].sshGatewayToken, '');

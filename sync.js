@@ -7,6 +7,7 @@
 
   const SECRET_FIELDS = ['sshPassword', 'sshGatewayToken', 'sshSocksPassword'];
   const LOCAL_ONLY_FIELDS = ['uploadedIconDataUrl', 'resolvedIconUrl'];
+  const DATA_PREFIX = 'data:';
   const VAULT_STORE = 'opentab.secretVault';
   const CRYPTO_KEY = 'opentab.cryptoKey';
   const ENABLED_KEY = 'browserSyncEnabled';
@@ -384,20 +385,39 @@
   }
 
   function stripDataUrlField(value) {
-    return typeof value === 'string' && value.indexOf('data:') === 0 ? '' : (value || '');
+    if (typeof value !== 'string') return value || '';
+    if (value.indexOf(DATA_PREFIX) === 0) return '';
+    if (value.indexOf('chrome-extension:') === 0 || value.indexOf('blob:') === 0) return '';
+    return value;
   }
 
   function isDataUrl(value) {
-    return typeof value === 'string' && value.indexOf('data:') === 0;
+    return typeof value === 'string' && value.indexOf(DATA_PREFIX) === 0;
+  }
+
+  function isLocalOnlyIconUrl(value) {
+    return isDataUrl(value)
+      || (typeof value === 'string' && (value.indexOf('chrome-extension:') === 0 || value.indexOf('blob:') === 0));
   }
 
   function sanitizeIconForSync(icon) {
+    if (typeof OpenTabIcons !== 'undefined' && OpenTabIcons.sanitizeIconForSync) {
+      const fromIcons = OpenTabIcons.sanitizeIconForSync(icon);
+      SECRET_FIELDS.forEach((field) => {
+        fromIcons[field] = '';
+      });
+      return fromIcons;
+    }
     const clean = Object.assign({}, icon);
     SECRET_FIELDS.forEach((field) => {
       clean[field] = '';
     });
     clean.uploadedIconDataUrl = stripDataUrlField(clean.uploadedIconDataUrl);
     clean.resolvedIconUrl = stripDataUrlField(clean.resolvedIconUrl);
+    if (isLocalOnlyIconUrl(clean.customIconUrl)) clean.customIconUrl = '';
+    if (Array.isArray(clean.iconCandidates)) {
+      clean.iconCandidates = clean.iconCandidates.filter((item) => typeof item === 'string' && item.indexOf(DATA_PREFIX) !== 0 && item.indexOf('chrome-extension:') !== 0);
+    }
     return clean;
   }
 
@@ -411,7 +431,7 @@
       const local = remote && remote.id ? localById.get(remote.id) : null;
       if (!local) return clean;
       LOCAL_ONLY_FIELDS.forEach((field) => {
-        if (isDataUrl(local[field]) && !isDataUrl(clean[field])) clean[field] = local[field];
+        if (isLocalOnlyIconUrl(local[field]) && !isLocalOnlyIconUrl(clean[field])) clean[field] = local[field];
       });
       return clean;
     });

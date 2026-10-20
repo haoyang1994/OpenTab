@@ -149,6 +149,7 @@
 
   const BACKUP_SNAPSHOTS_KEY = 'backupSnapshots';
   const BACKUP_MAX_SNAPSHOTS = 20;
+  const BACKUP_SNAPSHOT_MAX_BYTES = 1500 * 1024;
   const BACKUP_CORE_KEYS = [
     'icons',
     'folders',
@@ -252,19 +253,48 @@
     return stripSecretsFromState(payload);
   }
 
+  function stripSnapshotIconData(icons) {
+    return (Array.isArray(icons) ? icons : []).map((icon) => {
+      if (!icon || typeof icon !== 'object') return icon;
+      const next = Object.assign({}, icon);
+      ['uploadedIconDataUrl', 'resolvedIconUrl', 'customIconUrl'].forEach((field) => {
+        const value = next[field];
+        if (typeof value === 'string' && (value.indexOf('data:') === 0 || value.indexOf('blob:') === 0 || value.indexOf('chrome-extension:') === 0)) {
+          next[field] = '';
+        }
+      });
+      delete next.iconCacheState;
+      return next;
+    });
+  }
+
+  function trimSnapshotList(list) {
+    let trimmed = (Array.isArray(list) ? list : []).slice(0, BACKUP_MAX_SNAPSHOTS);
+    while (trimmed.length > 1) {
+      const bytes = typeof TextEncoder !== 'undefined'
+        ? new TextEncoder().encode(JSON.stringify(trimmed)).length
+        : JSON.stringify(trimmed).length;
+      if (bytes <= BACKUP_SNAPSHOT_MAX_BYTES) break;
+      trimmed.pop();
+    }
+    return trimmed;
+  }
+
   async function saveSnapshotRecord(reason) {
     const current = await storageLocalGet(backupStateKeys(true).concat([BACKUP_SNAPSHOTS_KEY]));
     const list = Array.isArray(current[BACKUP_SNAPSHOTS_KEY]) ? current[BACKUP_SNAPSHOTS_KEY] : [];
     const data = mergeBackupPayload(current, current);
     delete data[BACKUP_SNAPSHOTS_KEY];
+    if (Array.isArray(data.icons)) data.icons = stripSnapshotIconData(data.icons);
     list.unshift({
       id: generateId(),
       createdAt: new Date().toISOString(),
       reason: reason || 'manual',
       data
     });
-    await storageLocalSet({ [BACKUP_SNAPSHOTS_KEY]: list.slice(0, BACKUP_MAX_SNAPSHOTS) });
-    return list[0];
+    const trimmed = trimSnapshotList(list);
+    await storageLocalSet({ [BACKUP_SNAPSHOTS_KEY]: trimmed });
+    return trimmed[0];
   }
 
   async function applyOpenTabBackup(rawPayload) {
@@ -408,7 +438,7 @@
         label = normalized;
       }
     }
-    return {
+    const shortcut = {
       id: generateId(),
       name: label,
       type: 'shortcut',
@@ -419,6 +449,10 @@
       resolvedIconUrl: '',
       iconCandidates: []
     };
+    if (typeof OpenTabIcons !== 'undefined' && OpenTabIcons.prepareRecord) {
+      OpenTabIcons.prepareRecord(shortcut);
+    }
+    return shortcut;
   }
 
   function nextGroupName(desired, groups) {
@@ -950,6 +984,8 @@
     applyOpenTabBackup,
     buildBackupPayload,
     saveSnapshotRecord,
-    BACKUP_SNAPSHOTS_KEY
+    stripSnapshotIconData,
+    BACKUP_SNAPSHOTS_KEY,
+    BACKUP_SNAPSHOT_MAX_BYTES
   };
 }));

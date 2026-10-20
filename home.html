@@ -243,8 +243,36 @@
 
     <div id="icon-context-menu" class="icon-context-menu hidden">
       <button id="open-all-icon-btn" type="button" class="hidden">全部打开</button>
+      <button id="change-icon-btn" type="button">更换图标</button>
       <button id="edit-icon-btn" type="button">编辑</button>
       <button id="delete-icon-btn" type="button" class="danger">删除</button>
+    </div>
+
+    <div id="change-icon-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="change-icon-title">
+      <div class="modal-content change-icon-panel">
+        <h3 id="change-icon-title">更换图标</h3>
+        <div class="change-icon-preview" aria-hidden="true">
+          <img id="change-icon-preview-img" alt="">
+          <span id="change-icon-preview-fallback" class="icon-fallback"></span>
+        </div>
+        <div class="form-group">
+          <label for="change-icon-letter">首字母占位</label>
+          <div class="change-icon-placeholder-row">
+            <input id="change-icon-letter" type="text" maxlength="1" aria-label="占位字母">
+            <input id="change-icon-color" type="color" value="#4c6fff" aria-label="占位颜色">
+            <button id="change-icon-placeholder" class="btn-secondary" type="button">使用占位</button>
+          </div>
+        </div>
+        <p id="change-icon-status" class="form-hint" aria-live="polite"></p>
+        <div class="modal-buttons change-icon-actions">
+          <button id="change-icon-refetch" class="btn-secondary" type="button">重新抓取</button>
+          <label class="btn-secondary change-icon-upload">
+            上传本地图片
+            <input id="change-icon-file" type="file" accept="image/*" hidden>
+          </label>
+          <button id="change-icon-close" class="btn-primary" type="button">关闭</button>
+        </div>
+      </div>
     </div>
 
     <div id="folder-overlay" class="folder-overlay hidden">
@@ -448,7 +476,7 @@
           </div>
         </div>
 
-        <div class="setting-section" id="settings-section-shortcuts" data-settings-section="shortcuts" data-settings-search="shortcut layout icon size columns grid name frame 快捷方式 布局 图标 大小 每行 名称 网格 背景框">
+        <div class="setting-section" id="settings-section-shortcuts" data-settings-section="shortcuts" data-settings-search="shortcut layout icon size columns grid name frame 快捷方式 布局 图标 大小 每行 名称 网格 背景框 更换图标 图标库 占位">
           <h3>快捷方式与布局</h3>
           <div class="setting-row">
             <label for="icon-frame-enabled">显示图标背景框</label>
@@ -621,6 +649,7 @@
   <script src="settings-nav.js"></script>
   <script src="lib/bing-daily.js"></script>
   <script src="bing-cache.js"></script>
+  <script src="icons.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

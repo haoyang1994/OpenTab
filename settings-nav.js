@@ -8,11 +8,11 @@
   const NARROW_MQ = '(max-width: 719px)';
   const DEVELOPER_TOOLS_KEY = 'developerToolsEnabled';
   const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-  const DIALOG_IDS = ['inline-dialog', 'add-icon-modal', 'folder-overlay', 'settings-panel'];
+  const DIALOG_IDS = ['inline-dialog', 'change-icon-modal', 'add-icon-modal', 'folder-overlay', 'settings-panel'];
   const SECTIONS = [
     { id: 'appearance', label: '外观', keywords: 'appearance theme clock opacity blur particle minimal 外观 主题 时钟 界面 粒子 极简 不透明 虚化' },
     { id: 'wallpaper', label: '壁纸', keywords: 'wallpaper background bing gradient image 壁纸 背景 图片 渐变' },
-    { id: 'shortcuts', label: '快捷方式与布局', keywords: 'shortcut layout icon size columns grid name 快捷方式 布局 图标 大小 每行 名称 网格' },
+    { id: 'shortcuts', label: '快捷方式与布局', keywords: 'shortcut layout icon size columns grid name 快捷方式 布局 图标 大小 每行 名称 网格 更换图标 图标库 占位' },
     { id: 'search', label: '搜索', keywords: 'search engine history custom 搜索 引擎 历史 自定义' },
     { id: 'weather', label: '天气', keywords: 'weather city location temperature unit 天气 城市 定位 温度' },
     { id: 'sync', label: '导入与同步', keywords: 'import sync backup bookmark snapshot 导入 同步 备份 书签 快照' },
@@ -77,7 +77,9 @@
 
   function dialogRoot(id, el) {
     if (id === 'folder-overlay') return $('folder-panel') || el;
-    if (id === 'add-icon-modal') return (el && el.querySelector && el.querySelector('.modal-content')) || el;
+    if (id === 'add-icon-modal' || id === 'change-icon-modal') {
+      return (el && el.querySelector && el.querySelector('.modal-content')) || el;
+    }
     return el;
   }
 
@@ -544,9 +546,11 @@
 
   function handleEscape() {
     const modal = $('add-icon-modal');
+    const changer = $('change-icon-modal');
     const menu = $('icon-context-menu');
     const dialog = $('inline-dialog');
     if ((modal && !modal.classList.contains('hidden'))
+      || (changer && !changer.classList.contains('hidden'))
       || (menu && !menu.classList.contains('hidden'))
       || (dialog && !dialog.classList.contains('hidden'))) {
       return false;

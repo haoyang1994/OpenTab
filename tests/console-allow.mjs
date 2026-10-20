@@ -20,8 +20,10 @@ function urlsIn(text) {
 export function isAllowedConsoleError(text, url = '') {
   const t = String(text || '');
   const u = String(url || '');
+  if (/blocked by CORS policy/i.test(t) || /Access to (?:image |fetch at |XMLHttpRequest at )/i.test(t)) {
+    return false;
+  }
   if (t.includes('Failed to fetch Bing image')) return true;
-  if (/favicon\.ico/i.test(t) || /favicon\.ico/i.test(u)) return true;
   if (hostAllowed(hostnameFromUrl(u))) return true;
   const combined = u ? `${t} ${u}` : t;
   for (const found of urlsIn(combined)) {

@@ -50,6 +50,8 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 
 布局与设置面板：`tests/layout.test.mjs`（单元）覆盖 layout normalize/cssVars、boot 镜像切片、设置搜索中英文匹配、天气分区占位、开发者工具迁移、`SYNC_SETTING_KEYS` 含布局键、带布局设置和中文引号名称的 BUG-022 分片，以及 `tests/console-allow.mjs` 的 URL 白名单。E2E：`tests/settings-layout.test.mjs`（由 `npm test` / `scripts/run-e2e.sh` 执行）覆盖 AC1 分区导航与窄屏顶部 tab、AC2 设置搜索（含分区内关键词、不依赖整段 keywords）与 Esc、AC3 布局实时预览与刷新保持（在 `opentab:grid-ready` 当时断言 80px / 6 列 / 隐藏名称，不 `waitForFunction` 等终值）、AC4 分区/全局恢复默认与撤销且不改快捷方式、BUG-032 全局恢复不关闭浏览器同步而同步分区恢复会关闭、AC5 开发者工具默认隐藏与老用户自动开启、AC6 焦点陷阱与 label/aria、AC7 无 console error 且首屏 `grid-ready` / DCL ≤ 500ms。
 
+图标：`tests/icons.test.mjs`（`npm test` 会跑）。覆盖内置库 ≥40 且中英文各半、paintSrc 从不返回 http(s)、自定义 URL 高于内置库、sync 剥离 data URL / `iconCacheState` / `chrome-extension:` / `blob:`。E2E 断言首屏第三方图标请求为 0，网格就绪后用 `<img>` 显示远程图标（含不带 CORS 头的站点、popup/导入、上传本地图片），且无 CORS 控制台豁免。
+
 ### 2.2 当前未覆盖（需要手工/后续自动化）
 
 - 右键新增图标完整流程（emoji/name/url 输入校验）
@@ -67,7 +69,7 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 npm test
 ```
 
-用途：确认仓库规范、导入/同步单元测试、首屏单元测试、布局/设置单元测试、SSH 网关安全测试与主流程均未损坏。`npm test` 顺序：`tests/repo-hygiene.test.mjs` → `tests/import-sync.test.mjs` → `tests/first-screen-unit.test.mjs` → `tests/layout.test.mjs` → `test:ssh-gateway` → Playwright E2E（`extension` / `search` / `first-run` / `settings-layout`）。
+用途：确认仓库规范、导入/同步单元测试、首屏单元测试、布局/设置单元测试、图标单元测试、SSH 网关安全测试与主流程均未损坏。`npm test` 顺序：`tests/repo-hygiene.test.mjs` → `tests/import-sync.test.mjs` → `tests/first-screen-unit.test.mjs` → `tests/layout.test.mjs` → `tests/icons.test.mjs` → `test:ssh-gateway` → Playwright E2E（`extension` / `search` / `first-run` / `settings-layout`）。
 
 ### 3.2 CI 一致性执行
 
@@ -75,7 +77,7 @@ npm test
 npm test
 ```
 
-说明：CI 与本地使用同一条命令。`npm test` 先跑 repo-hygiene、`tests/import-sync.test.mjs`、`tests/first-screen-unit.test.mjs`、`tests/layout.test.mjs` 和 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
+说明：CI 与本地使用同一条命令。`npm test` 先跑 repo-hygiene、`tests/import-sync.test.mjs`、`tests/first-screen-unit.test.mjs`、`tests/layout.test.mjs`、`tests/icons.test.mjs` 和 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
 
 ### 3.3 本地调试模式
 

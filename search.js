@@ -24,7 +24,8 @@
     '#calendar-popover:not(.hidden)',
     '#folder-overlay:not(.hidden)',
     '#inline-dialog:not(.hidden)',
-    '#icon-context-menu:not(.hidden)'
+    '#icon-context-menu:not(.hidden)',
+    '#change-icon-modal:not(.hidden)'
   ];
 
   const searchState = {

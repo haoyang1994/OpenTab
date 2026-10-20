@@ -30,16 +30,16 @@
     return Array.from(byId.values());
   }
 
-  function getFaviconCandidates(url, tabFavIcon) {
-    const candidates = [];
-    if (tabFavIcon) candidates.push(tabFavIcon);
+  function getFaviconCandidates(url) {
+    if (window.OpenTabIcons && OpenTabIcons.faviconCandidates) {
+      return OpenTabIcons.faviconCandidates(url);
+    }
     try {
       const origin = new URL(url).origin;
-      candidates.push(`${origin}/favicon.ico`, `${origin}/apple-touch-icon.png`, `${origin}/favicon.png`);
+      return [`${origin}/apple-touch-icon.png`, `${origin}/favicon.ico`, `${origin}/favicon.png`];
     } catch (error) {
-      // ignore invalid url
+      return [];
     }
-    return Array.from(new Set(candidates));
   }
 
   function generateId() {
@@ -102,8 +102,7 @@
 
     const folderId = elements.folderSelect.value || HOME_FOLDER_ID;
     const tabUrl = state.tab.url;
-    const tabFavIcon = state.tab.favIconUrl || '';
-    const iconCandidates = getFaviconCandidates(tabUrl, tabFavIcon);
+    const iconCandidates = getFaviconCandidates(tabUrl);
 
     chrome.storage.local.get(['icons', 'folders'], (result) => {
       const icons = Array.isArray(result.icons) ? result.icons : [];
@@ -111,7 +110,7 @@
       const validFolderIds = new Set(folders.map((folder) => folder.id));
       const targetFolderId = validFolderIds.has(folderId) ? folderId : HOME_FOLDER_ID;
 
-      icons.push({
+      const record = {
         id: generateId(),
         name,
         url: tabUrl,
@@ -120,9 +119,11 @@
         customIconUrl: '',
         emoji: '',
         uploadedIconDataUrl: '',
-        resolvedIconUrl: tabFavIcon || '',
+        resolvedIconUrl: '',
         iconCandidates
-      });
+      };
+      if (window.OpenTabIcons && OpenTabIcons.prepareRecord) OpenTabIcons.prepareRecord(record);
+      icons.push(record);
 
       chrome.storage.local.set({ icons, folders }, () => {
         setStatus('已添加到 OpenTab。');

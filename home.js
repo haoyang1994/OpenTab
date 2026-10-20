@@ -451,22 +451,6 @@
     return trimmed ? trimmed[0].toUpperCase() : '•';
   }
 
-  function getFaviconCandidates(pageUrl) {
-    try {
-      const origin = new URL(pageUrl).origin;
-      return [`${origin}/favicon.ico`, `${origin}/apple-touch-icon.png`, `${origin}/favicon.png`];
-    } catch (error) {
-      return [];
-    }
-  }
-
-  function cacheResolvedIcon(iconId, resolvedUrl) {
-    const icon = state.icons.find((item) => item.id === iconId);
-    if (!icon || !resolvedUrl || icon.resolvedIconUrl === resolvedUrl) return;
-    icon.resolvedIconUrl = resolvedUrl;
-    saveState();
-  }
-
   function formatTimezoneOffset(offset) {
     const sign = offset >= 0 ? '+' : '';
     return `UTC${sign}${offset}`;
@@ -1015,52 +999,13 @@
 
     const iconVisual = document.createElement('div');
     iconVisual.className = 'icon-visual';
-
-    const fallback = document.createElement('span');
-    fallback.className = 'icon-fallback';
-    fallback.textContent = getIconLabel(icon);
-    iconVisual.appendChild(fallback);
-
-    const iconImg = document.createElement('img');
-    iconImg.className = 'icon-image';
-    iconImg.alt = '';
-    iconImg.draggable = false;
-    iconImg.loading = 'eager';
-    iconImg.referrerPolicy = 'no-referrer';
-
-    const iconType = normalizeIconType(icon.type);
-    const storedCandidates = Array.isArray(icon.iconCandidates) ? icon.iconCandidates : [];
-    const fallbackCandidates = iconType === ICON_TYPE_SHORTCUT ? getFaviconCandidates(icon.url) : [];
-    const manualCandidate = icon.customIconUrl ? [icon.customIconUrl] : [];
-    const resolvedCandidate = icon.resolvedIconUrl ? [icon.resolvedIconUrl] : [];
-    const uploadCandidate = icon.uploadedIconDataUrl ? [icon.uploadedIconDataUrl] : [];
-    const useEmojiOnly = Boolean(icon.emoji) && !icon.customIconUrl && !icon.uploadedIconDataUrl;
-    const autoCandidates = useEmojiOnly ? [] : [...storedCandidates, ...fallbackCandidates];
-    const candidates = [...new Set([...uploadCandidate, ...manualCandidate, ...resolvedCandidate, ...autoCandidates])];
-
-    let candidateIndex = 0;
-    const setCandidateSource = () => {
-      if (candidateIndex < candidates.length) {
-        iconImg.src = candidates[candidateIndex];
-      }
-    };
-
-    iconImg.addEventListener('load', () => {
-      iconVisual.classList.add('has-image');
-      cacheResolvedIcon(icon.id, candidates[candidateIndex]);
-    });
-
-    iconImg.addEventListener('error', () => {
-      iconVisual.classList.remove('has-image');
-      candidateIndex += 1;
-      if (candidateIndex < candidates.length) {
-        setCandidateSource();
-      }
-    });
-
-    if (icon.type !== 'folder' && candidates.length > 0) setCandidateSource();
-
-    iconVisual.appendChild(iconImg);
+    if (window.OpenTabIcons) OpenTabIcons.mountVisual(iconVisual, icon);
+    else {
+      const fallback = document.createElement('span');
+      fallback.className = 'icon-fallback';
+      fallback.textContent = getIconLabel(icon);
+      iconVisual.appendChild(fallback);
+    }
 
     const nameEl = document.createElement('span');
     nameEl.className = 'icon-name';
@@ -1388,14 +1333,16 @@
       emoji: isSsh ? '>_' : (isTool ? '{ }' : emoji),
       uploadedIconDataUrl: isSsh ? '' : uploadedIconDataUrl,
       resolvedIconUrl: isSsh ? '' : (uploadedIconDataUrl || customIconUrl),
-      iconCandidates: isSsh ? [] : getFaviconCandidates(payload.url),
+      iconCandidates: [],
       toolSubtype: isTool ? (payload.toolSubtype || '') : ''
     };
+    if (window.OpenTabIcons) OpenTabIcons.prepareRecord(newIcon);
 
     const before = state.icons.slice();
     state.icons.push(newIcon);
     persistOrRollback(before);
     refreshIconViews();
+    if (window.OpenTabIcons) OpenTabIcons.resolveLater(newIcon.id);
   }
 
   function updateIcon(iconId, payload) {
@@ -1424,23 +1371,15 @@
     icon.customIconUrl = isSsh ? '' : payload.customIconUrl;
     icon.emoji = isSsh ? '>_' : (isTool ? '{ }' : payload.emoji);
     icon.uploadedIconDataUrl = isSsh ? '' : payload.uploadedIconDataUrl;
-    icon.iconCandidates = isSsh ? [] : getFaviconCandidates(payload.url);
+    icon.iconCandidates = [];
     icon.toolSubtype = isTool ? (payload.toolSubtype || '') : '';
-
-    if (isSsh) {
-      icon.resolvedIconUrl = '';
-    } else if (payload.uploadedIconDataUrl) {
-      icon.resolvedIconUrl = payload.uploadedIconDataUrl;
-    } else if (payload.customIconUrl) {
-      icon.resolvedIconUrl = payload.customIconUrl;
-    } else if (payload.emoji) {
-      icon.resolvedIconUrl = '';
-    } else if (!icon.iconCandidates.includes(icon.resolvedIconUrl || '')) {
-      icon.resolvedIconUrl = '';
-    }
+    if (isSsh) icon.resolvedIconUrl = '';
+    else if (window.OpenTabIcons) OpenTabIcons.prepareRecord(icon);
+    else icon.resolvedIconUrl = payload.uploadedIconDataUrl || payload.customIconUrl || '';
 
     saveState();
     refreshIconViews();
+    if (window.OpenTabIcons && !isSsh) OpenTabIcons.resolveLater(icon.id);
   }
 
   function undoDelete(snapshot) {
@@ -1569,6 +1508,7 @@
         if (result.minimalMode !== undefined) state.minimalMode = Boolean(result.minimalMode);
 
         if (window.OpenTabFolders) OpenTabFolders.repairIconGraph(state.icons);
+        if (window.OpenTabIcons) state.icons.forEach((icon) => OpenTabIcons.prepareRecord(icon));
         const requestedFolderId = result.currentFolderId || HOME_FOLDER_ID;
         state.currentFolderId = getFolderById(requestedFolderId) ? requestedFolderId : HOME_FOLDER_ID;
 
@@ -1594,6 +1534,7 @@
         refreshIconViews(false);
         renderTodos();
         setTodoPanelOpen(state.todoPanelOpen);
+        if (window.OpenTabIcons) OpenTabIcons.scheduleIdleMigration();
 
         if (backgroundChanged) saveState();
         OpenTabBingCache.afterStateLoaded();
@@ -1828,7 +1769,9 @@
     }
 
     try {
-      pendingIconUploadDataUrl = await readFileAsDataUrl(file);
+      pendingIconUploadDataUrl = window.OpenTabIcons
+        ? await OpenTabIcons.readAndCompressFile(file)
+        : await readFileAsDataUrl(file);
       elements.iconUploadStatus.textContent = `已选择：${file.name}`;
     } catch (error) {
       pendingIconUploadDataUrl = '';
@@ -1843,15 +1786,23 @@
 
   function openIconContextMenu(event, iconId) {
     contextMenuIconId = iconId;
-    elements.iconContextMenu.style.left = `${event.clientX}px`;
-    elements.iconContextMenu.style.top = `${event.clientY}px`;
     elements.iconContextMenu.classList.remove('hidden');
     if (window.OpenTabFolders) OpenTabFolders.syncContextMenu(iconId);
+    if (window.OpenTabIcons) OpenTabIcons.placeMenu(elements.iconContextMenu, event);
+    else {
+      elements.iconContextMenu.style.left = `${event.clientX}px`;
+      elements.iconContextMenu.style.top = `${event.clientY}px`;
+    }
   }
 
   function handleEscape(event) {
     if (event.key !== 'Escape') return;
     endDesktopDrag();
+    if (window.OpenTabIcons && OpenTabIcons.handleEscape()) {
+      event.preventDefault();
+      restoreFocus();
+      return;
+    }
     if (window.OpenTabFolders && OpenTabFolders.handleEscape()) {
       event.preventDefault();
       restoreFocus();
@@ -2087,6 +2038,19 @@
     if (event.key === 'Enter') handleAddTodo();
   });
 
+  if (window.OpenTabIcons) {
+    OpenTabIcons.init({
+      getIcons: () => state.icons,
+      saveState,
+      refreshIconViews,
+      showToast,
+      rememberFocus,
+      restoreFocus,
+      getContextMenuIconId: () => contextMenuIconId,
+      hideIconContextMenu,
+      getIconLabel
+    });
+  }
   OpenTabSearch.init({
     getIcons: () => state.icons,
     openMatchedIcon: (icon) => {
