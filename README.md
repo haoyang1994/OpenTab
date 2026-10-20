@@ -57,7 +57,11 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 
 ### Search, weather, todos, backup
 
-- Search engines: Google, Bing, GitHub
+- Search engines: Google, Bing, Baidu, DuckDuckGo, GitHub, plus custom `%s` engines
+- Type a URL or domain to open it; Enter on an exact shortcut name opens that shortcut
+- Tab / Shift+Tab cycles engines; `/` or typing focuses search when nothing else is focused
+- Local search history (up to 20 items, can be disabled or cleared)
+- Option to open search results in a new tab (also Ctrl/Cmd+Enter and middle-click)
 - Weather pill via geolocation and [wttr.in](https://wttr.in)
 - Side-drawer todos with a progress bar
 - JSON backup export/import and a local snapshot
@@ -80,7 +84,8 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, and snapshots are stored in `chrome.storage.local` on this browser profile.
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile.
+- The search box does not fetch suggestions or typeahead from any engine.
 - OpenTab does not include analytics, ads, or account login.
 - OpenTab does not rewrite or intercept links you open.
 - The extension does request a small set of hosts for optional features:
@@ -148,13 +153,13 @@ npm run ssh:gateway
 ```
 
 3. The first start prints an **access token** (later starts only print the token file path). Put it in the OpenTab SSH shortcut field “网关访问令牌”.
-4. Use gateway URL `ws://127.0.0.1:8787/ssh`.
+4. Use gateway URL `ws://127.0.0.1:8787/ssh` (or `ws://localhost:8787/ssh`). **Loopback only (`127.0.0.1` / `localhost`):** the extension CSP allows WebSocket only to those hosts. A saved non-loopback gateway URL (including `[::1]`) will be blocked.
 
 The gateway will not start without an extension ID. Arbitrary websites (and clients without an Origin header) cannot connect. A missing or wrong token is rejected at handshake.
 
 Environment variables:
 
-- `SSH_GATEWAY_HOST` — bind host (default `127.0.0.1`)
+- `SSH_GATEWAY_HOST` — bind host (default `127.0.0.1`). **Loopback only:** `127.0.0.1` or `localhost`. The extension cannot connect to a non-loopback bind.
 - `SSH_GATEWAY_PORT` — bind port (default `8787`)
 - `SSH_GATEWAY_PATH` — WebSocket path (default `/ssh`)
 - `SSH_GATEWAY_EXTENSION_ID` — this extension ID (**required**; Origin allowlist; refuses to start if unset)
@@ -168,6 +173,7 @@ SOCKS5 proxies are supported from the shortcut editor. SSH passwords are current
 
 Upgrading existing SSH shortcuts:
 
+- **Breaking:** Gateway URLs must be `127.0.0.1` or `localhost`. Non-loopback hosts (including `[::1]`) are blocked by CSP.
 - Each old SSH shortcut needs a gateway access token, or it cannot connect to the new gateway.
 - The gateway no longer defaults to `~/.ssh/id_rsa`. Set `SSH_PRIVATE_KEY_PATH` if you still log in with a key.
 - You must set `SSH_GATEWAY_EXTENSION_ID` (OpenTab’s ID on `chrome://extensions`).
@@ -183,6 +189,7 @@ OpenTab/
 ├── package.json
 ├── background.js              # service worker
 ├── home.html / home.css / home.js
+├── search.js                  # new-tab search box (engines, history, URL jump)
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js
 ├── fixparser.html / fixparser.js

@@ -175,8 +175,6 @@
     dragLive: document.getElementById('drag-live'),
     dropIndicator: document.getElementById('icon-drop-indicator'),
     toast: document.getElementById('toast'),
-    searchEngineButtons: document.querySelectorAll('.engine-btn'),
-    searchInput: document.getElementById('search-input'),
     todoInput: document.getElementById('todo-input'),
     todoAddBtn: document.getElementById('todo-add-btn'),
     todoList: document.getElementById('todo-list'),
@@ -272,7 +270,6 @@
     icons: [],
     folders: [],
     currentFolderId: HOME_FOLDER_ID,
-    searchEngine: 'google',
     todoPanelOpen: false,
     todos: [],
     background: { type: 'bing', value: '', source: '' },
@@ -300,7 +297,7 @@
     'icons',
     'folders',
     'currentFolderId',
-    'searchEngine',
+    ...OpenTabSearch.STORAGE_KEYS,
     'todos',
     'todoPanelOpen',
     'background',
@@ -421,7 +418,7 @@
       icons: state.icons,
       folders: state.folders,
       currentFolderId: state.currentFolderId,
-      searchEngine: state.searchEngine,
+      ...OpenTabSearch.getBackupSlice(),
       todos: state.todos,
       todoPanelOpen: state.todoPanelOpen,
       background: state.background,
@@ -482,9 +479,7 @@
     normalized.currentFolderId = validFolderIds.has(normalized.currentFolderId)
       ? normalized.currentFolderId
       : HOME_FOLDER_ID;
-    normalized.searchEngine = ['google', 'bing', 'github'].includes(normalized.searchEngine)
-      ? normalized.searchEngine
-      : 'google';
+    Object.assign(normalized, OpenTabSearch.normalizeBackup(normalized));
     normalized.todos = Array.isArray(normalized.todos) ? normalized.todos : [];
     normalized.todoPanelOpen = Boolean(normalized.todoPanelOpen);
     normalized.clockFormat = normalized.clockFormat === '24h' ? '24h' : '12h';
@@ -855,13 +850,6 @@
     elements.welcomeText.textContent = getWelcomeText(now, hour, minute);
   }
 
-  function getSearchUrl(engine, keyword) {
-    const query = encodeURIComponent(keyword);
-    if (engine === 'bing') return `https://www.bing.com/search?q=${query}`;
-    if (engine === 'github') return `https://github.com/search?q=${query}&type=repositories`;
-    return `https://www.google.com/search?q=${query}`;
-  }
-
   function mapWeatherToIcon(weatherCode, descText) {
     const code = Number(weatherCode);
     const desc = String(descText || '');
@@ -1001,22 +989,6 @@
     }
     state.icons = [];
     state.todos = [];
-  }
-
-  function renderSearchEngineButtons() {
-    elements.searchEngineButtons.forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.engine === state.searchEngine);
-    });
-  }
-
-  function handleSearch() {
-    const keyword = elements.searchInput.value.trim();
-    if (!keyword) {
-      elements.searchInput.focus();
-      return;
-    }
-    const url = getSearchUrl(state.searchEngine, keyword);
-    window.location.assign(url);
   }
 
   function renderTodos() {
@@ -1999,7 +1971,6 @@
       icons: state.icons,
       folders: state.folders,
       currentFolderId: state.currentFolderId,
-      searchEngine: state.searchEngine,
       todos: state.todos,
       todoPanelOpen: state.todoPanelOpen,
       background: state.background,
@@ -2028,7 +1999,7 @@
 
   function loadState() {
     chrome.storage.local.get(
-      ['icons', 'folders', 'currentFolderId', 'searchEngine', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'],
+      ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'],
       (result) => {
         state.folders = ensureFolders(result.folders).filter(
           (folder) => !LEGACY_PRESET_FOLDER_IDS.has(folder.id)
@@ -2066,7 +2037,6 @@
           backgroundChanged = !backgroundsEqual(migratedBackground, result.background);
           state.background = migratedBackground;
         }
-        if (result.searchEngine) state.searchEngine = result.searchEngine;
         if (Array.isArray(result.todos)) {
           state.todos = result.todos
             .filter((item) => item && item.id && typeof item.text === 'string')
@@ -2112,7 +2082,6 @@
         applyParticles();
         applyGradientFlow();
         applyMinimalMode();
-        renderSearchEngineButtons();
 
         updatePresetSelection();
         updateBgTabs();
@@ -2678,7 +2647,7 @@
 
   document.addEventListener('contextmenu', (event) => {
     if (event.altKey || (window.getSelection && String(window.getSelection()))) return;
-    if (event.target.closest('input, textarea, [contenteditable], #search-widget, #todo-widget, .icon-widget[data-id], .modal, .icon-context-menu, .settings-panel, .timezone-selector, .calendar-popover, .workspace-drawer')) return;
+    if (event.target.closest('input, textarea, [contenteditable], #search-widget-wrap, #search-widget, #todo-widget, .icon-widget[data-id], .modal, .icon-context-menu, .settings-panel, .timezone-selector, .calendar-popover, .workspace-drawer')) return;
     event.preventDefault();
     hideIconContextMenu();
     focusStack.length = 0;
@@ -2820,14 +2789,6 @@
   elements.backupImportFile.addEventListener('change', handleImportBackupFile);
   elements.backupSaveSnapshotBtn.addEventListener('click', handleSaveSnapshot);
   elements.backupRestoreSnapshotBtn.addEventListener('click', handleRestoreLatestSnapshot);
-  elements.searchEngineButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.searchEngine = btn.dataset.engine || 'google';
-      saveState();
-      renderSearchEngineButtons();
-      elements.searchInput.focus();
-    });
-  });
   elements.todoAddBtn.addEventListener('click', handleAddTodo);
 
   elements.iconUrl.addEventListener('keydown', (event) => {
@@ -2868,12 +2829,13 @@
     if (event.key === 'Enter') handleSaveIcon();
   });
 
-  elements.searchInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSearch();
-  });
-
   elements.todoInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') handleAddTodo();
+  });
+
+  OpenTabSearch.init({
+    getIcons: () => state.icons,
+    openMatchedIcon: (icon) => openIconTarget(icon)
   });
 
   loadState();

@@ -52,28 +52,45 @@
         </div>
       </div>
 
-      <div id="search-widget" class="glass-widget">
-        <div id="search-engine-switch" aria-label="搜索引擎">
-          <button class="engine-btn active" data-engine="google" type="button" title="Google" aria-label="Google">
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.56-.2-2.3H12v4.36h6.45a5.51 5.51 0 0 1-2.4 3.62v3h3.88c2.27-2.08 3.56-5.16 3.56-8.68z"/>
-              <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.9l-3.88-3A7.17 7.17 0 0 1 12 19.4c-3.13 0-5.78-2.1-6.73-4.93H1.27v3.1A12 12 0 0 0 12 24z"/>
-              <path fill="#FBBC05" d="M5.27 14.47a7.2 7.2 0 0 1 0-4.94v-3.1H1.27a12 12 0 0 0 0 11.14l4-3.1z"/>
-              <path fill="#EA4335" d="M12 4.6c1.76 0 3.33.6 4.58 1.77l3.44-3.44A11.94 11.94 0 0 0 12 0 12 12 0 0 0 1.27 6.43l4 3.1C6.22 6.7 8.87 4.6 12 4.6z"/>
-            </svg>
-          </button>
-          <button class="engine-btn" data-engine="bing" type="button" title="Bing" aria-label="Bing">
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#008373" d="M6 2v17.5c0 .64.66 1.06 1.24.79l11.2-5.2c.73-.34.73-1.38 0-1.72l-5.1-2.37 2.84-1.35c.74-.35.73-1.4-.02-1.73L8.3 4.53V2H6z"/>
-            </svg>
-          </button>
-          <button class="engine-btn" data-engine="github" type="button" title="GitHub Projects" aria-label="GitHub Projects">
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#f0f6fc" d="M12 .5a11.5 11.5 0 0 0-3.64 22.42c.58.1.79-.25.79-.56v-2.2c-3.22.7-3.9-1.36-3.9-1.36-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.97.1-.76.4-1.26.72-1.55-2.57-.29-5.27-1.29-5.27-5.73 0-1.27.46-2.32 1.2-3.13-.12-.29-.52-1.47.12-3.06 0 0 .98-.31 3.2 1.2a11.06 11.06 0 0 1 5.82 0c2.22-1.5 3.2-1.2 3.2-1.2.64 1.59.24 2.77.12 3.06.75.81 1.2 1.86 1.2 3.13 0 4.45-2.71 5.44-5.3 5.73.42.36.79 1.06.79 2.14v3.18c0 .31.2.67.8.56A11.5 11.5 0 0 0 12 .5z"/>
-            </svg>
-          </button>
+      <div id="search-widget-wrap">
+        <div id="search-widget" class="glass-widget">
+          <div id="search-engine-switch" aria-label="搜索引擎">
+            <button class="engine-btn active" data-engine="google" type="button" title="Google" aria-label="Google">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.56-.2-2.3H12v4.36h6.45a5.51 5.51 0 0 1-2.4 3.62v3h3.88c2.27-2.08 3.56-5.16 3.56-8.68z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.9l-3.88-3A7.17 7.17 0 0 1 12 19.4c-3.13 0-5.78-2.1-6.73-4.93H1.27v3.1A12 12 0 0 0 12 24z"/>
+                <path fill="#FBBC05" d="M5.27 14.47a7.2 7.2 0 0 1 0-4.94v-3.1H1.27a12 12 0 0 0 0 11.14l4-3.1z"/>
+                <path fill="#EA4335" d="M12 4.6c1.76 0 3.33.6 4.58 1.77l3.44-3.44A11.94 11.94 0 0 0 12 0 12 12 0 0 0 1.27 6.43l4 3.1C6.22 6.7 8.87 4.6 12 4.6z"/>
+              </svg>
+            </button>
+            <button class="engine-btn" data-engine="bing" type="button" title="Bing" aria-label="Bing">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#008373" d="M6 2v17.5c0 .64.66 1.06 1.24.79l11.2-5.2c.73-.34.73-1.38 0-1.72l-5.1-2.37 2.84-1.35c.74-.35.73-1.4-.02-1.73L8.3 4.53V2H6z"/>
+              </svg>
+            </button>
+            <button class="engine-btn" data-engine="baidu" type="button" title="百度" aria-label="百度">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="11" fill="#2932E1"/>
+                <text x="12" y="16.5" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="system-ui,sans-serif">百</text>
+              </svg>
+            </button>
+            <button class="engine-btn" data-engine="duckduckgo" type="button" title="DuckDuckGo" aria-label="DuckDuckGo">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="11" fill="#DE5833"/>
+                <text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" font-family="system-ui,sans-serif">D</text>
+              </svg>
+            </button>
+            <button class="engine-btn" data-engine="github" type="button" title="GitHub Projects" aria-label="GitHub Projects">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#f0f6fc" d="M12 .5a11.5 11.5 0 0 0-3.64 22.42c.58.1.79-.25.79-.56v-2.2c-3.22.7-3.9-1.36-3.9-1.36-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.97.1-.76.4-1.26.72-1.55-2.57-.29-5.27-1.29-5.27-5.73 0-1.27.46-2.32 1.2-3.13-.12-.29-.52-1.47.12-3.06 0 0 .98-.31 3.2 1.2a11.06 11.06 0 0 1 5.82 0c2.22-1.5 3.2-1.2 3.2-1.2.64 1.59.24 2.77.12 3.06.75.81 1.2 1.86 1.2 3.13 0 4.45-2.71 5.44-5.3 5.73.42.36.79 1.06.79 2.14v3.18c0 .31.2.67.8.56A11.5 11.5 0 0 0 12 .5z"/>
+              </svg>
+            </button>
+            <span id="search-custom-engines" class="search-custom-engines"></span>
+          </div>
+          <input id="search-input" type="text" placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
         </div>
-        <input id="search-input" type="text" placeholder="输入关键词并回车搜索">
+        <p id="search-hint" class="search-hint hidden" role="status" aria-live="polite"></p>
+        <div id="search-history" class="search-history hidden" role="listbox"></div>
       </div>
 
       <aside id="todo-widget" class="glass-widget hidden">
@@ -185,7 +202,7 @@
           <div class="form-group">
             <label>SSH 网关 WebSocket 地址</label>
             <input type="url" id="ssh-gateway-url" placeholder="ws://127.0.0.1:8787/ssh">
-            <p class="form-hint">仅本扩展页面可连接本地网关。默认本地地址：ws://127.0.0.1:8787/ssh</p>
+            <p class="form-hint">仅本扩展页面可连接本地网关。只支持 127.0.0.1 / localhost。默认：ws://127.0.0.1:8787/ssh</p>
           </div>
           <div class="form-group">
             <label>网关访问令牌</label>
@@ -423,6 +440,37 @@
           </div>
         </div>
 
+        <div class="setting-section" id="search-settings-section">
+          <h3>搜索</h3>
+          <div class="setting-row">
+            <label for="search-default-engine">默认引擎</label>
+            <select id="search-default-engine"></select>
+          </div>
+          <div class="setting-row">
+            <label for="search-open-new-tab">搜索结果在新标签页打开</label>
+            <input type="checkbox" id="search-open-new-tab">
+          </div>
+          <div class="setting-row">
+            <label for="search-history-enabled">保存搜索历史</label>
+            <input type="checkbox" id="search-history-enabled">
+          </div>
+          <div class="setting-row">
+            <label>本地历史</label>
+            <button id="search-history-clear" class="btn-small ghost" type="button">清除历史</button>
+          </div>
+          <p class="form-hint">最多 20 条，自动去重，仅保存在 chrome.storage.local。没有搜索建议，也不会向外请求联想。</p>
+          <div class="search-custom-block">
+            <p class="search-custom-heading">自定义引擎（名称 + 含 %s 的 URL）</p>
+            <ul id="search-custom-list" class="search-custom-list"></ul>
+            <div class="search-custom-form">
+              <input type="text" id="search-custom-name" placeholder="名称，例如：维基" maxlength="40">
+              <input type="text" id="search-custom-template" placeholder="https://example.com/search?q=%s">
+              <button id="search-custom-save" class="btn-small" type="button">添加</button>
+            </div>
+            <p id="search-custom-status" class="backup-status"></p>
+          </div>
+        </div>
+
         <div class="setting-section">
           <h3>图标</h3>
           <div class="setting-row">
@@ -455,6 +503,7 @@
 
   <script src="vendor/flatpickr/flatpickr.min.js"></script>
   <script src="vendor/flatpickr/l10n/zh.js"></script>
+  <script src="search.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

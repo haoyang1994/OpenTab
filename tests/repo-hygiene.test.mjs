@@ -89,4 +89,56 @@ for (const file of htmlFiles) {
   }
 }
 
+assert.ok(exists('search.js'), 'search.js must exist (iteration 4 search logic)');
+const homeHtml = read('home.html');
+assert.match(homeHtml, /<script src="search\.js"><\/script>/, 'home.html must load search.js');
+assert.ok(
+  homeHtml.indexOf('search.js') < homeHtml.indexOf('home.js'),
+  'search.js must load before home.js'
+);
+
+assert.equal(manifest.permissions.includes('tabs'), false, 'BUG-005/AC7: tabs permission must be removed');
+assert.ok(manifest.permissions.includes('activeTab'), 'popup uses activeTab');
+assert.deepEqual(
+  manifest.permissions.slice().sort(),
+  ['activeTab', 'geolocation', 'storage'].sort(),
+  'must not add new permissions'
+);
+
+function cspSources(csp, directive) {
+  const chunk = String(csp || '')
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part === directive || part.startsWith(`${directive} `));
+  if (!chunk) return [];
+  return chunk.slice(directive.length).trim().split(/\s+/).filter(Boolean);
+}
+
+const csp = manifest.content_security_policy.extension_pages;
+const connectSrc = cspSources(csp, 'connect-src');
+const imgSrc = cspSources(csp, 'img-src');
+assert.equal(connectSrc.includes('ws:'), false, 'AC7: connect-src must not allow blanket ws:');
+assert.equal(connectSrc.includes('wss:'), false, 'AC7: connect-src must not allow blanket wss:');
+assert.equal(connectSrc.includes('https:'), false, 'AC7: connect-src must not allow all https');
+assert.ok(
+  connectSrc.some((src) => src.startsWith('ws://127.0.0.1')),
+  'SSH loopback ws://127.0.0.1 must remain in connect-src'
+);
+assert.ok(
+  connectSrc.some((src) => src.startsWith('ws://localhost')),
+  'SSH loopback ws://localhost must remain in connect-src'
+);
+assert.ok(connectSrc.includes('https://wttr.in'), 'weather fetch needs wttr.in in connect-src');
+assert.ok(imgSrc.includes("'self'"), 'img-src must keep self');
+assert.ok(imgSrc.includes('data:'), 'img-src must keep data: for uploads');
+assert.ok(
+  imgSrc.includes('https:'),
+  'AC7: img-src retains https: (product: narrow connect-src, keep img-src https:)'
+);
+assert.equal(
+  connectSrc.some((src) => src.includes('baidu') || src.includes('duckduckgo')),
+  false,
+  'Baidu/DuckDuckGo searches are navigations, not connect-src'
+);
+
 console.log('repo-hygiene passed');

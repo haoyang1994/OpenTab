@@ -894,13 +894,14 @@ async function runExtensionE2E() {
     // --- T10 manifest ---
     const localManifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_PATH, 'manifest.json'), 'utf8'));
     assert.ok(!localManifest.permissions.includes('contextMenus'), 'T10: contextMenus removed');
+    assert.ok(!localManifest.permissions.includes('tabs'), 'T10: tabs removed; popup uses activeTab');
     const masterManifest = readMasterManifest();
     if (masterManifest) {
-      const expectedPerms = masterManifest.permissions.filter(item => item !== 'contextMenus');
+      const expectedPerms = masterManifest.permissions.filter((item) => item !== 'contextMenus' && item !== 'tabs');
       assert.deepEqual(localManifest.permissions, expectedPerms, 'T10: permissions otherwise match master');
       assert.deepEqual(localManifest.host_permissions, masterManifest.host_permissions, 'T10: host_permissions unchanged');
     } else {
-      assert.deepEqual(localManifest.permissions, ['storage', 'activeTab', 'tabs', 'geolocation']);
+      assert.deepEqual(localManifest.permissions, ['storage', 'activeTab', 'geolocation']);
       assert.deepEqual(localManifest.host_permissions, ['https://www.bing.com/*', 'https://wttr.in/*']);
     }
     console.log('T10 passed');

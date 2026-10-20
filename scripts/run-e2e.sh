@@ -7,6 +7,7 @@ set -euo pipefail
 
 run_headed() {
   env HEADLESS=false node tests/extension.test.mjs
+  env HEADLESS=false node tests/search.test.mjs
 }
 
 run_with_xvfb() {
@@ -18,7 +19,7 @@ run_with_xvfb() {
     exit 1
   fi
   echo "$reason"
-  xvfb-run -a env HEADLESS=false node tests/extension.test.mjs
+  xvfb-run -a bash -c 'export HEADLESS=false; node tests/extension.test.mjs && node tests/search.test.mjs'
 }
 
 if [[ "${CI:-}" == "true" ]]; then

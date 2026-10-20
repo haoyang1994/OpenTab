@@ -57,7 +57,11 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 ### 搜索、天气、待办、备份
 
-- 搜索引擎：Google、Bing、GitHub
+- 搜索引擎：Google、Bing、百度、DuckDuckGo、GitHub，以及自定义 `%s` 引擎
+- 输入网址或域名直接打开；输入与快捷方式名称完全匹配时回车打开该快捷方式
+- 输入框获焦时 Tab / Shift+Tab 切换引擎；页面无焦点时按 `/` 或直接打字聚焦搜索框
+- 本地搜索历史（最多 20 条，可关、可清）
+- 「搜索结果在新标签页打开」，以及 Ctrl/Cmd+回车、中键
 - 天气胶囊：浏览器地理位置 + [wttr.in](https://wttr.in)
 - 侧边抽屉待办和进度条
 - JSON 备份导出 / 导入，以及本地快照
@@ -80,7 +84,8 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 ## 隐私说明
 
-- 偏好设置、快捷方式、待办和快照保存在当前浏览器配置的 `chrome.storage.local`。
+- 偏好设置、快捷方式、待办、快照和搜索历史保存在当前浏览器配置的 `chrome.storage.local`。
+- 搜索框不会向任何引擎请求联想或建议。
 - OpenTab 没有统计、没有广告、没有账号登录。
 - OpenTab 不会改写或拦截你打开的链接。
 - 可选功能会请求少量外部主机：
@@ -148,13 +153,13 @@ npm run ssh:gateway
 ```
 
 3. 首次启动会打印 **access token**（之后只显示 token 文件路径）。把它填进 OpenTab SSH 图标的「网关访问令牌」。
-4. 网关地址填 `ws://127.0.0.1:8787/ssh`。
+4. 网关地址填 `ws://127.0.0.1:8787/ssh`（或 `ws://localhost:8787/ssh`）。**只支持 `127.0.0.1` / `localhost`：** 扩展 CSP 仅允许连到这两个主机。已保存的非回环网关地址（包括 `[::1]`）会被拦截。
 
 未设置扩展 ID 时网关不会启动。任意网页（以及缺少 Origin 头的客户端）无法连接；缺少或错误令牌时握手会被拒绝。
 
 环境变量：
 
-- `SSH_GATEWAY_HOST` — 监听主机（默认 `127.0.0.1`）
+- `SSH_GATEWAY_HOST` — 监听主机（默认 `127.0.0.1`）。**只支持** `127.0.0.1` / `localhost`。绑到非回环地址时，扩展侧 CSP 会拒绝连接。
 - `SSH_GATEWAY_PORT` — 监听端口（默认 `8787`）
 - `SSH_GATEWAY_PATH` — WebSocket 路径（默认 `/ssh`）
 - `SSH_GATEWAY_EXTENSION_ID` — 本扩展 ID（**必填**；Origin 白名单。未设置则拒绝启动）
@@ -168,6 +173,7 @@ npm run ssh:gateway
 
 升级说明（已有 SSH 图标）：
 
+- **破坏性变更：** 网关地址只支持 `127.0.0.1` / `localhost`。非回环主机（包括 `[::1]`）会被 CSP 拦截。
 - 每个旧 SSH 图标都要补填「网关访问令牌」，否则连不上新网关。
 - 网关不再默认使用 `~/.ssh/id_rsa`。如果仍要用私钥登录，启动前设置 `SSH_PRIVATE_KEY_PATH`。
 - 必须设置 `SSH_GATEWAY_EXTENSION_ID`（`chrome://extensions` 里 OpenTab 的 ID）。
@@ -183,6 +189,7 @@ OpenTab/
 ├── package.json
 ├── background.js              # Service Worker
 ├── home.html / home.css / home.js
+├── search.js                  # 新标签页搜索框（引擎、历史、网址直达）
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js
 ├── fixparser.html / fixparser.js
