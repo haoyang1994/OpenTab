@@ -76,12 +76,16 @@
 
 #### 方式一：开发者模式加载（推荐自己用）
 
+克隆后即可直接加载，**不需要 `npm install`**。新标签页日历（flatpickr）和 SSH 终端（xterm）所需的浏览器运行时文件已放在仓库的 [`vendor/`](vendor/README.md) 目录，不会依赖被 `.gitignore` 忽略的 `node_modules/`。
+
 1. 下载或克隆本项目
 2. 打开 Chrome，访问 `chrome://extensions/`
 3. 开启右上角的「开发者模式」
 4. 点击「加载已解压的扩展程序」
 5. 选择项目根目录
 6. 打开新标签页，享受 OpenTab！
+
+`npm install` 只在本地跑自动化测试，或启动 SSH WebSocket 网关时需要。
 
 #### 方式二：Chrome 网上应用店（待发布）
 
@@ -153,6 +157,7 @@ open-tab/
 │   ├── icon48.png
 │   └── icon128.png
 ├── assets/                # 静态资源
+├── vendor/                # 浏览器运行时第三方库（flatpickr / xterm，已注明版本与许可证）
 ├── tests/                 # E2E 测试
 ├── docs/                  # 文档
 └── .github/workflows/     # CI 配置
@@ -160,8 +165,10 @@ open-tab/
 
 ### 本地开发
 
+加载扩展本身不需要安装 Node 依赖。若要跑测试或 SSH 网关：
+
 ```bash
-# 安装依赖
+# 安装依赖（测试、SSH 网关；不是加载扩展的前置步骤）
 npm install
 
 # 安装 Playwright 浏览器（用于测试）
@@ -198,9 +205,9 @@ npm run test:e2e:headless
 
 - **原生 HTML/CSS/JavaScript** - 无框架依赖，轻量高效
 - **Manifest V3** - 最新 Chrome 扩展标准
-- **flatpickr** - 日历组件
-- **xterm.js** - 终端组件
-- **ssh2 + ws + socks** - SSH 网关
+- **flatpickr 4.6.13** - 日历组件（vendored，`vendor/flatpickr/`，MIT）
+- **xterm.js 5.3.0 + addon-fit 0.8.0** - 终端组件（vendored，`vendor/xterm*/`，MIT）
+- **ssh2 + ws + socks** - SSH 网关（Node，需 `npm install`）
 - **Playwright** - E2E 自动化测试
 
 ---
