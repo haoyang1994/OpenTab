@@ -6,15 +6,27 @@
   'use strict';
 
   const SECRET_FIELDS = ['sshPassword', 'sshGatewayToken', 'sshSocksPassword'];
+  const LOCAL_ONLY_FIELDS = ['uploadedIconDataUrl', 'resolvedIconUrl'];
   const VAULT_STORE = 'opentab.secretVault';
   const CRYPTO_KEY = 'opentab.cryptoKey';
   const ENABLED_KEY = 'browserSyncEnabled';
+  const DEVICE_KEY = 'opentab.syncDeviceId';
   const META_KEY = 'ot.s.meta';
   const QUOTA_BYTES = 102400;
   const QUOTA_BYTES_PER_ITEM = 8192;
-  const CHUNK_SIZE = 7000;
+  const CHUNK_SIZE = 7800;
+  const PUSH_DEBOUNCE_MS = 2000;
+  const IDB_NAME = 'opentab-crypto';
+  const IDB_STORE = 'keys';
+  const IDB_KEY = 'vault-key';
+  const APPLIED_EVENT = 'opentab-sync-applied';
+  const utf8 = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+  const utf8dec = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
   const SYNC_SETTING_KEYS = [
     'searchEngine',
+    'customSearchEngines',
+    'searchOpenInNewTab',
+    'searchHistoryEnabled',
     'clockFormat',
     'showSeconds',
     'uiOpacity',
@@ -30,14 +42,21 @@
     'currentFolderId'
   ];
   const SYNC_TRIGGERS = new Set(['icons', 'folders'].concat(SYNC_SETTING_KEYS));
+  const wrappedAreas = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
 
   let chromeRef = null;
+  let keyStoreRef = null;
   let pendingVault = {};
   let flushChain = Promise.resolve();
   let enabled = false;
   let applyingRemote = false;
   let pushTimer = 0;
   let syncBound = false;
+  let deviceId = '';
+  let lastPushedHash = '';
+  let lastAppliedHash = '';
+  let writeCount = 0;
+  let cryptoKeyPromise = null;
 
   function getChrome() {
     if (chromeRef) return chromeRef;
@@ -46,6 +65,12 @@
 
   function setChrome(api) {
     chromeRef = api || null;
+    wrapLocalSet();
+  }
+
+  function setKeyStore(api) {
+    keyStoreRef = api || null;
+    cryptoKeyPromise = null;
   }
 
   function oncePair() {
@@ -116,62 +141,113 @@
     return arr;
   }
 
+  function utf8Length(value) {
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+    if (utf8) return utf8.encode(text).length;
+    return unescape(encodeURIComponent(text)).length;
+  }
+
+  function storedItemBytes(key, value) {
+    return utf8Length(key) + utf8Length(JSON.stringify(value));
+  }
+
   function getSubtle() {
     const webCrypto = typeof crypto !== 'undefined' ? crypto : null;
     return webCrypto && webCrypto.subtle ? webCrypto.subtle : null;
   }
 
-  async function importAesKey(b64) {
-    const subtle = getSubtle();
-    if (!subtle) return null;
-    return subtle.importKey('raw', b64ToBytes(b64), 'AES-GCM', true, ['encrypt', 'decrypt']);
+  function openCryptoDb() {
+    if (typeof indexedDB === 'undefined') return Promise.reject(new Error('no-idb'));
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+          req.result.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('idb-open'));
+    });
+  }
+
+  async function idbGetKey() {
+    if (keyStoreRef && typeof keyStoreRef.getKey === 'function') return keyStoreRef.getKey();
+    const db = await openCryptoDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error || new Error('idb-get'));
+    });
+  }
+
+  async function idbSetKey(key) {
+    if (keyStoreRef && typeof keyStoreRef.setKey === 'function') return keyStoreRef.setKey(key);
+    const db = await openCryptoDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const req = tx.objectStore(IDB_STORE).put(key, IDB_KEY);
+      req.onsuccess = () => resolve(key);
+      req.onerror = () => reject(req.error || new Error('idb-put'));
+    });
   }
 
   async function createAesKey() {
     const subtle = getSubtle();
     if (!subtle) return null;
-    return subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+    return subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   }
 
-  async function exportAesKey(key) {
+  async function importNonExtractableKey(b64) {
     const subtle = getSubtle();
-    if (!subtle || !key) return '';
-    const raw = await subtle.exportKey('raw', key);
-    return bytesToB64(raw);
+    if (!subtle || !b64) return null;
+    return subtle.importKey('raw', b64ToBytes(b64), 'AES-GCM', false, ['encrypt', 'decrypt']);
   }
 
-  async function getOrCreateKeyB64() {
+  async function loadOrCreateCryptoKey() {
+    const existing = await idbGetKey().catch(() => null);
+    if (existing) return existing;
     const stored = await areaGet('local', [CRYPTO_KEY]);
-    if (stored[CRYPTO_KEY]) return stored[CRYPTO_KEY];
-    const key = await createAesKey();
-    if (!key) return '';
-    return exportAesKey(key);
+    if (stored[CRYPTO_KEY]) {
+      const migrated = await importNonExtractableKey(stored[CRYPTO_KEY]);
+      if (migrated) {
+        await idbSetKey(migrated);
+        await areaRemove('local', [CRYPTO_KEY]);
+        return migrated;
+      }
+    }
+    const generated = await createAesKey();
+    if (generated) await idbSetKey(generated);
+    return generated;
   }
 
-  async function sealVault(vault, keyB64) {
+  function getCryptoKey() {
+    if (!cryptoKeyPromise) cryptoKeyPromise = loadOrCreateCryptoKey();
+    return cryptoKeyPromise;
+  }
+
+  async function sealVault(vault, key) {
     const subtle = getSubtle();
-    if (!subtle) return { v: 1, data: '', iv: '', empty: true };
-    const key = await importAesKey(keyB64);
-    if (!key) return { v: 1, data: '', iv: '', empty: true };
+    if (!subtle || !key) return { v: 1, data: '', iv: '', empty: true };
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(JSON.stringify(vault || {}));
+    const encoded = utf8.encode(JSON.stringify(vault || {}));
     const cipher = await subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
     return { v: 1, iv: bytesToB64(iv), data: bytesToB64(cipher) };
   }
 
-  async function unsealVault(sealed, keyB64) {
-    if (!sealed || sealed.empty || !sealed.data || !keyB64) return {};
+  async function unsealVault(sealed, key) {
+    if (!sealed || sealed.empty || !sealed.data) return { ok: true, vault: {} };
+    if (!key) return { ok: false, vault: null };
     const subtle = getSubtle();
-    if (!subtle) return {};
+    if (!subtle) return { ok: false, vault: null };
     try {
-      const key = await importAesKey(keyB64);
       const iv = b64ToBytes(sealed.iv);
       const data = b64ToBytes(sealed.data);
       const plain = await subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
-      const parsed = JSON.parse(new TextDecoder().decode(plain));
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      const parsed = JSON.parse(utf8dec.decode(plain));
+      return { ok: true, vault: parsed && typeof parsed === 'object' ? parsed : {} };
     } catch (error) {
-      return {};
+      return { ok: false, vault: null };
     }
   }
 
@@ -179,9 +255,11 @@
     return (Array.isArray(icons) ? icons : []).some((icon) => SECRET_FIELDS.some((field) => !!(icon && icon[field])));
   }
 
-  function prepareLocalPersistSync(payload) {
+  function prepareLocalPersistSync(payload, options) {
+    if (!payload || typeof payload !== 'object') return payload;
     const copy = Object.assign({}, payload);
-    const icons = Array.isArray(copy.icons) ? copy.icons.map((icon) => Object.assign({}, icon)) : [];
+    if (!Array.isArray(copy.icons)) return copy;
+    const icons = copy.icons.map((icon) => Object.assign({}, icon));
     icons.forEach((icon) => {
       if (!icon || !icon.id) return;
       const secrets = {};
@@ -193,7 +271,11 @@
           has = true;
         }
       });
-      pendingVault[icon.id] = has ? secrets : null;
+      if (has) pendingVault[icon.id] = secrets;
+    });
+    const tombstoneIds = options && Array.isArray(options.tombstoneIds) ? options.tombstoneIds : [];
+    tombstoneIds.forEach((id) => {
+      if (id) pendingVault[id] = null;
     });
     copy.icons = icons;
     return copy;
@@ -205,15 +287,18 @@
     const ids = Object.keys(snapshot);
     if (!ids.length) return null;
     flushChain = flushChain.then(async () => {
-      const keyB64 = await getOrCreateKeyB64();
-      const stored = await areaGet('local', [VAULT_STORE, CRYPTO_KEY]);
-      const current = await unsealVault(stored[VAULT_STORE], stored[CRYPTO_KEY] || keyB64);
+      const key = await getCryptoKey();
+      if (!key) return null;
+      const stored = await areaGet('local', [VAULT_STORE]);
+      const opened = await unsealVault(stored[VAULT_STORE], key);
+      if (!opened.ok) return null;
+      const current = opened.vault || {};
       ids.forEach((id) => {
         if (snapshot[id] === null) delete current[id];
         else if (snapshot[id]) current[id] = snapshot[id];
       });
-      const sealed = await sealVault(current, keyB64);
-      await areaSet('local', { [VAULT_STORE]: sealed, [CRYPTO_KEY]: keyB64 });
+      const sealed = await sealVault(current, key);
+      await areaSet('local', { [VAULT_STORE]: sealed });
       return sealed;
     });
     return flushChain;
@@ -221,9 +306,12 @@
 
   async function hydrateIcons(icons, result) {
     const list = Array.isArray(icons) ? icons.map((icon) => Object.assign({}, icon)) : [];
-    const sealed = result && result[VAULT_STORE];
-    const keyB64 = result && result[CRYPTO_KEY];
-    const vault = await unsealVault(sealed, keyB64);
+    const sealed = result && Object.prototype.hasOwnProperty.call(result, VAULT_STORE)
+      ? result[VAULT_STORE]
+      : (await areaGet('local', [VAULT_STORE]))[VAULT_STORE];
+    const key = await getCryptoKey();
+    const opened = await unsealVault(sealed, key);
+    const vault = opened.ok ? opened.vault : {};
     return list.map((icon) => {
       const secrets = icon && icon.id ? vault[icon.id] : null;
       if (!secrets) return icon;
@@ -234,8 +322,55 @@
     });
   }
 
+  function wrapLocalSet() {
+    const api = getChrome();
+    if (!api || !api.storage || !api.storage.local) return;
+    const local = api.storage.local;
+    if (wrappedAreas) {
+      if (wrappedAreas.has(local)) return;
+    } else if (local.__otWrapped) return;
+    const origSet = local.set.bind(local);
+    function wrappedSet(items, callback) {
+      const prepared = prepareLocalPersistSync(items || {});
+      const shouldFlush = Object.keys(pendingVault).length > 0;
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          if (typeof callback === 'function') callback();
+          if (error) reject(error);
+          else resolve();
+        };
+        try {
+          origSet(prepared, () => {
+            const err = api.runtime && api.runtime.lastError;
+            const next = shouldFlush && !err ? flushVault() : Promise.resolve();
+            next.then(() => finish(err ? new Error(err.message || 'storage error') : null), () => finish(err ? new Error(err.message || 'storage error') : null));
+          });
+        } catch (error) {
+          finish(error);
+        }
+      });
+    }
+    try {
+      local.set = wrappedSet;
+      if (local.set !== wrappedSet) {
+        Object.defineProperty(local, 'set', { configurable: true, writable: true, value: wrappedSet });
+      }
+      if (wrappedAreas) wrappedAreas.add(local);
+      else local.__otWrapped = true;
+    } catch (error) {
+      // native StorageArea may reject assignment; persist path then stays plaintext
+    }
+  }
+
   function stripDataUrlField(value) {
     return typeof value === 'string' && value.indexOf('data:') === 0 ? '' : (value || '');
+  }
+
+  function isDataUrl(value) {
+    return typeof value === 'string' && value.indexOf('data:') === 0;
   }
 
   function sanitizeIconForSync(icon) {
@@ -246,6 +381,22 @@
     clean.uploadedIconDataUrl = stripDataUrlField(clean.uploadedIconDataUrl);
     clean.resolvedIconUrl = stripDataUrlField(clean.resolvedIconUrl);
     return clean;
+  }
+
+  function mergeRemoteIcons(remoteIcons, localIcons) {
+    const localById = new Map();
+    (Array.isArray(localIcons) ? localIcons : []).forEach((icon) => {
+      if (icon && icon.id) localById.set(icon.id, icon);
+    });
+    return (Array.isArray(remoteIcons) ? remoteIcons : []).map((remote) => {
+      const clean = sanitizeIconForSync(remote || {});
+      const local = remote && remote.id ? localById.get(remote.id) : null;
+      if (!local) return clean;
+      LOCAL_ONLY_FIELDS.forEach((field) => {
+        if (isDataUrl(local[field]) && !isDataUrl(clean[field])) clean[field] = local[field];
+      });
+      return clean;
+    });
   }
 
   function foldersToGroups(folders) {
@@ -267,6 +418,7 @@
     SYNC_SETTING_KEYS.forEach((key) => {
       if (local && local[key] !== undefined) settings[key] = local[key];
     });
+    if (settings.searchHistory) delete settings.searchHistory;
     return {
       v: 1,
       updatedAt: Date.now(),
@@ -276,17 +428,56 @@
     };
   }
 
+  async function hashPayload(payload) {
+    const body = JSON.stringify({
+      icons: payload && payload.icons,
+      folders: payload && payload.folders,
+      settings: payload && payload.settings
+    });
+    const subtle = getSubtle();
+    if (subtle && typeof subtle.digest === 'function' && utf8) {
+      const digest = await subtle.digest('SHA-256', utf8.encode(body));
+      return bytesToB64(digest);
+    }
+    let hash = 0;
+    for (let i = 0; i < body.length; i += 1) hash = ((hash << 5) - hash + body.charCodeAt(i)) | 0;
+    return 'x' + (hash >>> 0).toString(16);
+  }
+
+  async function getDeviceId() {
+    if (deviceId) return deviceId;
+    const stored = await areaGet('local', [DEVICE_KEY]);
+    if (stored[DEVICE_KEY]) {
+      deviceId = stored[DEVICE_KEY];
+      return deviceId;
+    }
+    deviceId = 'dev-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    await areaSet('local', { [DEVICE_KEY]: deviceId });
+    return deviceId;
+  }
+
   function chunkKey(index) {
     return 'ot.s.c' + index;
   }
 
   function shardSyncPayload(payload) {
     const json = JSON.stringify(payload);
+    const bytes = utf8 ? utf8.encode(json) : [];
     const chunks = [];
-    for (let offset = 0; offset < json.length; offset += CHUNK_SIZE) {
-      chunks.push(json.slice(offset, offset + CHUNK_SIZE));
+    if (!utf8 || !utf8dec) {
+      for (let offset = 0; offset < json.length; offset += CHUNK_SIZE) {
+        chunks.push(json.slice(offset, offset + CHUNK_SIZE));
+      }
+      return { json, jsonLength: json.length, chunks };
     }
-    return { json, jsonLength: json.length, chunks };
+    let offset = 0;
+    while (offset < bytes.length) {
+      let end = Math.min(offset + CHUNK_SIZE, bytes.length);
+      while (end > offset && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end -= 1;
+      chunks.push(utf8dec.decode(bytes.subarray(offset, end)));
+      offset = end;
+    }
+    return { json, jsonLength: bytes.length, chunks };
   }
 
   function unshardSyncPayload(chunks) {
@@ -301,6 +492,8 @@
         v: 1,
         n: sharded.chunks.length,
         updatedAt: payload.updatedAt,
+        hash: payload.hash || '',
+        deviceId: payload.deviceId || '',
         bytes: sharded.jsonLength
       }
     }];
@@ -309,7 +502,7 @@
     });
     let total = 0;
     for (let i = 0; i < items.length; i += 1) {
-      const size = items[i].key.length + JSON.stringify(items[i].value).length;
+      const size = storedItemBytes(items[i].key, items[i].value);
       if (size > QUOTA_BYTES_PER_ITEM) {
         return {
           ok: false,
@@ -393,6 +586,11 @@
     return text;
   }
 
+  function notifyApplied() {
+    if (typeof document === 'undefined') return;
+    document.dispatchEvent(new CustomEvent(APPLIED_EVENT));
+  }
+
   async function readRemotePayload() {
     const metaResult = await areaGet('sync', [META_KEY]);
     const meta = metaResult[META_KEY];
@@ -416,6 +614,11 @@
     if (!enabled) return { ok: false, skipped: true };
     const local = await areaGet('local', ['icons', 'folders'].concat(SYNC_SETTING_KEYS));
     const payload = buildSyncPayload(local);
+    payload.deviceId = await getDeviceId();
+    payload.hash = await hashPayload(payload);
+    if (payload.hash && payload.hash === lastPushedHash) {
+      return { ok: true, skipped: true, reason: 'unchanged' };
+    }
     const plan = planSyncWrite(payload);
     if (!plan.ok) {
       enabled = false;
@@ -440,6 +643,9 @@
       applyingRemote = true;
       await areaSet('sync', toSet);
       if (stale.length) await areaRemove('sync', stale);
+      writeCount += 1;
+      lastPushedHash = payload.hash;
+      lastAppliedHash = payload.hash;
       if (plan.near) {
         setSyncStatus('同步已接近 100KB 配额，数据已分片保存。', false);
       }
@@ -460,17 +666,24 @@
 
   async function applyRemotePayload(payload) {
     if (!payload) return false;
+    await getDeviceId();
+    if (payload.deviceId && payload.deviceId === deviceId) return false;
+    if (payload.hash && payload.hash === lastAppliedHash) return false;
     applyingRemote = true;
-    const toSet = {
-      icons: Array.isArray(payload.icons) ? payload.icons.map(sanitizeIconForSync) : [],
-      folders: groupsToFolders(foldersToGroups(payload.folders))
-    };
-    const settings = payload.settings || {};
-    SYNC_SETTING_KEYS.forEach((key) => {
-      if (settings[key] !== undefined) toSet[key] = settings[key];
-    });
     try {
+      const local = await areaGet('local', ['icons']);
+      const mergedIcons = mergeRemoteIcons(payload.icons, local.icons);
+      const toSet = {
+        icons: mergedIcons,
+        folders: groupsToFolders(foldersToGroups(payload.folders))
+      };
+      const settings = payload.settings || {};
+      SYNC_SETTING_KEYS.forEach((key) => {
+        if (settings[key] !== undefined) toSet[key] = settings[key];
+      });
       await areaSet('local', toSet);
+      lastAppliedHash = payload.hash || lastAppliedHash;
+      notifyApplied();
       return true;
     } finally {
       applyingRemote = false;
@@ -483,7 +696,7 @@
     pushTimer = setTimeout(() => {
       pushTimer = 0;
       pushLocalToSync();
-    }, 400);
+    }, PUSH_DEBOUNCE_MS);
   }
 
   async function setEnabled(next) {
@@ -496,14 +709,17 @@
       await refreshUsage();
       return { ok: true, enabled: false };
     }
+    await getDeviceId();
     const remote = await readRemotePayload();
     const local = await areaGet('local', ['icons']);
     const localCount = Array.isArray(local.icons) ? local.icons.length : 0;
     if (remote && (localCount === 0 || (remote.updatedAt && remote.icons && remote.icons.length && localCount <= remote.icons.length))) {
-      await applyRemotePayload(remote);
-      setSyncStatus('已从浏览器同步恢复快捷方式、分组和设置。', false);
-      if (typeof location !== 'undefined' && typeof location.reload === 'function') location.reload();
-      return { ok: true, enabled: true, pulled: true };
+      const pulled = await applyRemotePayload(remote);
+      if (pulled) {
+        setSyncStatus('已从浏览器同步恢复快捷方式、分组和设置。', false);
+        await refreshUsage();
+        return { ok: true, enabled: true, pulled: true };
+      }
     }
     const pushed = await pushLocalToSync();
     if (pushed.ok) setSyncStatus('已开启浏览器同步（仅快捷方式、分组和设置）。', false);
@@ -520,9 +736,7 @@
         if (changes[META_KEY]) {
           readRemotePayload().then((payload) => {
             if (!payload) return;
-            applyRemotePayload(payload).then((changed) => {
-              if (changed && typeof location !== 'undefined') location.reload();
-            });
+            applyRemotePayload(payload);
           });
         }
         return;
@@ -536,6 +750,7 @@
   function bindUi() {
     if (typeof document === 'undefined') return;
     if (!document.getElementById('import-sync-section')) return;
+    wrapLocalSet();
     const checkbox = document.getElementById('browser-sync-enabled');
     if (checkbox) {
       checkbox.addEventListener('change', () => {
@@ -545,16 +760,21 @@
         });
       });
     }
-    areaGet('local', [ENABLED_KEY]).then((result) => {
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => { refreshUsage(); });
+    }
+    areaGet('local', [ENABLED_KEY, DEVICE_KEY]).then((result) => {
       enabled = !!result[ENABLED_KEY];
+      if (result[DEVICE_KEY]) deviceId = result[DEVICE_KEY];
       if (checkbox) checkbox.checked = enabled;
       refreshUsage();
-      if (enabled) schedulePush();
     });
     watchStorage();
   }
 
   if (typeof document !== 'undefined') {
+    wrapLocalSet();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindUi);
     else bindUi();
   }
@@ -564,25 +784,37 @@
     VAULT_STORE,
     CRYPTO_KEY,
     ENABLED_KEY,
+    DEVICE_KEY,
     META_KEY,
     QUOTA_BYTES,
     QUOTA_BYTES_PER_ITEM,
     CHUNK_SIZE,
+    PUSH_DEBOUNCE_MS,
+    APPLIED_EVENT,
     setChrome,
+    setKeyStore,
+    wrapLocalSet,
     iconsHavePlaintextSecrets,
     prepareLocalPersistSync,
     flushVault,
     hydrateIcons,
+    getCryptoKey,
     buildSyncPayload,
     shardSyncPayload,
     unshardSyncPayload,
     planSyncWrite,
+    utf8Length,
+    storedItemBytes,
+    mergeRemoteIcons,
     formatBytes,
     formatLocalUsage,
     formatSyncUsage,
     refreshUsage,
     setEnabled,
     pushLocalToSync,
-    sanitizeIconForSync
+    applyRemotePayload,
+    sanitizeIconForSync,
+    getWriteCount: () => writeCount,
+    getDeviceId
   };
 }));

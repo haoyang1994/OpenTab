@@ -50,6 +50,7 @@
     navigateHook: null,
     getBackupSlice,
     normalizeBackup,
+    applyFromStorage: loadFromStorage,
     init,
     resolve,
     getState: () => ({
@@ -828,6 +829,7 @@
       bindSettings();
       document.addEventListener('keydown', onGlobalKeydown, true);
       document.addEventListener('compositionstart', onCompositionStart, true);
+      document.addEventListener('opentab-sync-applied', loadFromStorage);
       bound = true;
     }
     loadFromStorage();

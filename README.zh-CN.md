@@ -87,7 +87,7 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 ## 隐私说明
 
-- 偏好设置、快捷方式、待办、快照和搜索历史保存在当前浏览器配置的 `chrome.storage.local`。打开浏览器同步时，只会同步快捷方式、分组和设置（不同步壁纸、待办或搜索历史）。
+- 偏好设置、快捷方式、待办、快照和搜索历史保存在当前浏览器配置的 `chrome.storage.local`。打开浏览器同步时，只会同步快捷方式、分组和设置（不同步壁纸、待办、搜索历史或 SSH 密钥）。下载的 JSON 备份默认不含搜索历史。
 - 搜索框不会向任何引擎请求联想或建议。
 - 书签和常用网站使用 `optional_permissions`：安装时不会多要权限，只有点击对应导入按钮才会申请。
 - OpenTab 没有统计、没有广告、没有账号登录。
@@ -173,7 +173,7 @@ npm run ssh:gateway
 - `SSH_PRIVATE_KEY_PATH` — **显式**私钥路径；省略时**不会**回落到 `~/.ssh/id_rsa`
 - `SSH_PRIVATE_KEY_PASSPHRASE` — 私钥口令（如有）
 
-快捷方式编辑器支持 SOCKS5 代理。SSH 密码目前以明文保存在 `chrome.storage.local`，这是已知限制。
+快捷方式编辑器支持 SOCKS5 代理。SSH / SOCKS 密码和网关令牌用 AES-GCM 加密。包装密钥用 `extractable: false` 生成，并把 `CryptoKey` 对象存在 IndexedDB（不把原始密钥和密文一起放在 `chrome.storage.local`）。剩余风险：能以本扩展身份执行代码，或在 Chrome 仍愿为本扩展解开该密钥时读到此配置的 IndexedDB / 存储的人，仍可解密。备份和 `chrome.storage.sync` 不含这些密钥。
 
 升级说明（已有 SSH 图标）：
 
@@ -193,6 +193,7 @@ OpenTab/
 ├── package.json
 ├── background.js              # Service Worker
 ├── home.html / home.css / home.js
+├── search.js / import.js / sync.js
 ├── search.js                  # 新标签页搜索框（引擎、历史、网址直达）
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js

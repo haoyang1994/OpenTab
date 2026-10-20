@@ -87,7 +87,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, or search history).
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, search history, or SSH secrets). Downloaded JSON backups omit search history by default.
 - The search box does not fetch suggestions or typeahead from any engine.
 - Bookmarks and most-visited sites are `optional_permissions`: Chrome does not prompt for them at install. OpenTab requests each one when you click the matching import button.
 - OpenTab does not include analytics, ads, or account login.
@@ -173,7 +173,7 @@ Environment variables:
 - `SSH_PRIVATE_KEY_PATH` — **explicit** private-key path; omitting it does **not** fall back to `~/.ssh/id_rsa`
 - `SSH_PRIVATE_KEY_PASSPHRASE` — key passphrase, if any
 
-SOCKS5 proxies are supported from the shortcut editor. SSH passwords are currently stored in `chrome.storage.local` as plaintext; treat that as a known limitation.
+SOCKS5 proxies are supported from the shortcut editor. SSH / SOCKS passwords and gateway tokens are encrypted with AES-GCM. The wrapping `CryptoKey` is generated with `extractable: false` and stored in IndexedDB (not exported as raw bytes next to the ciphertext). Remaining risk: anyone who can run code as this extension (or read this profile’s IndexedDB and storage while Chrome will still unwrap the key for the extension) can still decrypt secrets. Backups and `chrome.storage.sync` never include those secrets.
 
 Upgrading existing SSH shortcuts:
 
@@ -193,6 +193,7 @@ OpenTab/
 ├── package.json
 ├── background.js              # service worker
 ├── home.html / home.css / home.js
+├── search.js / import.js / sync.js
 ├── search.js                  # new-tab search box (engines, history, URL jump)
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -147,10 +148,19 @@ const ITAB_BACKUP = {
   ]
 };
 
+function memoryKeyStore() {
+  let key = null;
+  return {
+    getKey: async () => key,
+    setKey: async (next) => { key = next; }
+  };
+}
+
 async function withChrome(options, fn) {
   const chromeApi = createChrome(options);
   OpenTabImport.setChrome(chromeApi);
   OpenTabSync.setChrome(chromeApi);
+  OpenTabSync.setKeyStore(memoryKeyStore());
   let seq = 0;
   OpenTabImport.setIdFactory(() => 'id-' + (++seq));
   let reloads = 0;
@@ -160,6 +170,7 @@ async function withChrome(options, fn) {
   } finally {
     OpenTabImport.setChrome(null);
     OpenTabSync.setChrome(null);
+    OpenTabSync.setKeyStore(null);
     OpenTabImport.setIdFactory(null);
     OpenTabImport.setReloader(null);
   }
@@ -189,6 +200,16 @@ async function run() {
     'AC1/AC2: bookmarks and topSites are optional_permissions'
   );
   assert.ok(!fs.readFileSync(path.join(root, 'ssh-gateway.mjs'), 'utf8').includes('OpenTabImport'));
+  try {
+    const masterBytes = Number(execSync('git cat-file -s origin/master:home.js', { encoding: 'utf8' }).trim());
+    const localBytes = fs.statSync(path.join(root, 'home.js')).size;
+    assert.ok(
+      localBytes <= masterBytes,
+      `home.js grew vs origin/master: ${localBytes} > ${masterBytes}`
+    );
+  } catch (error) {
+    if (error && error.code === 'ERR_ASSERTION') throw error;
+  }
 
   const folders = [{ id: 'folder-home', name: '主页' }, { id: 'folder-a', name: 'A' }];
   assert.deepEqual(OpenTabImport.groupsToFolders(OpenTabImport.foldersToGroups(folders)), folders);
@@ -325,12 +346,59 @@ async function run() {
     assert.equal(serialized.includes('tok-1'), false);
     assert.equal(serialized.includes('socks-pw'), false);
     assert.ok(chromeApi._local[OpenTabSync.VAULT_STORE]);
+    assert.equal(chromeApi._local[OpenTabSync.CRYPTO_KEY], undefined);
+    const key = await OpenTabSync.getCryptoKey();
+    assert.equal(key.extractable, false);
+    await assert.rejects(() => crypto.subtle.exportKey('raw', key));
     const hydrated = await OpenTabSync.hydrateIcons(
       [{ id: 'ssh1', sshPassword: '', sshGatewayToken: '', sshSocksPassword: '' }],
       chromeApi._local
     );
     assert.equal(hydrated[0].sshPassword, 's3cret');
     assert.equal(hydrated[0].sshGatewayToken, 'tok-1');
+  });
+
+  await withChrome({ local: {} }, async (chromeApi) => {
+    await chromeApi.storage.local.set({
+      icons: [{ id: 'ssh1', sshPassword: 's3cret', sshGatewayToken: 'tok-1' }]
+    });
+    assert.equal(chromeApi._local.icons[0].sshPassword, '');
+    OpenTabSync.prepareLocalPersistSync({
+      icons: [{ id: 'ssh1', sshPassword: '', sshGatewayToken: '' }]
+    });
+    await OpenTabSync.flushVault();
+    const hydrated = await OpenTabSync.hydrateIcons(
+      [{ id: 'ssh1', sshPassword: '', sshGatewayToken: '' }],
+      chromeApi._local
+    );
+    assert.equal(hydrated[0].sshPassword, 's3cret', 'BUG-020: empty persist does not tombstone vault');
+  });
+
+  await withChrome({
+    local: {
+      icons: [{ id: 'ssh1', name: 'Jump', sshPassword: '', folderId: 'folder-home' }],
+      folders: [{ id: 'folder-home', name: '主页' }]
+    }
+  }, async (chromeApi) => {
+    OpenTabSync.prepareLocalPersistSync({
+      icons: [{ id: 'ssh1', sshPassword: 'keep-me' }]
+    });
+    await OpenTabSync.flushVault();
+    await OpenTabImport.applyOpenTabBackup({
+      icons: [{ id: 'ssh1', name: 'Jump restored', sshPassword: '', folderId: 'folder-home' }],
+      folders: [{ id: 'folder-home', name: '主页' }]
+    });
+    const hydrated = await OpenTabSync.hydrateIcons(chromeApi._local.icons, chromeApi._local);
+    assert.equal(hydrated[0].sshPassword, 'keep-me', 'BUG-020: backup restore keeps vault for same id');
+  });
+
+  const rawKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const rawBits = await crypto.subtle.exportKey('raw', rawKey);
+  const rawB64 = Buffer.from(new Uint8Array(rawBits)).toString('base64');
+  await withChrome({ local: { [OpenTabSync.CRYPTO_KEY]: rawB64 } }, async (chromeApi) => {
+    const migrated = await OpenTabSync.getCryptoKey();
+    assert.equal(migrated.extractable, false);
+    assert.equal(chromeApi._local[OpenTabSync.CRYPTO_KEY], undefined);
   });
 
   const syncPayload = OpenTabSync.buildSyncPayload({
@@ -398,6 +466,86 @@ async function run() {
 
   assert.match(OpenTabSync.formatLocalUsage(2048), /本地存储用量/);
   assert.match(OpenTabSync.formatSyncUsage(51200, 102400), /50%/);
+
+  const chinese = OpenTabSync.buildSyncPayload({
+    icons: Array.from({ length: 20 }, (_, i) => ({
+      id: 'c' + i,
+      name: '中文站点名称测试😀' + i,
+      url: 'https://example.com/' + i,
+      folderId: 'folder-home'
+    })),
+    folders: [{ id: 'folder-home', name: '主页' }]
+  });
+  const chinesePlan = OpenTabSync.planSyncWrite(chinese);
+  assert.equal(chinesePlan.ok, true, 'BUG-018: 20 Chinese/emoji names stay under quota');
+  chinesePlan.items.forEach((item) => {
+    const size = OpenTabSync.storedItemBytes(item.key, item.value);
+    assert.ok(size <= OpenTabSync.QUOTA_BYTES_PER_ITEM, 'BUG-018 utf8 item exceeds 8KB: ' + size);
+    if (item.key.startsWith('ot.s.c')) {
+      assert.ok(
+        OpenTabSync.utf8Length(item.value) <= OpenTabSync.CHUNK_SIZE,
+        'BUG-018 chunk exceeds 7800 utf8 bytes'
+      );
+    }
+  });
+  const bulky = OpenTabSync.shardSyncPayload({ v: 1, blob: '中'.repeat(4000) + '😀'.repeat(200) });
+  bulky.chunks.forEach((chunk) => {
+    assert.ok(OpenTabSync.utf8Length(chunk) <= OpenTabSync.CHUNK_SIZE);
+  });
+  const bulkyRestored = OpenTabSync.unshardSyncPayload(bulky.chunks);
+  assert.equal(bulkyRestored.blob.startsWith('中'), true);
+  assert.match(bulkyRestored.blob, /😀/);
+
+  const merged = OpenTabSync.mergeRemoteIcons(
+    [{ id: 'a', name: 'Remote', uploadedIconDataUrl: '', resolvedIconUrl: '', sshPassword: 'nope' }],
+    [{ id: 'a', name: 'Local', uploadedIconDataUrl: 'data:image/png;base64,AAAA', resolvedIconUrl: 'data:image/gif;base64,BBBB', sshPassword: 'local-secret' }]
+  );
+  assert.equal(merged[0].uploadedIconDataUrl, 'data:image/png;base64,AAAA', 'BUG-017: keep local data URL');
+  assert.equal(merged[0].resolvedIconUrl, 'data:image/gif;base64,BBBB');
+  assert.equal(merged[0].sshPassword, '', 'remote sanitize still strips secrets from the icon record');
+
+  await withChrome({ local: { icons: [{ id: 'a', name: 'Keep', uploadedIconDataUrl: 'data:image/png;base64,KEEP' }] } }, async (chromeApi) => {
+    const mine = await OpenTabSync.getDeviceId();
+    const skippedSelf = await OpenTabSync.applyRemotePayload({
+      deviceId: mine,
+      hash: 'other',
+      icons: [{ id: 'b', name: 'Injected' }],
+      folders: [],
+      settings: {}
+    });
+    assert.equal(skippedSelf, false, 'BUG-016: ignore payload from this deviceId');
+    const applied = await OpenTabSync.applyRemotePayload({
+      deviceId: 'dev-other',
+      hash: 'payload-1',
+      icons: [{ id: 'a', name: 'FromRemote', uploadedIconDataUrl: '', url: 'https://a.example/' }],
+      folders: [{ id: 'folder-home', name: '主页' }],
+      settings: { clockFormat: '24h', customSearchEngines: [], searchOpenInNewTab: true }
+    });
+    assert.equal(applied, true);
+    assert.equal(chromeApi._local.icons[0].uploadedIconDataUrl, 'data:image/png;base64,KEEP');
+    assert.equal(chromeApi._local.clockFormat, '24h');
+    assert.equal(chromeApi._local.searchOpenInNewTab, true);
+    const again = await OpenTabSync.applyRemotePayload({
+      deviceId: 'dev-other',
+      hash: 'payload-1',
+      icons: [{ id: 'a', name: 'FromRemote' }],
+      folders: [],
+      settings: {}
+    });
+    assert.equal(again, false, 'BUG-016: same content hash is not applied twice');
+  });
+
+  const backup = OpenTabImport.mergeBackupPayload(
+    { background: { type: 'image', value: 'assets/default_background/x.jpg', source: 'preset-image' } },
+    { icons: [{ id: 'keep-me' }], searchHistory: [{ q: 'secret', engine: 'google', at: 1 }] }
+  );
+  assert.equal(backup.background.value, 'assets/default_background/x.jpg');
+  assert.equal(backup.icons[0].id, 'keep-me');
+  const downloaded = OpenTabImport.mergeBackupPayload(
+    { searchEngine: 'bing', searchHistory: [{ q: 'x', engine: 'bing', at: 1 }] },
+    {}
+  );
+  assert.equal(Array.isArray(downloaded.searchHistory), true);
 
   console.log('import-sync unit tests passed');
 }

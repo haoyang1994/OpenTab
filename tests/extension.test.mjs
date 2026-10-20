@@ -1818,6 +1818,22 @@ async function runExtensionE2E() {
     });
     const sshStored = localIcons.find((icon) => icon.id === 'ssh-sync');
     assert.equal(sshStored?.sshPassword || '', '', 'AC6: local icons do not store plaintext password');
+    const localCryptoKey = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['opentab.cryptoKey']);
+      return result['opentab.cryptoKey'] || '';
+    });
+    assert.equal(localCryptoKey, '', 'BUG-019: raw wrapping key is not stored in chrome.storage.local');
+    const keyNonExtractable = await page.evaluate(async () => {
+      const key = await OpenTabSync.getCryptoKey();
+      if (!key || key.extractable) return false;
+      try {
+        await crypto.subtle.exportKey('raw', key);
+        return false;
+      } catch (error) {
+        return true;
+      }
+    });
+    assert.equal(keyNonExtractable, true, 'BUG-019: CryptoKey is non-extractable');
     await page.waitForFunction(() => {
       const text = document.getElementById('storage-usage')?.textContent || '';
       return text.includes('本地存储') && text.includes('浏览器同步');
@@ -1827,6 +1843,39 @@ async function runExtensionE2E() {
     assert.match(usageAfterSync, /浏览器同步/, 'AC4: sync usage shown');
     await page.locator('#import-sync-section').screenshot({ path: path.join(ARTIFACTS, 'sync_toggle_and_usage.png') });
     console.log('AC4/AC5/AC6 sync + secrets passed');
+
+    const writesBeforeLoop = await page.evaluate(() => window.OpenTabSync.getWriteCount());
+    const page2 = await context.newPage();
+    attachErrorCollectors(page2, errorBuckets);
+    await page2.goto(`chrome-extension://${extensionId}/home.html`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 15000
+    });
+    await page2.waitForSelector('#time', { timeout: 10000 });
+    await page2.click('#settings-btn');
+    await page2.waitForSelector('#settings-panel:not(.hidden)');
+    if (!(await page2.locator('#browser-sync-enabled').isChecked())) {
+      await page2.check('#browser-sync-enabled');
+    }
+    let extraDcl1 = 0;
+    let extraDcl2 = 0;
+    const onDcl1 = () => { extraDcl1 += 1; };
+    const onDcl2 = () => { extraDcl2 += 1; };
+    page.on('domcontentloaded', onDcl1);
+    page2.on('domcontentloaded', onDcl2);
+    await page.waitForTimeout(10000);
+    page.off('domcontentloaded', onDcl1);
+    page2.off('domcontentloaded', onDcl2);
+    assert.equal(extraDcl1, 0, 'BUG-016: first synced tab does not reload while idle');
+    assert.equal(extraDcl2, 0, 'BUG-016: second synced tab does not reload while idle');
+    const writesAfterLoop = await page.evaluate(() => window.OpenTabSync.getWriteCount());
+    assert.ok(
+      writesAfterLoop - writesBeforeLoop <= 2,
+      `BUG-016: sync writes should stay bounded, grew ${writesAfterLoop - writesBeforeLoop}`
+    );
+    assert.ok(writesAfterLoop <= 6, `BUG-016: total sync writes ${writesAfterLoop}`);
+    await page2.close();
+    console.log('BUG-016 two-tab sync idle passed');
 
     assert.ok(Array.isArray(localManifest.optional_permissions), 'AC7: optional_permissions present');
     assert.ok(localManifest.optional_permissions.includes('bookmarks'));

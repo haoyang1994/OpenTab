@@ -140,6 +140,224 @@
     return out;
   }
 
+  const BACKUP_SNAPSHOTS_KEY = 'backupSnapshots';
+  const BACKUP_MAX_SNAPSHOTS = 20;
+  const BACKUP_CORE_KEYS = [
+    'icons',
+    'folders',
+    'currentFolderId',
+    'todos',
+    'todoPanelOpen',
+    'background',
+    'clockFormat',
+    'showSeconds',
+    'uiOpacity',
+    'uiBlur',
+    'iconFrameEnabled',
+    'openInNewTab',
+    'timezone',
+    'bingIndex',
+    'themeMode',
+    'accentHue',
+    'particlesEnabled',
+    'gradientFlow',
+    'minimalMode'
+  ];
+
+  function searchBackupKeys(includeHistory) {
+    const keys = (typeof OpenTabSearch !== 'undefined' && Array.isArray(OpenTabSearch.STORAGE_KEYS))
+      ? OpenTabSearch.STORAGE_KEYS.slice()
+      : ['searchEngine', 'customSearchEngines', 'searchOpenInNewTab', 'searchHistoryEnabled', 'searchHistory'];
+    return includeHistory ? keys : keys.filter((key) => key !== 'searchHistory');
+  }
+
+  function backupStateKeys(includeHistory) {
+    return BACKUP_CORE_KEYS.concat(searchBackupKeys(includeHistory));
+  }
+
+  function unwrapBackupPayload(rawPayload) {
+    if (!rawPayload || typeof rawPayload !== 'object') return {};
+    if (rawPayload.data && typeof rawPayload.data === 'object' && !Array.isArray(rawPayload.data)
+      && (rawPayload.version || rawPayload.exportedAt || rawPayload.data.icons || rawPayload.data.background)) {
+      return rawPayload.data;
+    }
+    return rawPayload;
+  }
+
+  function updateBackupStatus(message, isError) {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('backup-status');
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = isError ? '#ffb4b4' : 'rgba(255, 255, 255, 0.65)';
+  }
+
+  function makeBackupFilename(prefix) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ts = now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate())
+      + '-' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
+    return (prefix || 'opentab-backup') + '-' + ts + '.json';
+  }
+
+  function mergeBackupPayload(rawPayload, current) {
+    const payload = unwrapBackupPayload(rawPayload);
+    const includeHistory = payload.searchHistory !== undefined || (current && current.searchHistory !== undefined);
+    const keys = backupStateKeys(includeHistory);
+    const merged = {};
+    keys.forEach((key) => {
+      if (payload[key] !== undefined) merged[key] = payload[key];
+      else if (current && current[key] !== undefined) merged[key] = current[key];
+    });
+    if (typeof OpenTabSearch !== 'undefined' && OpenTabSearch.normalizeBackup) {
+      const normalizedSearch = OpenTabSearch.normalizeBackup(Object.assign({}, current || {}, payload));
+      searchBackupKeys(true).forEach((key) => {
+        if (payload[key] !== undefined || (current && current[key] !== undefined)) {
+          merged[key] = normalizedSearch[key];
+        }
+      });
+      if (payload.searchHistory === undefined && !(current && current.searchHistory !== undefined)) {
+        delete merged.searchHistory;
+      }
+    }
+    return stripSecretsFromState(merged);
+  }
+
+  async function buildBackupPayload(includeHistory) {
+    const keys = backupStateKeys(!!includeHistory);
+    const current = await storageLocalGet(keys);
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString()
+    };
+    keys.forEach((key) => {
+      if (current[key] !== undefined) payload[key] = current[key];
+    });
+    if (typeof OpenTabSearch !== 'undefined' && OpenTabSearch.getBackupSlice && includeHistory) {
+      Object.assign(payload, OpenTabSearch.getBackupSlice());
+    }
+    if (!includeHistory) delete payload.searchHistory;
+    return stripSecretsFromState(payload);
+  }
+
+  async function saveSnapshotRecord(reason) {
+    const current = await storageLocalGet(backupStateKeys(true).concat([BACKUP_SNAPSHOTS_KEY]));
+    const list = Array.isArray(current[BACKUP_SNAPSHOTS_KEY]) ? current[BACKUP_SNAPSHOTS_KEY] : [];
+    const data = mergeBackupPayload(current, current);
+    delete data[BACKUP_SNAPSHOTS_KEY];
+    list.unshift({
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+      reason: reason || 'manual',
+      data
+    });
+    await storageLocalSet({ [BACKUP_SNAPSHOTS_KEY]: list.slice(0, BACKUP_MAX_SNAPSHOTS) });
+    return list[0];
+  }
+
+  async function applyOpenTabBackup(rawPayload) {
+    const current = await storageLocalGet(backupStateKeys(true));
+    const writePayload = mergeBackupPayload(rawPayload, current);
+    Object.keys(writePayload).forEach((key) => {
+      if (writePayload[key] === undefined) delete writePayload[key];
+    });
+    if (Array.isArray(writePayload.icons) && typeof OpenTabFolders !== 'undefined' && OpenTabFolders.repairIconGraph) {
+      OpenTabFolders.repairIconGraph(writePayload.icons);
+    }
+    await storageLocalSet(writePayload);
+    reloadPage();
+    return writePayload;
+  }
+
+  async function handleDownloadBackup() {
+    const payload = await buildBackupPayload(false);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = makeBackupFilename();
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    updateBackupStatus('已下载备份文件。', false);
+  }
+
+  async function handleSaveSnapshot() {
+    await saveSnapshotRecord('manual');
+    updateBackupStatus('已保存快照。', false);
+  }
+
+  async function handleRestoreLatestSnapshot() {
+    const result = await storageLocalGet([BACKUP_SNAPSHOTS_KEY]);
+    const list = Array.isArray(result[BACKUP_SNAPSHOTS_KEY]) ? result[BACKUP_SNAPSHOTS_KEY] : [];
+    if (!list.length) {
+      updateBackupStatus('没有可恢复的快照。', true);
+      return;
+    }
+    await saveSnapshotRecord('before-restore');
+    updateBackupStatus('正在恢复快照并刷新页面...', false);
+    await applyOpenTabBackup(list[0].data || {});
+  }
+
+  function showImportToast(notice) {
+    if (typeof document === 'undefined' || !notice || !notice.text) return;
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    toast.textContent = notice.text;
+    if (notice.canUndo) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '撤销';
+      btn.onclick = () => {
+        toast.classList.add('hidden');
+        undoLastImport();
+      };
+      toast.appendChild(btn);
+    }
+    toast.classList.remove('hidden');
+    setTimeout(() => { toast.classList.add('hidden'); }, notice.canUndo ? 8000 : 5000);
+  }
+
+  function bindBackupUi() {
+    if (typeof document === 'undefined') return;
+    const downloadBtn = document.getElementById('backup-download-btn');
+    const importBtn = document.getElementById('backup-import-btn');
+    const importFile = document.getElementById('backup-import-file');
+    const saveBtn = document.getElementById('backup-save-snapshot-btn');
+    const restoreBtn = document.getElementById('backup-restore-snapshot-btn');
+    if (downloadBtn) downloadBtn.addEventListener('click', () => {
+      handleDownloadBackup().catch(() => updateBackupStatus('下载备份失败。', true));
+    });
+    if (importBtn && importFile) {
+      importBtn.addEventListener('click', () => {
+        importFile.value = '';
+        importFile.click();
+      });
+      importFile.addEventListener('change', () => {
+        const file = importFile.files && importFile.files[0];
+        if (!file) return;
+        Promise.resolve(file.text()).then((text) => {
+          const raw = JSON.parse(text);
+          return saveSnapshotRecord('before-import').then(() => {
+            updateBackupStatus('正在导入备份并刷新页面...', false);
+            return applyOpenTabBackup(raw);
+          });
+        }).catch(() => {
+          updateBackupStatus('导入失败：JSON 无效或结构不支持。', true);
+        }).then(() => {
+          importFile.value = '';
+        });
+      });
+    }
+    if (saveBtn) saveBtn.addEventListener('click', () => {
+      handleSaveSnapshot().catch(() => updateBackupStatus('保存快照失败。', true));
+    });
+    if (restoreBtn) restoreBtn.addEventListener('click', () => {
+      handleRestoreLatestSnapshot().catch(() => updateBackupStatus('恢复快照失败。', true));
+    });
+  }
+
   function isSafeHttpUrl(raw) {
     if (!raw || typeof raw !== 'string') return false;
     const trimmed = raw.trim();
@@ -671,6 +889,12 @@
       });
     }
 
+    bindBackupUi();
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => { refreshUndoButton(); });
+    }
+    consumeNotice((notice) => { showImportToast(notice); });
     refreshUndoButton();
   }
 
@@ -709,6 +933,11 @@
     commitImport,
     undoLastImport,
     consumeNotice,
-    refreshUndoButton
+    refreshUndoButton,
+    mergeBackupPayload,
+    applyOpenTabBackup,
+    buildBackupPayload,
+    saveSnapshotRecord,
+    BACKUP_SNAPSHOTS_KEY
   };
 }));

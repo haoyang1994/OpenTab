@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search Enter on a folder name opens the folder overlay instead of "网址无效"
 - Dragging a nested icon onto a group tab dissolves a leftover-1 folder
 - Merge-hover timer clears on `dragleave`; group-tab wheel switching is throttled
+- Browser sync no longer reloads in a loop: payloads carry `deviceId` and a content hash, local echoes are ignored, pages do not push on load, remote applies re-render in place, and writes are debounced 2s (BUG-016)
+- Applying a sync payload merges icons by id and keeps local-only `data:` icon fields (BUG-017)
+- Sync shards and quota checks use UTF-8 bytes with 7800-byte chunks (BUG-018)
+- Importing or restoring a backup no longer deletes SSH secrets that were only absent from the file (BUG-020)
 
 ### Changed
 
@@ -47,13 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Folder/group `prompt` / `confirm` / `alert` replaced with in-page controls (the SSH incomplete-config `alert` remains)
 - README documents + add, drag reorder, folders, group tabs, middle-click, undo delete, and Esc
 - Replaced the application icon and three bundled default backgrounds with project-owned assets (Apache-2.0; stills and icon composition Created with Grok Imagine; SVG/PNGs hand-traced and rasterized). Saved Pexels preset paths migrate to the matching new images (or fall back to the Bing default) so existing installs do not 404.
-- Search logic lives in `search.js`; `home.js` only wires icons into name matching and backup
+- Search logic lives in `search.js`; OpenTab backup import/export lives in `import.js`; `home.js` only wires icons into name matching
 
 ### Security
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
 - AC7: narrowed extension-page `connect-src` (dropped blanket `https:` / `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). `img-src` retains `https:` for shortcut favicons and custom wallpaper URLs (product decision). Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
-- SSH / SOCKS passwords and gateway tokens are stripped from backup export and browser sync, and encrypted at rest instead of stored as plaintext in `chrome.storage.local`
+- SSH / SOCKS passwords and gateway tokens are stripped from backup export and browser sync, and encrypted at rest with a non-extractable IndexedDB `CryptoKey` instead of plaintext in `chrome.storage.local`
 
 ### Breaking
 
