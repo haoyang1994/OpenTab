@@ -67,7 +67,7 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 - Side-drawer todos with a progress bar
 - JSON backup export/import and a local snapshot
 - Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
-- Optional Chrome sync for shortcuts, folders, and settings (not wallpapers or history); Settings shows local storage usage
+- Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks 用云端 / 用本机. Settings shows local storage usage
 
 ## Screenshots
 
@@ -87,7 +87,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, search history, or SSH secrets). Downloaded JSON backups omit search history by default.
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, search history, the current folder, or SSH secrets). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
 - The search box does not fetch suggestions or typeahead from any engine.
 - Bookmarks and most-visited sites are `optional_permissions`: Chrome does not prompt for them at install. OpenTab requests each one when you click the matching import button.
 - OpenTab does not include analytics, ads, or account login.

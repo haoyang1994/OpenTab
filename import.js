@@ -100,18 +100,25 @@
     return chromeCall(api.storage.local.set.bind(api.storage.local), [payload]);
   }
 
+  function copyGroupRecord(item) {
+    const group = { id: String(item.id), name: String(item.name) };
+    if (item.parentId != null && item.parentId !== '') group.parentId = String(item.parentId);
+    if (item.type) group.type = String(item.type);
+    return group;
+  }
+
   function foldersToGroups(folders) {
     if (!Array.isArray(folders)) return [];
     return folders
       .filter((folder) => folder && folder.id && folder.name)
-      .map((folder) => ({ id: String(folder.id), name: String(folder.name) }));
+      .map(copyGroupRecord);
   }
 
   function groupsToFolders(groups) {
     if (!Array.isArray(groups)) return [];
     return groups
       .filter((group) => group && group.id && group.name)
-      .map((group) => ({ id: String(group.id), name: String(group.name) }));
+      .map(copyGroupRecord);
   }
 
   function readIconGroupId(icon) {

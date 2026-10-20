@@ -38,8 +38,7 @@
     'accentHue',
     'particlesEnabled',
     'gradientFlow',
-    'minimalMode',
-    'currentFolderId'
+    'minimalMode'
   ];
   const SYNC_TRIGGERS = new Set(['icons', 'folders'].concat(SYNC_SETTING_KEYS));
   const wrappedAreas = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
@@ -57,6 +56,7 @@
   let lastAppliedHash = '';
   let writeCount = 0;
   let cryptoKeyPromise = null;
+  let pendingConflict = null;
 
   function getChrome() {
     if (chromeRef) return chromeRef;
@@ -65,6 +65,19 @@
 
   function setChrome(api) {
     chromeRef = api || null;
+    deviceId = '';
+    lastPushedHash = '';
+    lastAppliedHash = '';
+    enabled = false;
+    applyingRemote = false;
+    pendingConflict = null;
+    writeCount = 0;
+    pendingVault = {};
+    syncBound = false;
+    if (pushTimer) {
+      clearTimeout(pushTimer);
+      pushTimer = 0;
+    }
     wrapLocalSet();
   }
 
@@ -460,24 +473,51 @@
     return 'ot.s.c' + index;
   }
 
+  function isSurrogateSplit(text, index) {
+    if (index <= 0 || index >= text.length) return false;
+    const prev = text.charCodeAt(index - 1);
+    const next = text.charCodeAt(index);
+    return prev >= 0xd800 && prev <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
+  }
+
+  function maxStoredSliceEnd(json, offset, key) {
+    let lo = 1;
+    let hi = json.length - offset;
+    let best = 1;
+    while (lo <= hi) {
+      let mid = (lo + hi) >> 1;
+      let end = offset + mid;
+      if (isSurrogateSplit(json, end)) {
+        mid -= 1;
+        end -= 1;
+      }
+      if (mid < 1) {
+        lo += 1;
+        continue;
+      }
+      if (storedItemBytes(key, json.slice(offset, end)) <= CHUNK_SIZE) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    let end = offset + best;
+    if (isSurrogateSplit(json, end)) end -= 1;
+    if (end <= offset) end = Math.min(offset + 1, json.length);
+    return end;
+  }
+
   function shardSyncPayload(payload) {
     const json = JSON.stringify(payload);
-    const bytes = utf8 ? utf8.encode(json) : [];
     const chunks = [];
-    if (!utf8 || !utf8dec) {
-      for (let offset = 0; offset < json.length; offset += CHUNK_SIZE) {
-        chunks.push(json.slice(offset, offset + CHUNK_SIZE));
-      }
-      return { json, jsonLength: json.length, chunks };
-    }
     let offset = 0;
-    while (offset < bytes.length) {
-      let end = Math.min(offset + CHUNK_SIZE, bytes.length);
-      while (end > offset && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end -= 1;
-      chunks.push(utf8dec.decode(bytes.subarray(offset, end)));
+    while (offset < json.length) {
+      const end = maxStoredSliceEnd(json, offset, chunkKey(chunks.length));
+      chunks.push(json.slice(offset, end));
       offset = end;
     }
-    return { json, jsonLength: bytes.length, chunks };
+    return { json, jsonLength: utf8Length(json), chunks };
   }
 
   function unshardSyncPayload(chunks) {
@@ -699,12 +739,83 @@
     }, PUSH_DEBOUNCE_MS);
   }
 
+  function hideSyncConflict() {
+    pendingConflict = null;
+    if (typeof document === 'undefined') return;
+    const row = document.getElementById('sync-conflict-row');
+    if (row) row.classList.add('hidden');
+  }
+
+  function showSyncConflict() {
+    if (typeof document === 'undefined') return;
+    const row = document.getElementById('sync-conflict-row');
+    if (row) row.classList.remove('hidden');
+    setSyncStatus('云端已有另一台设备的数据。请选择用云端或用本机；用云端会先备份本机。', false);
+  }
+
+  function showSyncUndoToast(snapshot) {
+    if (typeof document === 'undefined' || !snapshot) return;
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    toast.textContent = '已用云端数据替换本机。';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '撤销';
+    btn.onclick = () => {
+      toast.classList.add('hidden');
+      if (typeof OpenTabImport !== 'undefined' && OpenTabImport.applyOpenTabBackup) {
+        OpenTabImport.applyOpenTabBackup(snapshot.data || {}).catch(() => {
+          setSyncStatus('撤销失败。', true);
+        });
+      }
+    };
+    toast.appendChild(btn);
+    toast.classList.remove('hidden');
+    setTimeout(() => { toast.classList.add('hidden'); }, 8000);
+  }
+
+  async function resolveSyncChoice(choice) {
+    const remote = pendingConflict;
+    hideSyncConflict();
+    if (choice === 'remote') {
+      if (!remote) return { ok: false, reason: 'no-conflict' };
+      let snapshot = null;
+      if (typeof OpenTabImport !== 'undefined' && OpenTabImport.saveSnapshotRecord) {
+        snapshot = await OpenTabImport.saveSnapshotRecord('before-sync-pull');
+      }
+      const pulled = await applyRemotePayload(remote);
+      if (pulled) {
+        setSyncStatus('已用云端数据替换本机快捷方式，可撤销。', false);
+        showSyncUndoToast(snapshot);
+      }
+      await refreshUsage();
+      return { ok: true, pulled: !!pulled, snapshotId: snapshot && snapshot.id };
+    }
+    const pushed = await pushLocalToSync();
+    if (pushed.ok) setSyncStatus('已用本机数据覆盖云端。', false);
+    await refreshUsage();
+    return { ok: !!pushed.ok, pushed: true };
+  }
+
+  async function migratePlaintextSecrets() {
+    const local = await areaGet('local', ['icons']);
+    if (!iconsHavePlaintextSecrets(local.icons)) return false;
+    applyingRemote = true;
+    try {
+      await areaSet('local', { icons: local.icons });
+      return true;
+    } finally {
+      applyingRemote = false;
+    }
+  }
+
   async function setEnabled(next) {
     enabled = !!next;
     await areaSet('local', { [ENABLED_KEY]: enabled });
     const checkbox = typeof document !== 'undefined' ? document.getElementById('browser-sync-enabled') : null;
     if (checkbox) checkbox.checked = enabled;
     if (!enabled) {
+      hideSyncConflict();
       setSyncStatus('已关闭浏览器同步，数据只保存在本机。', false);
       await refreshUsage();
       return { ok: true, enabled: false };
@@ -713,13 +824,21 @@
     const remote = await readRemotePayload();
     const local = await areaGet('local', ['icons']);
     const localCount = Array.isArray(local.icons) ? local.icons.length : 0;
-    if (remote && (localCount === 0 || (remote.updatedAt && remote.icons && remote.icons.length && localCount <= remote.icons.length))) {
+    const remoteFromOther = !!(remote && remote.deviceId && remote.deviceId !== deviceId);
+    const remoteHasIcons = !!(remote && Array.isArray(remote.icons) && remote.icons.length);
+    if (remoteFromOther && remoteHasIcons && localCount === 0) {
       const pulled = await applyRemotePayload(remote);
       if (pulled) {
         setSyncStatus('已从浏览器同步恢复快捷方式、分组和设置。', false);
         await refreshUsage();
         return { ok: true, enabled: true, pulled: true };
       }
+    }
+    if (remoteFromOther && remoteHasIcons && localCount > 0) {
+      pendingConflict = remote;
+      showSyncConflict();
+      await refreshUsage();
+      return { ok: true, enabled: true, conflict: true, localCount, remoteCount: remote.icons.length };
     }
     const pushed = await pushLocalToSync();
     if (pushed.ok) setSyncStatus('已开启浏览器同步（仅快捷方式、分组和设置）。', false);
@@ -732,7 +851,7 @@
     syncBound = true;
     api.storage.onChanged.addListener((changes, area) => {
       if (area === 'sync') {
-        if (!enabled || applyingRemote) return;
+        if (!enabled || applyingRemote || pendingConflict) return;
         if (changes[META_KEY]) {
           readRemotePayload().then((payload) => {
             if (!payload) return;
@@ -751,7 +870,20 @@
     if (typeof document === 'undefined') return;
     if (!document.getElementById('import-sync-section')) return;
     wrapLocalSet();
+    migratePlaintextSecrets();
     const checkbox = document.getElementById('browser-sync-enabled');
+    const useRemoteBtn = document.getElementById('sync-use-remote-btn');
+    const useLocalBtn = document.getElementById('sync-use-local-btn');
+    if (useRemoteBtn) {
+      useRemoteBtn.addEventListener('click', () => {
+        resolveSyncChoice('remote').catch(() => setSyncStatus('无法使用云端数据。', true));
+      });
+    }
+    if (useLocalBtn) {
+      useLocalBtn.addEventListener('click', () => {
+        resolveSyncChoice('local').catch(() => setSyncStatus('无法上传本机数据。', true));
+      });
+    }
     if (checkbox) {
       checkbox.addEventListener('change', () => {
         setEnabled(checkbox.checked).catch(() => {
@@ -795,6 +927,7 @@
     setKeyStore,
     wrapLocalSet,
     iconsHavePlaintextSecrets,
+    migratePlaintextSecrets,
     prepareLocalPersistSync,
     flushVault,
     hydrateIcons,
@@ -811,6 +944,7 @@
     formatSyncUsage,
     refreshUsage,
     setEnabled,
+    resolveSyncChoice,
     pushLocalToSync,
     applyRemotePayload,
     sanitizeIconForSync,

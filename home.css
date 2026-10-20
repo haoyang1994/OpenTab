@@ -1786,7 +1786,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   pointer-events: none;
 }
 
-#bookmark-folder-row.hidden {
+#bookmark-folder-row.hidden,
+#sync-conflict-row.hidden {
   display: none;
 }
 

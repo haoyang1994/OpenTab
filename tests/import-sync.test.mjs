@@ -213,6 +213,11 @@ async function run() {
 
   const folders = [{ id: 'folder-home', name: '主页' }, { id: 'folder-a', name: 'A' }];
   assert.deepEqual(OpenTabImport.groupsToFolders(OpenTabImport.foldersToGroups(folders)), folders);
+  const nestedFolders = [
+    { id: 'folder-home', name: '主页' },
+    { id: 'folder-work', name: '工作', parentId: 'folder-home', type: 'folder' }
+  ];
+  assert.deepEqual(OpenTabImport.groupsToFolders(OpenTabImport.foldersToGroups(nestedFolders)), nestedFolders);
   assert.equal(OpenTabImport.readIconGroupId({ folderId: 'folder-a' }), 'folder-a');
   assert.equal(OpenTabImport.withIconGroup({ name: 'x' }, 'folder-a').folderId, 'folder-a');
 
@@ -416,7 +421,8 @@ async function run() {
     todos: [{ id: 't1', text: 'secret todo' }],
     bingIndex: 4,
     clockFormat: '24h',
-    searchEngine: 'bing'
+    searchEngine: 'bing',
+    currentFolderId: 'folder-should-stay-local'
   });
   const syncJson = JSON.stringify(syncPayload);
   assert.equal(syncJson.includes('nope'), false);
@@ -426,6 +432,7 @@ async function run() {
   assert.equal(syncPayload.todos, undefined);
   assert.equal(syncPayload.bingIndex, undefined);
   assert.equal(syncPayload.settings.clockFormat, '24h');
+  assert.equal(syncPayload.settings.currentFolderId, undefined);
   assert.equal(syncPayload.icons[0].uploadedIconDataUrl, '');
 
   const modest = OpenTabSync.buildSyncPayload({
@@ -482,19 +489,45 @@ async function run() {
     const size = OpenTabSync.storedItemBytes(item.key, item.value);
     assert.ok(size <= OpenTabSync.QUOTA_BYTES_PER_ITEM, 'BUG-018 utf8 item exceeds 8KB: ' + size);
     if (item.key.startsWith('ot.s.c')) {
-      assert.ok(
-        OpenTabSync.utf8Length(item.value) <= OpenTabSync.CHUNK_SIZE,
-        'BUG-018 chunk exceeds 7800 utf8 bytes'
-      );
+      assert.ok(size <= OpenTabSync.CHUNK_SIZE, 'BUG-022 stored chunk exceeds 7800: ' + size);
     }
   });
   const bulky = OpenTabSync.shardSyncPayload({ v: 1, blob: '中'.repeat(4000) + '😀'.repeat(200) });
-  bulky.chunks.forEach((chunk) => {
-    assert.ok(OpenTabSync.utf8Length(chunk) <= OpenTabSync.CHUNK_SIZE);
+  bulky.chunks.forEach((chunk, index) => {
+    const size = OpenTabSync.storedItemBytes('ot.s.c' + index, chunk);
+    assert.ok(size <= OpenTabSync.CHUNK_SIZE, 'BUG-022 bulky stored chunk exceeds 7800: ' + size);
   });
   const bulkyRestored = OpenTabSync.unshardSyncPayload(bulky.chunks);
   assert.equal(bulkyRestored.blob.startsWith('中'), true);
   assert.match(bulkyRestored.blob, /😀/);
+
+  const quotedIcons = Array.from({ length: 80 }, (_, i) => ({
+    id: 'q' + i,
+    name: '中文"引号\\站点"' + i,
+    url: 'https://example.com/path?q="' + i + '"\\x',
+    folderId: 'folder-home',
+    type: 'shortcut'
+  }));
+  const quotedPayload = OpenTabSync.buildSyncPayload({
+    icons: quotedIcons,
+    folders: [{ id: 'folder-home', name: '主页' }]
+  });
+  const quotedPlan = OpenTabSync.planSyncWrite(quotedPayload);
+  assert.equal(quotedPlan.ok, true, 'BUG-022: quoted Chinese payload should stay under quota');
+  assert.ok(
+    quotedPlan.chunkCount >= 3,
+    'BUG-022: expected at least 3 shards, got ' + quotedPlan.chunkCount
+  );
+  quotedPlan.items.forEach((item) => {
+    const size = OpenTabSync.storedItemBytes(item.key, item.value);
+    assert.ok(size <= OpenTabSync.QUOTA_BYTES_PER_ITEM, 'BUG-022 stored item ' + item.key + ' is ' + size);
+  });
+  const quotedRestored = OpenTabSync.unshardSyncPayload(
+    quotedPlan.items.filter((item) => item.key.startsWith('ot.s.c')).map((item) => item.value)
+  );
+  assert.equal(quotedRestored.icons.length, 80);
+  assert.equal(quotedRestored.icons[0].name, quotedIcons[0].name);
+  assert.equal(quotedRestored.icons[79].url, quotedIcons[79].url);
 
   const merged = OpenTabSync.mergeRemoteIcons(
     [{ id: 'a', name: 'Remote', uploadedIconDataUrl: '', resolvedIconUrl: '', sshPassword: 'nope' }],
@@ -525,6 +558,7 @@ async function run() {
     assert.equal(chromeApi._local.icons[0].uploadedIconDataUrl, 'data:image/png;base64,KEEP');
     assert.equal(chromeApi._local.clockFormat, '24h');
     assert.equal(chromeApi._local.searchOpenInNewTab, true);
+    assert.equal(chromeApi._local.currentFolderId, undefined);
     const again = await OpenTabSync.applyRemotePayload({
       deviceId: 'dev-other',
       hash: 'payload-1',
@@ -546,6 +580,177 @@ async function run() {
     {}
   );
   assert.equal(Array.isArray(downloaded.searchHistory), true);
+
+  await withChrome({
+    local: {
+      icons: [{
+        id: 'keep-me',
+        name: 'Keep',
+        url: 'https://keep.example.com/',
+        folderId: 'folder-home',
+        type: 'shortcut'
+      }],
+      folders: [{ id: 'folder-home', name: '主页' }],
+      currentFolderId: 'folder-home'
+    }
+  }, async (chromeApi) => {
+    await OpenTabImport.applyOpenTabBackup({
+      folders: [
+        { id: 'folder-home', name: '主页' },
+        { id: 'folder-work', name: '工作', parentId: 'folder-home', type: 'folder' }
+      ],
+      icons: [
+        {
+          id: 'folder-icon-1',
+          name: '工作',
+          type: 'folder',
+          folderId: 'folder-home',
+          parentId: ''
+        },
+        {
+          id: 'nested-site',
+          name: 'Nested',
+          url: 'https://nested.example.com/',
+          folderId: 'folder-home',
+          parentId: 'folder-icon-1',
+          type: 'shortcut'
+        }
+      ],
+      currentFolderId: 'folder-work'
+    });
+    const work = chromeApi._local.folders.find((folder) => folder.id === 'folder-work');
+    assert.equal(work.parentId, 'folder-home');
+    assert.equal(work.type, 'folder');
+    const nested = chromeApi._local.icons.find((icon) => icon.id === 'nested-site');
+    assert.equal(nested.parentId, 'folder-icon-1');
+    assert.equal(nested.type, 'shortcut');
+    assert.equal(chromeApi._local.currentFolderId, 'folder-work');
+  });
+
+  await withChrome({
+    local: { icons: [{ id: 'ssh1', name: 'Jump', sshPassword: 'old-plain' }] }
+  }, async (chromeApi) => {
+    chromeApi._local.icons = [{ id: 'ssh1', name: 'Jump', sshPassword: 'old-plain' }];
+    assert.equal(chromeApi._local.icons[0].sshPassword, 'old-plain');
+    const migrated = await OpenTabSync.migratePlaintextSecrets();
+    assert.equal(migrated, true);
+    assert.equal(chromeApi._local.icons[0].sshPassword, '');
+    const hydrated = await OpenTabSync.hydrateIcons(chromeApi._local.icons, chromeApi._local);
+    assert.equal(hydrated[0].sshPassword, 'old-plain');
+  });
+
+  function seedRemoteSync(chromeApi, localShape, device) {
+    const payload = OpenTabSync.buildSyncPayload(localShape);
+    payload.deviceId = device;
+    payload.hash = 'remote-' + device;
+    const plan = OpenTabSync.planSyncWrite(payload);
+    assert.equal(plan.ok, true);
+    plan.items.forEach((item) => {
+      chromeApi._sync[item.key] = item.value;
+    });
+    return payload;
+  }
+
+  await withChrome({
+    local: {
+      icons: [{
+        id: 'local-1',
+        name: 'LocalOnly',
+        url: 'https://local.example/',
+        folderId: 'folder-home',
+        type: 'shortcut'
+      }],
+      folders: [{ id: 'folder-home', name: '主页' }]
+    }
+  }, async (chromeApi) => {
+    seedRemoteSync(chromeApi, {
+      icons: [
+        { id: 'remote-1', name: 'CloudA', url: 'https://a.example/', folderId: 'folder-home', type: 'shortcut' },
+        { id: 'remote-2', name: 'CloudB', url: 'https://b.example/', folderId: 'folder-home', type: 'shortcut' }
+      ],
+      folders: [{ id: 'folder-home', name: '主页' }]
+    }, 'dev-other');
+    const localBefore = chromeApi._local.icons.map((icon) => icon.id);
+    const enabled = await OpenTabSync.setEnabled(true);
+    assert.equal(enabled.conflict, true, 'BUG-023: second device must not auto-overwrite');
+    assert.deepEqual(chromeApi._local.icons.map((icon) => icon.id), localBefore);
+    assert.equal(chromeApi._local.backupSnapshots, undefined);
+
+    const resolved = await OpenTabSync.resolveSyncChoice('remote');
+    assert.equal(resolved.pulled, true);
+    assert.ok(chromeApi._local.backupSnapshots && chromeApi._local.backupSnapshots.length);
+    assert.equal(chromeApi._local.backupSnapshots[0].reason, 'before-sync-pull');
+    assert.ok(chromeApi._local.icons.some((icon) => icon.id === 'remote-1'));
+    assert.ok(!chromeApi._local.icons.some((icon) => icon.id === 'local-1'));
+    const snap = chromeApi._local.backupSnapshots[0];
+    assert.ok(snap.data.icons.some((icon) => icon.id === 'local-1'));
+    await OpenTabImport.applyOpenTabBackup(snap.data);
+    assert.ok(chromeApi._local.icons.some((icon) => icon.id === 'local-1'), 'BUG-023: undo restores local');
+  });
+
+  await withChrome({
+    local: {
+      icons: [{
+        id: 'local-keep',
+        name: 'KeepLocal',
+        url: 'https://keep-local.example/',
+        folderId: 'folder-home',
+        type: 'shortcut'
+      }],
+      folders: [{ id: 'folder-home', name: '主页' }]
+    }
+  }, async (chromeApi) => {
+    seedRemoteSync(chromeApi, {
+      icons: [
+        { id: 'remote-x', name: 'CloudX', url: 'https://x.example/', folderId: 'folder-home', type: 'shortcut' }
+      ],
+      folders: [{ id: 'folder-home', name: '主页' }]
+    }, 'dev-other');
+    const enabled = await OpenTabSync.setEnabled(true);
+    assert.equal(enabled.conflict, true);
+    const resolved = await OpenTabSync.resolveSyncChoice('local');
+    assert.equal(resolved.pushed, true);
+    assert.equal(chromeApi._local.icons[0].id, 'local-keep');
+    const restored = OpenTabSync.unshardSyncPayload(
+      Object.keys(chromeApi._sync)
+        .filter((key) => key.startsWith('ot.s.c'))
+        .sort()
+        .map((key) => chromeApi._sync[key])
+    );
+    assert.ok(restored.icons.some((icon) => icon.id === 'local-keep'));
+    assert.ok(!restored.icons.some((icon) => icon.id === 'remote-x'));
+  });
+
+  await withChrome({
+    local: { icons: [], folders: [{ id: 'folder-home', name: '主页' }] }
+  }, async (chromeApi) => {
+    seedRemoteSync(chromeApi, {
+      icons: [
+        { id: 'cloud-only', name: 'CloudOnly', url: 'https://cloud.example/', folderId: 'folder-home', type: 'shortcut' }
+      ],
+      folders: [{ id: 'folder-home', name: '主页' }]
+    }, 'dev-other');
+    const enabled = await OpenTabSync.setEnabled(true);
+    assert.equal(enabled.pulled, true);
+    assert.ok(chromeApi._local.icons.some((icon) => icon.id === 'cloud-only'));
+  });
+
+  await withChrome({
+    local: {
+      icons: [{ id: 'a', name: 'A', url: 'https://a.example/' }],
+      currentFolderId: 'folder-keep'
+    }
+  }, async (chromeApi) => {
+    await OpenTabSync.applyRemotePayload({
+      deviceId: 'dev-other',
+      hash: 'cf-1',
+      icons: [{ id: 'a', name: 'A', url: 'https://a.example/' }],
+      folders: [{ id: 'folder-home', name: '主页' }],
+      settings: { currentFolderId: 'folder-remote', clockFormat: '24h' }
+    });
+    assert.equal(chromeApi._local.currentFolderId, 'folder-keep');
+    assert.equal(chromeApi._local.clockFormat, '24h');
+  });
 
   console.log('import-sync unit tests passed');
 }

@@ -513,6 +513,13 @@
             <label for="browser-sync-enabled">浏览器同步</label>
             <input type="checkbox" id="browser-sync-enabled">
           </div>
+          <div id="sync-conflict-row" class="setting-row backup-row hidden">
+            <label>同步冲突</label>
+            <div class="backup-actions">
+              <button id="sync-use-remote-btn" class="btn-small" type="button">用云端</button>
+              <button id="sync-use-local-btn" class="btn-small ghost" type="button">用本机</button>
+            </div>
+          </div>
           <p id="storage-usage" class="backup-status">本地存储用量：计算中…</p>
           <p id="import-sync-status" class="backup-status">可导入 Chrome 书签、常用网站，或 Infinity / WeTab / iTab 备份。书签和常用网站权限仅在点击时申请。</p>
           <input id="import-file-input" type="file" accept="application/json,.json,.infinity,.data,text/json" hidden>

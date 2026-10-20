@@ -1768,6 +1768,7 @@
     elements.sshPort.value = '22';
     elements.sshUsername.value = '';
     elements.sshPassword.value = '';
+    elements.sshPassword.placeholder = '留空表示由网关决定认证方式';
     elements.sshSocksHost.value = '';
     elements.sshSocksPort.value = '';
     elements.sshSocksUsername.value = '';
@@ -1800,6 +1801,7 @@
     elements.sshPort.value = String(icon.sshPort || 22);
     elements.sshUsername.value = icon.sshUsername || '';
     elements.sshPassword.value = icon.sshPassword || '';
+    elements.sshPassword.placeholder = '已保存，留空则不修改';
     elements.sshSocksHost.value = icon.sshSocksHost || '';
     elements.sshSocksPort.value = icon.sshSocksHost ? String(icon.sshSocksPort || 1080) : '';
     elements.sshSocksUsername.value = icon.sshSocksUsername || '';

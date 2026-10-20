@@ -1877,6 +1877,69 @@ async function runExtensionE2E() {
     await page2.close();
     console.log('BUG-016 two-tab sync idle passed');
 
+    if (!(await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden')))) {
+      await page.click('#close-settings');
+    }
+    const sshIcon = page.locator('#icons-container .icon-widget[data-id="ssh-sync"]');
+    await sshIcon.click({ button: 'right', force: true });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#edit-icon-btn');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    assert.equal(
+      await page.locator('#ssh-password').getAttribute('placeholder'),
+      '已保存，留空则不修改'
+    );
+    await page.click('#cancel-btn');
+    await page.waitForSelector('#add-icon-modal.hidden');
+
+    const conflictResult = await page.evaluate(async () => {
+      await OpenTabSync.setEnabled(false);
+      await chrome.storage.local.set({
+        icons: [{
+          id: 'only-local',
+          name: '本机独有',
+          url: 'https://local.example/',
+          folderId: 'folder-home',
+          type: 'shortcut'
+        }],
+        folders: [{ id: 'folder-home', name: '主页' }]
+      });
+      const remote = OpenTabSync.buildSyncPayload({
+        icons: [
+          { id: 'cloud-1', name: '云端一', url: 'https://cloud.example/', folderId: 'folder-home', type: 'shortcut' },
+          { id: 'cloud-2', name: '云端二', url: 'https://cloud2.example/', folderId: 'folder-home', type: 'shortcut' }
+        ],
+        folders: [{ id: 'folder-home', name: '主页' }]
+      });
+      remote.deviceId = 'dev-other-device';
+      remote.hash = 'conflict-e2e';
+      const plan = OpenTabSync.planSyncWrite(remote);
+      const toSet = {};
+      plan.items.forEach((item) => { toSet[item.key] = item.value; });
+      await chrome.storage.sync.set(toSet);
+      return OpenTabSync.setEnabled(true);
+    });
+    assert.equal(conflictResult.conflict, true, 'BUG-023: enabling sync with remote data offers a choice');
+    const idsBeforeChoice = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      return (result.icons || []).map((icon) => icon.id);
+    });
+    assert.deepEqual(idsBeforeChoice, ['only-local']);
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
+    await page.waitForSelector('#sync-conflict-row:not(.hidden)');
+    await page.locator('#import-sync-section').screenshot({ path: path.join(ARTIFACTS, 'sync_conflict_choice.png') });
+    await page.click('#sync-use-remote-btn');
+    await page.waitForFunction(async () => {
+      const result = await chrome.storage.local.get(['icons', 'backupSnapshots']);
+      const ids = (result.icons || []).map((icon) => icon.id);
+      return ids.includes('cloud-1') && (result.backupSnapshots || []).length > 0;
+    }, null, { timeout: 8000 });
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.match((await page.locator('#toast').textContent()) || '', /云端/);
+    console.log('BUG-023 sync conflict choice passed');
+
     assert.ok(Array.isArray(localManifest.optional_permissions), 'AC7: optional_permissions present');
     assert.ok(localManifest.optional_permissions.includes('bookmarks'));
     assert.ok(localManifest.optional_permissions.includes('topSites'));

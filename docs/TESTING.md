@@ -44,7 +44,7 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 
 仓库规范：`tests/repo-hygiene.test.mjs`（LICENSE / NOTICE / 社区文件 / 删除清单 / 根目录 html 本地引用）
 
-导入与同步：`tests/import-sync.test.mjs`（`npm test` 会跑）。覆盖书签/常用网站 optional 权限 mock、Infinity/WeTab/iTab 解析、无法识别的备份、撤销快照、sync UTF-8 分片与超配额降级、按 id 合并远端图标、deviceId/内容哈希去环、密钥存非导出 IndexedDB `CryptoKey`，以及导入/恢复不清空 vault。E2E（`tests/extension.test.mjs`）再走入口、导入/撤销、同步开关、用量，以及两个标签页开启同步后 10 秒不 reload。
+导入与同步：`tests/import-sync.test.mjs`（`npm test` 会跑）。覆盖书签/常用网站 optional 权限 mock、Infinity/WeTab/iTab 解析、无法识别的备份、撤销快照、带文件夹的 OpenTab 备份导入、sync 按存储后 JSON 大小分片（含中文/引号至少 3 片且每片 ≤8KB）与超配额降级、按 id 合并远端图标、deviceId/内容哈希去环、第二台设备开启同步时的冲突选择与快照撤销、密钥存非导出 IndexedDB `CryptoKey`、启动时迁移明文秘密，以及导入/恢复不清空 vault。E2E（`tests/extension.test.mjs`）再走入口、导入/撤销、同步开关、用量、两个标签页开启同步后 10 秒不 reload，以及同步冲突「用云端」选择。
 
 ### 2.2 当前未覆盖（需要手工/后续自动化）
 
