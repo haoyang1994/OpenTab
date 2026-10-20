@@ -1,5 +1,4 @@
 OpenTab
-Copyright 2026 The OpenTab Authors
 
 This product includes software and other materials developed by third parties.
 The Apache License 2.0 applies to OpenTab original code as described in LICENSE.
@@ -231,15 +230,20 @@ Status:      不在 Apache-2.0 授权范围内.
 Name:        FIX tag / value dictionary embedded in fixparser.js
              (FIX_TAGS, FIX_VALUES)
 Used by:     fixparser.html
-Source:      需确认. The tables appear to be derived from the QuickFIX FIX50SP2
-             data dictionary.
-Acknowledgement (conservative, pending confirmation):
-             This product includes software developed by quickfixengine.org
-             http://www.quickfixengine.org/
-             QuickFIX License 1.0 is a BSD-style license that requires this
-             acknowledgement in documentation.
-Status:      需确认 provenance. QuickFIX credit included until the owner confirms
-             another source.
+Source:      QuickFIX/J data dictionary (https://www.quickfixj.org/,
+             repository https://github.com/quickfix-j/quickfixj). Confirmed by
+             the repository owner.
+License:     The QuickFIX Software License, Version 1.0
+             (https://github.com/quickfix-j/quickfixj/blob/master/LICENSE)
+Copyright:   Copyright (c) 2001-2005 quickfixengine.org  All rights reserved.
+Required acknowledgement (license section 3, quoted from that LICENSE):
+             This product includes software developed by
+             quickfixengine.org (http://www.quickfixengine.org/).
+Notes:       BSD-style terms. The names "QuickFIX" and "quickfixengine.org"
+             are not used to endorse OpenTab. This product is named OpenTab,
+             not QuickFIX (license sections 4–5).
+Status:      Compatible with Apache-2.0 (retain copyright, conditions, and
+             the acknowledgement above). Not re-licensed as Apache-2.0.
 
 Fonts:       CSS system font stacks only (-apple-system, SF Pro, Segoe UI,
              Consolas, Menlo, etc.). No font files are shipped.

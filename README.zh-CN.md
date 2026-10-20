@@ -173,8 +173,6 @@ OpenTab/
 
 ## 许可证
 
-Copyright 2026 The OpenTab Authors
-
 本项目采用 Apache License, Version 2.0，全文见 [LICENSE](LICENSE)。
 
 第三方软件、照片、商标和其他材料列在 [NOTICE](NOTICE)。其中部分条目**不在** Apache-2.0 授权范围内。
