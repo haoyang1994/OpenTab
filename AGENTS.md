@@ -20,10 +20,16 @@ npm run test:e2e:headed
 
 ## CI Parity
 
-For CI-like execution locally:
+CI runs the same command as local validation:
 
 ```bash
-CI=true npm run test:ci
+npm test
+```
+
+On Linux without `DISPLAY`, `npm test` wraps Chromium with `xvfb-run`. To force a visible browser (requires a display):
+
+```bash
+npm run test:e2e:headed
 ```
 
 ## Notes
