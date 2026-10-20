@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced the application icon and three bundled default backgrounds with original OpenTab artwork (Apache-2.0). Saved Pexels preset paths migrate to the matching new images (or fall back to the Bing default) so existing installs do not 404.
+
 ## [1.1.0] - 2026-10-20
 
 ### Added

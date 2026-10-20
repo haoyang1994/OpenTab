@@ -40,7 +40,7 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 - Bing 每日壁纸（刷新按钮可切换近期历史图）
 - 预设渐变
-- 三张随仓库分发的静态照片（来自 Pexels，见 [NOTICE](NOTICE)）
+- 三张项目自有的静态照片（晨曦雾山湖、金色松林、星空海岸）
 - 自定义图片 / 视频 URL，或本地上传
 
 ### 快捷方式
@@ -60,7 +60,7 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 ## 截图
 
-截图中的背景照片来自 [Pexels](https://www.pexels.com/license/)，**不是** Apache-2.0。署名见 [NOTICE](NOTICE)。画面里还有 Google / GitHub 标志，商标归各自所有者。
+画面里的 Google / GitHub 标志仍是各自所有者的商标。见 [NOTICE](NOTICE)。
 
 ### 深色主题
 
@@ -186,7 +186,7 @@ OpenTab/
 ├── ssh-gateway.mjs            # 本地 SSH WebSocket 网关
 ├── vendor/                    # 入库的 flatpickr / xterm（含各库 LICENSE）
 ├── icons/                     # PNG 图标和 SVG 源文件
-├── assets/default_background/ # 随仓库分发的 Pexels 静图
+├── assets/default_background/ # 项目自有的默认静图
 ├── screenshots/
 ├── tests/
 ├── docs/                      # 历史 SPEC、测试说明、发布说明

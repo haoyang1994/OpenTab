@@ -3,7 +3,7 @@ OpenTab
 This product includes software and other materials developed by third parties.
 The Apache License 2.0 applies to OpenTab original code as described in LICENSE.
 Items marked “不在 Apache-2.0 授权范围内” are distributed under their own terms and
-are not re-licensed as Apache-2.0. Items marked “需确认” still need owner confirmation.
+are not re-licensed as Apache-2.0.
 
 Upstream versions below match package-lock.json after `npm ci` (2026-10-20) unless noted.
 
@@ -175,49 +175,49 @@ MIT, ISC, BSD-3-Clause, or Unlicense. No GPL / AGPL / LGPL packages.
 4. Repository assets
 ================================================================================
 
-Name:        assets/default_background/pexels-pixabay-40896.jpg
-Size:        791,436 bytes
-Used by:     home.html preset background
-Source:      Pexels photo 40896, photographer Pixabay
-Original:    https://www.pexels.com/photo/green-tree-plant-leaves-40896/
-             (canonical image: https://images.pexels.com/photos/40896/larch-conifer-cone-branch-tree-40896.jpeg)
-License:     Pexels License (https://www.pexels.com/license/)
-Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+Name:        assets/default_background/bg-mountain-dawn.jpg
+Size:        57,059 bytes
+Used by:     home.html preset background (“晨曦雾山湖”)
+Source:      Original artwork created for OpenTab
+License:     Apache-2.0
+Status:      Original project asset; distributed under Apache-2.0
 
-Name:        assets/default_background/pexels-elina-sazonova-4275497.jpg
-Size:        2,369,574 bytes
-Used by:     home.html preset background
-Source:      Pexels photo 4275497, photographer Elina Sazonova
-Original:    https://www.pexels.com/photo/scenic-view-of-rocky-mountains-4275497/
-License:     Pexels License (https://www.pexels.com/license/)
-Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+Name:        assets/default_background/bg-forest-golden.jpg
+Size:        184,738 bytes
+Used by:     home.html preset background (“金色松林”)
+Source:      Original artwork created for OpenTab
+License:     Apache-2.0
+Status:      Original project asset; distributed under Apache-2.0
 
-Name:        assets/default_background/pexels-souvenirpixels-417074.jpg
-Size:        1,275,751 bytes
-Used by:     home.html preset background
-Source:      Pexels photo 417074, photographer James Wheeler
-             (Pexels username souvenirpixels, https://www.pexels.com/@souvenirpixels/)
-Original:    https://www.pexels.com/photo/lake-and-mountain-417074/
-License:     Pexels License (https://www.pexels.com/license/)
-Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+Name:        assets/default_background/bg-ocean-night.jpg
+Size:        135,150 bytes
+Used by:     home.html preset background (“星空海岸”)
+Source:      Original artwork created for OpenTab
+License:     Apache-2.0
+Status:      Original project asset; distributed under Apache-2.0
 
 Name:        screenshots/preview-dark.png, screenshots/preview-light.png,
              screenshots/settings-panel.png
 Used by:     README.md / README.zh-CN.md
-License:     Screenshots of OpenTab. Background pixels follow the Pexels License
-             of the photos above. Google and GitHub marks that appear in the
+License:     Screenshots of OpenTab, including the original bundled backgrounds
+             above (Apache-2.0). Google and GitHub marks that appear in the
              frames are trademarks of their owners (see below).
-Status:      不在 Apache-2.0 授权范围内 for the photograph and trademark portions.
+Status:      Screenshot pixels of OpenTab UI and original backgrounds are
+             Apache-2.0. Trademark portions remain 不在 Apache-2.0 授权范围内.
 
 Name:        icons/icon16.png, icons/icon48.png, icons/icon128.png
-Used by:     manifest.json icons
-Source:      No attribution in-tree; presumed original artwork
-Status:      需确认 (owner must confirm originality before treating as Apache-2.0)
+Used by:     manifest.json icons and action.default_icon; HTML favicons
+Source:      Original artwork created for OpenTab; rasterized from
+             icons/opentab-icon.svg (16px uses a simplified rendering)
+License:     Apache-2.0
+Status:      Original project assets; distributed under Apache-2.0
 
 Name:        icons/opentab-icon.svg
-Used by:     not referenced by extension pages (source for the PNG icons)
-Source:      Hand-written geometric SVG; presumed original
-Status:      需确认 (owner must confirm originality; file is kept)
+Used by:     favicon on home.html / popup.html / tool.html / fixparser.html;
+             vector source for the PNG icons
+Source:      Original vector artwork created for OpenTab
+License:     Apache-2.0
+Status:      Original project asset; distributed under Apache-2.0
 
 Name:        Inline Google / Bing / GitHub SVG marks in home.html (search engine switch)
 License:     Third-party trademarks
