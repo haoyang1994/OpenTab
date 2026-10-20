@@ -129,9 +129,12 @@ assert.ok(
   'SSH loopback ws://localhost must remain in connect-src'
 );
 assert.ok(connectSrc.includes('https://wttr.in'), 'weather fetch needs wttr.in in connect-src');
-assert.equal(imgSrc.includes('https:'), false, 'AC7: img-src must not allow all https');
 assert.ok(imgSrc.includes("'self'"), 'img-src must keep self');
 assert.ok(imgSrc.includes('data:'), 'img-src must keep data: for uploads');
+assert.ok(
+  imgSrc.includes('https:'),
+  'img-src keeps https: for user shortcut favicons and custom wallpaper URLs'
+);
 assert.equal(
   connectSrc.some((src) => src.includes('baidu') || src.includes('duckduckgo')),
   false,

@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
-- Narrowed extension-page CSP: dropped blanket `https:` / `ws:` / `wss:` from `connect-src` and blanket `https:` from `img-src`. `connect-src` keeps Bing, wttr.in, and loopback WebSocket (`ws://127.0.0.1`, `ws://localhost`) for the local SSH gateway. Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts.
+- Narrowed extension-page CSP: dropped blanket `https:` / `ws:` / `wss:` from `connect-src`. `connect-src` keeps Bing, wttr.in, and loopback WebSocket (`ws://127.0.0.1`, `ws://localhost`) for the local SSH gateway. `img-src` still allows `https:` because shortcut favicons and custom wallpaper URLs are user-chosen origins. Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts.
 
 ### Removed
 
