@@ -97,6 +97,8 @@
       </aside>
 
       <div id="icons-container"></div>
+      <p id="icons-empty-hint" class="icons-empty-hint hidden">点击 + 添加常用网站，或在空白处右键</p>
+      <div id="drag-live" class="sr-only" aria-live="polite"></div>
     </div>
 
     <div id="desktop-folder-label" aria-live="polite">主页</div>
@@ -245,6 +247,9 @@
       <button id="edit-icon-btn" type="button">编辑</button>
       <button id="delete-icon-btn" type="button" class="danger">删除</button>
     </div>
+
+    <div id="icon-drop-indicator" hidden></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
     <div id="settings-panel" class="settings-panel hidden">
       <div class="settings-header">
@@ -423,6 +428,10 @@
           <div class="setting-row">
             <label>显示图标背景框</label>
             <input type="checkbox" id="icon-frame-enabled">
+          </div>
+          <div class="setting-row">
+            <label for="open-in-new-tab">在新标签页打开快捷方式</label>
+            <input type="checkbox" id="open-in-new-tab">
           </div>
         </div>
 

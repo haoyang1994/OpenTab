@@ -45,10 +45,14 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 
 ### Shortcuts
 
-- Website shortcuts
+- **Add with +**: a persistent + tile at the end of the current folder grid (or right-click empty space)
+- **Drag to reorder**: mouse drag on the desktop grid, or Alt+←/→ when a shortcut is focused
+- **Real links**: middle-click / Ctrl / Cmd opens a new tab; hover shows the URL
+- **Undo delete**: deleting a shortcut shows a toast with Undo for 6 seconds
+- **Esc**: closes menus, dialogs, settings, calendar, and drawers one layer at a time
 - Built-in SSH terminal (needs the local gateway described below)
 - Local JSON formatter and FIX parser
-- Folders (drawers) with drag-and-drop
+- Folders (drawers); drag a desktop icon onto a drawer tab to move it
 - Toolbar popup to save the current tab as a shortcut
 
 ### Search, weather, todos, backup

@@ -1,10 +1,4 @@
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: 'addIcon',
-    title: 'Add Icon',
-    contexts: ['page']
-  });
-
   chrome.storage.local.get(['icons', 'background', 'clockFormat', 'showSeconds'], (result) => {
     if (!result.icons) {
       chrome.storage.local.set({
@@ -20,15 +14,6 @@ chrome.runtime.onInstalled.addListener(() => {
       });
     }
   });
-});
-
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'addIcon') {
-    chrome.tabs.sendMessage(tab.id, { action: 'openAddIconModal' });
-  } else if (info.menuItemId === 'deleteIcon') {
-    const iconId = info.targetElementId;
-    chrome.tabs.sendMessage(tab.id, { action: 'deleteIcon', iconId });
-  }
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
