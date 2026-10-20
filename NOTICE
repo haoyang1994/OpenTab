@@ -43,7 +43,7 @@ Status:      Compatible with Apache-2.0
 ================================================================================
 
 These packages are used by the local WebSocket SSH gateway. They are not loaded
-by Chrome extension pages. ssh-gateway.mjs itself is not modified in this release.
+by Chrome extension pages.
 
 Name:        ssh2
 Version:     1.17.0

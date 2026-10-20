@@ -17,9 +17,9 @@ npm test
 
 On Linux with no `DISPLAY`, `npm test` wraps headed Chromium with `xvfb` (install the `xvfb` package). You do not need to wrap the command again.
 
-`npm run test:ci` is a compatible alias for the E2E script only.
+`npm run test:ci` is the same command as `npm test`.
 
-`npm test` runs repository hygiene checks, then the Playwright E2E suite.
+`npm test` runs repository hygiene checks, SSH gateway security tests, then the Playwright E2E suite.
 
 Loading the unpacked extension does **not** require `npm install`. Calendar and terminal assets are committed under `vendor/` with their LICENSE files. `npm ci` is still required to run tests or the SSH gateway.
 

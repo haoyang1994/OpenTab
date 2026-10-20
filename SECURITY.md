@@ -36,6 +36,8 @@ In scope:
 - The Chrome extension itself (`home.html`, service worker, popup, tool pages, SSH terminal page)
 - `ssh-gateway.mjs` (the local WebSocket SSH gateway)
 
+The local SSH gateway (`ssh-gateway.mjs`) requires `SSH_GATEWAY_EXTENSION_ID` (Origin allowlist pinned to this extension) and an access token (`SSH_GATEWAY_TOKEN` or a generated file). It does not load `~/.ssh/id_rsa` unless `SSH_PRIVATE_KEY_PATH` is set explicitly. See README for the full variable list.
+
 Out of scope:
 
 - Vulnerabilities in third-party sites that the user added as shortcuts

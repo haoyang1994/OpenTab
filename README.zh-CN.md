@@ -113,34 +113,60 @@ SSH 连接经过你自己启动的**本地** WebSocket 网关（`ssh-gateway.mjs
 npm ci
 npm run pw:install
 npm test
+npm run test:ssh-gateway
 npm run test:e2e:headed
 npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` 会先跑 `tests/repo-hygiene.test.mjs`，再跑 Playwright E2E（`scripts/run-e2e.sh`）。Linux 无显示器时该脚本会用 `xvfb` 包装有头 Chromium（需安装 `xvfb` 包）。`npm run test:e2e:headed` 在有显示器时强制弹出可见浏览器。`npm run test:ci` 是同一条 E2E 脚本的兼容别名。详见 [docs/TESTING.md](docs/TESTING.md)。
+`npm test` 会先跑 `tests/repo-hygiene.test.mjs`，再跑 SSH 网关安全测试（`npm run test:ssh-gateway`），最后跑 Playwright E2E（`scripts/run-e2e.sh`）。Linux 无显示器时该脚本会用 `xvfb` 包装有头 Chromium（需安装 `xvfb` 包）。`npm run test:ci` 与 `npm test` 相同。详见 [docs/TESTING.md](docs/TESTING.md)。
 
 修改扩展文件后，在 `chrome://extensions/` 点击扩展卡片上的「重新加载」。
 
 ## SSH 网关
 
-SSH 终端通过本地 WebSocket 网关连接。网关**需要** Node 依赖：
+SSH 需要本地 WebSocket 网关。网关**只接受本扩展**（`chrome-extension://<扩展ID>`）的连接，并要求访问令牌。**不会**读取 `~/.ssh/id_rsa`，除非你设置 `SSH_PRIVATE_KEY_PATH`。
+
+1. 打开 `chrome://extensions`，开启开发者模式，复制 OpenTab 的扩展 ID。
+2. 启动网关：
 
 ```bash
 npm install
+
+# 必填：Origin 白名单钉到本扩展，否则网关拒绝启动
+export SSH_GATEWAY_EXTENSION_ID='你的扩展ID'
+
+# 可选：显式指定私钥。不设置则只用 SSH 图标里填写的密码登录。
+# export SSH_PRIVATE_KEY_PATH="$HOME/.ssh/id_ed25519"
+# export SSH_PRIVATE_KEY_PASSPHRASE='如有口令'
+
 npm run ssh:gateway
 ```
 
-默认地址：`ws://127.0.0.1:8787/ssh`
+3. 首次启动会打印 **access token**（之后只显示 token 文件路径）。把它填进 OpenTab SSH 图标的「网关访问令牌」。
+4. 网关地址填 `ws://127.0.0.1:8787/ssh`。
+
+未设置扩展 ID 时网关不会启动。任意网页（以及缺少 Origin 头的客户端）无法连接；缺少或错误令牌时握手会被拒绝。
 
 环境变量：
 
 - `SSH_GATEWAY_HOST` — 监听主机（默认 `127.0.0.1`）
 - `SSH_GATEWAY_PORT` — 监听端口（默认 `8787`）
-- `SSH_PRIVATE_KEY_PATH` — 私钥路径（默认 `~/.ssh/id_rsa`）
+- `SSH_GATEWAY_PATH` — WebSocket 路径（默认 `/ssh`）
+- `SSH_GATEWAY_EXTENSION_ID` — 本扩展 ID（**必填**；Origin 白名单。未设置则拒绝启动）
+- `SSH_GATEWAY_ALLOWED_ORIGINS` — 可选，逗号分隔的 `chrome-extension://...`
+- `SSH_GATEWAY_TOKEN` — 固定访问令牌；不设则生成并写入 `~/.config/opentab/ssh-gateway.token`
+- `SSH_GATEWAY_TOKEN_FILE` — 令牌文件路径
+- `SSH_PRIVATE_KEY_PATH` — **显式**私钥路径；省略时**不会**回落到 `~/.ssh/id_rsa`
 - `SSH_PRIVATE_KEY_PASSPHRASE` — 私钥口令（如有）
 
 快捷方式编辑器支持 SOCKS5 代理。SSH 密码目前以明文保存在 `chrome.storage.local`，这是已知限制。
+
+升级说明（已有 SSH 图标）：
+
+- 每个旧 SSH 图标都要补填「网关访问令牌」，否则连不上新网关。
+- 网关不再默认使用 `~/.ssh/id_rsa`。如果仍要用私钥登录，启动前设置 `SSH_PRIVATE_KEY_PATH`。
+- 必须设置 `SSH_GATEWAY_EXTENSION_ID`（`chrome://extensions` 里 OpenTab 的 ID）。
 
 ## 项目结构
 

@@ -79,7 +79,7 @@ for (const file of htmlFiles) {
     const clean = ref.split(/[?#]/)[0];
     const resolved = path.normalize(path.join(root, clean));
     assert.ok(
-      resolved.startsWith(root),
+      resolved === root || resolved.startsWith(root + path.sep),
       `${file} has out-of-tree local reference: ${ref}`
     );
     assert.ok(

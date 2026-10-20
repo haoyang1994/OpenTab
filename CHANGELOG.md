@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions workflow replaced: `.github/workflows/e2e.yml` → `.github/workflows/ci.yml` (`CI`, `npm test`)
 - Historical design notes moved to `docs/SPEC.md`
 - `NOTICE` has no project copyright line; the FIX dictionary is attributed to QuickFIX/J under the QuickFIX Software License 1.0
+- `npm test` runs on Linux without a display and in CI by wrapping headed Chromium with xvfb (#1)
+- Calendar (flatpickr) and SSH terminal (xterm) load from committed `vendor/` copies, so loading the unpacked extension does not need `npm install` (#2)
+
+### Security
+
+- Local SSH gateway requires an extension-ID Origin allowlist and an access token; it does not load `~/.ssh/id_rsa` unless `SSH_PRIVATE_KEY_PATH` is set; compress arguments are POSIX single-quoted (#3)
 
 ### Removed
 
@@ -40,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial OpenTab Chrome Manifest V3 new tab extension snapshot
 
-<!-- The v1.0.0 and v1.1.0 git tags are not created by this change. Repository owners should create them when publishing. -->
+<!-- The v1.0.0 git tag already exists. This change does not create a v1.1.0 tag or GitHub Release. -->
 
 [Unreleased]: https://github.com/haoyang1994/OpenTab/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/haoyang1994/OpenTab/compare/v1.0.0...v1.1.0
