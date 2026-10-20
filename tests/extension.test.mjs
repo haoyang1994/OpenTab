@@ -95,6 +95,13 @@ async function runExtensionE2E() {
     );
 
     const sshPage = await context.newPage();
+    const sshConsoleErrors = [];
+    sshPage.on('console', msg => {
+      if (msg.type() === 'error') sshConsoleErrors.push(msg.text());
+    });
+    sshPage.on('pageerror', error => {
+      sshConsoleErrors.push(error.message);
+    });
     const sshFailedResources = [];
     sshPage.on('requestfailed', request => {
       sshFailedResources.push(request.url());
@@ -124,6 +131,11 @@ async function runExtensionE2E() {
       await sshPage.evaluate(() => typeof window.FitAddon),
       'undefined',
       'FitAddon should load from vendor/ without node_modules'
+    );
+    assert.equal(
+      sshConsoleErrors.length,
+      0,
+      `SSH terminal console errors: ${sshConsoleErrors.join(' | ')}`
     );
     await sshPage.close();
 

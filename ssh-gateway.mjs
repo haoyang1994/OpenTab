@@ -41,7 +41,7 @@ export function buildCompressCommand(targetPath, archiveName) {
     throw new Error('Invalid archive name');
   }
 
-  return `cd ${posixShellSingleQuote(dirname)} && tar -czf ${posixShellSingleQuote(archiveBase)} -- ${posixShellSingleQuote(baseName)}`;
+  return `cd -- ${posixShellSingleQuote(dirname)} && tar -czf ${posixShellSingleQuote(archiveBase)} -- ${posixShellSingleQuote(baseName)}`;
 }
 
 export function extensionOriginFromId(id) {
@@ -91,7 +91,7 @@ export function parseAllowedOrigins(env = process.env) {
 export function isAllowedOrigin(origin, allowedOrigins = []) {
   const key = chromeExtensionOriginKey(origin);
   if (!key) return false;
-  if (!allowedOrigins.length) return true;
+  if (!allowedOrigins.length) return false;
   return allowedOrigins.includes(key);
 }
 
@@ -191,9 +191,14 @@ export function createSshGateway({
     throw new Error(`gateway token is required (min ${MIN_TOKEN_LENGTH} chars)`);
   }
 
+  const originAllowlist = Array.isArray(allowedOrigins) ? allowedOrigins.filter(Boolean) : [];
+  if (!originAllowlist.length) {
+    throw new Error('allowedOrigins is required (chrome-extension://<OpenTab id>)');
+  }
+
   const config = {
     token: String(token),
-    allowedOrigins: Array.isArray(allowedOrigins) ? allowedOrigins : []
+    allowedOrigins: originAllowlist
   };
 
   const wss = new WebSocketServer({
@@ -608,12 +613,34 @@ export function createSshGateway({
   });
 }
 
+function logTokenStartup(logger, { token, source, tokenFile }) {
+  if (source === 'generated' || source === 'generated-file') {
+    logger.info(`[ssh-gateway] generated access token: ${token}`);
+    logger.info('[ssh-gateway] paste this token into the OpenTab SSH icon (gateway token field).');
+    if (tokenFile) {
+      logger.info(`[ssh-gateway] token saved to ${tokenFile}`);
+    }
+    return;
+  }
+  if (source === 'file') {
+    logger.info(`[ssh-gateway] using existing token file: ${tokenFile}`);
+    return;
+  }
+  logger.info('[ssh-gateway] using token from SSH_GATEWAY_TOKEN (value not printed)');
+}
+
 export async function startGatewayFromEnv(env = process.env, logger = defaultLogger()) {
   const host = env.SSH_GATEWAY_HOST || '127.0.0.1';
   const port = Number.parseInt(env.SSH_GATEWAY_PORT || '8787', 10);
   const wsPath = env.SSH_GATEWAY_PATH || '/ssh';
-  const { token, source, tokenFile } = resolveGatewayToken(env);
   const allowedOrigins = parseAllowedOrigins(env);
+  if (!allowedOrigins.length) {
+    throw new Error(
+      'SSH_GATEWAY_EXTENSION_ID (or SSH_GATEWAY_ALLOWED_ORIGINS) is required. Copy the OpenTab id from chrome://extensions (Developer mode) and run: export SSH_GATEWAY_EXTENSION_ID=<id>'
+    );
+  }
+
+  const { token, source, tokenFile } = resolveGatewayToken(env);
   const privateKeyPath = String(env.SSH_PRIVATE_KEY_PATH || '').trim();
   const privateKeyPassphrase = env.SSH_PRIVATE_KEY_PASSPHRASE || '';
   let privateKey = '';
@@ -640,14 +667,8 @@ export async function startGatewayFromEnv(env = process.env, logger = defaultLog
   });
 
   logger.info(`SSH gateway listening on ws://${gateway.host}:${gateway.port}${gateway.path}`);
-  if (allowedOrigins.length) {
-    logger.info(`[ssh-gateway] allowed origins: ${allowedOrigins.join(', ')}`);
-  } else {
-    logger.warn('[ssh-gateway] SSH_GATEWAY_EXTENSION_ID is not set; any chrome-extension:// origin is accepted. Set the OpenTab extension id to pin the allowlist.');
-  }
-  logger.info(`[ssh-gateway] token source: ${source}${tokenFile ? ` (${tokenFile})` : ''}`);
-  logger.info(`[ssh-gateway] access token: ${token}`);
-  logger.info('[ssh-gateway] paste this token into the OpenTab SSH icon (gateway token field).');
+  logger.info(`[ssh-gateway] allowed origins: ${allowedOrigins.join(', ')}`);
+  logTokenStartup(logger, { token, source, tokenFile });
   if (privateKeyPath) {
     logger.info(`[ssh-gateway] auth key: ${privateKeyPath}`);
   } else {

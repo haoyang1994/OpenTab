@@ -49,7 +49,7 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 npm test
 ```
 
-用途：确认主流程未损坏，适合 agent 与本地频繁执行。该命令会先跑 SSH 网关安全测试，再跑扩展 E2E。
+用途：确认主流程未损坏，适合 agent 与本地频繁执行。
 
 ### 3.2 CI 一致性执行
 
@@ -57,7 +57,7 @@ npm test
 npm test
 ```
 
-说明：CI 与本地使用同一条命令。`npm test` 先跑 SSH 网关安全测试（`test:ssh-gateway`，无需真实 SSH 主机），再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
+说明：CI 与本地使用同一条命令。`npm test` 会先跑 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
 
 ### 3.3 本地调试模式
 
