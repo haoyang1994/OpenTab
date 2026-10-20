@@ -760,7 +760,65 @@ async function runExtensionE2E() {
     assert.equal(await page.locator('#settings-panel').evaluate(el => el.classList.contains('hidden')), false, 'T7: settings still open');
     await page.keyboard.press('Escape');
     await page.waitForSelector('#settings-panel.hidden');
+
+    await resetHome(page, {
+      folders: folders({ id: 'folder-x', name: 'X' }),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('a', 'A', 'https://example.com/a'),
+        shortcut('b', 'B', 'https://example.com/b')
+      ]
+    });
+    await page.click('#workspace-btn');
+    await page.waitForSelector('#workspace-drawer:not(.hidden)');
+    await page.evaluate(() => {
+      const src = document.querySelector('#workspace-icons-container .icon-widget[data-id="b"]');
+      const dst = [...document.querySelectorAll('#workspace-folder-tabs .folder-tab')]
+        .find(tab => (tab.textContent || '').includes('X'));
+      if (!src || !dst) throw new Error('chip or folder tab missing');
+      const dt = new DataTransfer();
+      src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const rect = dst.getBoundingClientRect();
+      const opts = {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt,
+        clientX: rect.left + 8,
+        clientY: rect.top + 8
+      };
+      dst.dispatchEvent(new DragEvent('dragover', opts));
+      dst.dispatchEvent(new DragEvent('drop', opts));
+    });
+    await page.waitForTimeout(150);
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#add-icon-modal.hidden', { timeout: 5000 });
     console.log('T7 passed');
+
+    // --- invalid URL keyboard ---
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [shortcut('bad', 'Bad', 'not-a-url')]
+    });
+    const badLink = await page.locator('#icons-container .icon-widget[data-id="bad"]').evaluate(el => ({
+      href: el.getAttribute('href'),
+      role: el.getAttribute('role'),
+      ariaDisabled: el.getAttribute('aria-disabled')
+    }));
+    assert.equal(badLink.href, null, 'invalid URL icon has no href');
+    assert.equal(badLink.role, 'link');
+    assert.equal(badLink.ariaDisabled, 'true');
+    await page.locator('#icons-container .icon-widget[data-id="bad"]').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.ok(((await page.locator('#toast').textContent()) || '').includes('网址无效'), 'Enter shows invalid URL toast');
+    await page.keyboard.press('Escape');
+    await page.locator('#icons-container .icon-widget[data-id="bad"]').focus();
+    await page.keyboard.press('Space');
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.ok(((await page.locator('#toast').textContent()) || '').includes('网址无效'), 'Space shows invalid URL toast');
 
     // --- T8 performance ---
     const perfIcons = Array.from({ length: 60 }, (_, i) => shortcut(`perf-${i}`, `Site ${i}`, `https://example.com/${i}`));
