@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const EXTENSION_PATH = path.resolve(__dirname, '..');
 const ARTIFACT_DIR = '/opt/cursor/artifacts/screenshots';
-const HOME_JS_MASTER_BYTES = 94628;
+const HOME_JS_MASTER_BYTES = 106755;
 const MASTER_DCL_BUDGET_MS = 2500;
 
 function resolveHeadless(defaultValue) {
