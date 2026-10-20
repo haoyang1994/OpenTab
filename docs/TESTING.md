@@ -44,10 +44,10 @@ npm test
 ### 3.2 CI 一致性执行
 
 ```bash
-npm run test:ci
+npm test
 ```
 
-说明：在 `CI=true` 时自动用 `xvfb-run` 启动有头浏览器，避免 Linux 无显示环境问题。
+说明：CI 与本地使用同一条命令。`npm test` 会走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 仍指向同一脚本，仅作兼容别名。
 
 ### 3.3 本地调试模式
 
@@ -107,7 +107,7 @@ npm run test:e2e:headless
 - 强制步骤：
 1. `npm ci`
 2. `npx playwright install chromium`
-3. `npm run test:ci`
+3. `npm test`
 
 ## 8. 失败分级与处理
 

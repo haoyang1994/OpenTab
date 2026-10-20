@@ -173,17 +173,14 @@ npm run pw:install
 ### 自动化测试
 
 ```bash
-# 运行所有测试
+# 运行所有测试（CI 与本地同一条命令；Linux 无显示器时自动走 xvfb）
 npm test
 
-# 有头模式（推荐，扩展加载更稳定）
-npm run test:e2e
+# 强制有头模式（需要显示器，便于本地调试）
+npm run test:e2e:headed
 
 # 无头模式
 npm run test:e2e:headless
-
-# CI 模式
-npm run test:ci
 ```
 
 详细测试说明见 [docs/TESTING.md](docs/TESTING.md)
