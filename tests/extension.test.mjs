@@ -23,6 +23,76 @@ const PRESET_BACKGROUNDS = [
   'assets/default_background/bg-ocean-night.jpg'
 ];
 
+const LEGACY_PEXELS_TO_PRESET = [
+  {
+    legacy: 'assets/default_background/pexels-pixabay-40896.jpg',
+    expected: 'assets/default_background/bg-forest-golden.jpg'
+  },
+  {
+    legacy: 'assets/default_background/pexels-elina-sazonova-4275497.jpg',
+    expected: 'assets/default_background/bg-mountain-dawn.jpg'
+  },
+  {
+    legacy: 'assets/default_background/pexels-souvenirpixels-417074.jpg',
+    expected: 'assets/default_background/bg-mountain-dawn.jpg'
+  }
+];
+
+const TINY_PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+function unexpectedErrors(errors) {
+  return errors.filter((error) => (
+    !error.includes('Failed to fetch Bing image')
+    && !error.includes('example.com')
+  ));
+}
+
+async function readStoredBackground(serviceWorker) {
+  return serviceWorker.evaluate(() => new Promise((resolve) => {
+    chrome.storage.local.get(['background'], (result) => resolve(result.background || null));
+  }));
+}
+
+async function writeStoredBackground(serviceWorker, background) {
+  await serviceWorker.evaluate((bg) => new Promise((resolve) => {
+    chrome.storage.local.set({ background: bg }, resolve);
+  }), background);
+}
+
+async function loadHomeWithBackground(page, serviceWorker, extensionId, background) {
+  await writeStoredBackground(serviceWorker, background);
+  const errors = [];
+  const failed = [];
+  const onConsole = (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text());
+  };
+  const onFailed = (request) => failed.push(request.url());
+  page.on('console', onConsole);
+  page.on('requestfailed', onFailed);
+  try {
+    await page.goto(`chrome-extension://${extensionId}/home.html`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 15000
+    });
+    await page.waitForSelector('#time', { timeout: 10000 });
+    await page.waitForTimeout(350);
+    const stored = await readStoredBackground(serviceWorker);
+    return { stored, errors, failed };
+  } finally {
+    page.off('console', onConsole);
+    page.off('requestfailed', onFailed);
+  }
+}
+
+function assertNoLegacyAssetFetch(failed, label) {
+  const pexelsFailed = failed.filter((url) => url.includes('pexels'));
+  assert.equal(
+    pexelsFailed.length,
+    0,
+    `${label}: legacy Pexels asset requested: ${pexelsFailed.join(' | ')}`
+  );
+}
+
 function assertVendoredRuntimeAssets() {
   const htmlFiles = fs.readdirSync(EXTENSION_PATH).filter(name => name.endsWith('.html'));
   assert.ok(htmlFiles.length > 0, 'expected HTML files in the extension root');
@@ -197,50 +267,133 @@ async function runExtensionE2E() {
       `Console errors detected: ${unexpectedConsoleErrors.join(' | ')}`
     );
 
-    await serviceWorker.evaluate(() => new Promise((resolve) => {
-      chrome.storage.local.set({
-        background: {
-          type: 'image',
-          value: 'assets/default_background/pexels-souvenirpixels-417074.jpg',
-          source: 'preset-image'
-        }
-      }, resolve);
-    }));
+    const migrationPage = await context.newPage();
 
-    const migratedPage = await context.newPage();
-    const migratedErrors = [];
-    const migratedFailed = [];
-    migratedPage.on('console', (msg) => {
-      if (msg.type() === 'error') migratedErrors.push(msg.text());
+    for (const { legacy, expected } of LEGACY_PEXELS_TO_PRESET) {
+      const result = await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
+        type: 'image',
+        value: legacy,
+        source: 'preset-image'
+      });
+      assert.equal(result.stored?.type, 'image', `${legacy} should stay type image`);
+      assert.equal(result.stored?.value, expected, `${legacy} should migrate to ${expected}`);
+      assertNoLegacyAssetFetch(result.failed, legacy);
+      assert.equal(
+        unexpectedErrors(result.errors).length,
+        0,
+        `${legacy} console errors: ${unexpectedErrors(result.errors).join(' | ')}`
+      );
+    }
+
+    const chromeExtensionLegacy = `chrome-extension://${extensionId}/assets/default_background/pexels-elina-sazonova-4275497.jpg`;
+    const absoluteResult = await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
+      type: 'image',
+      value: chromeExtensionLegacy,
+      source: 'preset-image'
     });
-    migratedPage.on('requestfailed', (request) => {
-      migratedFailed.push(request.url());
-    });
-    await migratedPage.goto(`chrome-extension://${extensionId}/home.html`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 15000
-    });
-    await migratedPage.waitForSelector('#time', { timeout: 10000 });
-    await migratedPage.waitForTimeout(400);
-    const migratedBg = await migratedPage.locator('#background-layer').evaluate(
-      (el) => getComputedStyle(el).backgroundImage
-    );
-    assert.ok(
-      migratedBg.includes('bg-mountain-dawn.jpg'),
-      `legacy Pexels path should migrate to the mountain preset, got ${migratedBg}`
-    );
-    const migratedUnexpected = migratedErrors.filter((error) => !error.includes('Failed to fetch Bing image'));
+    assert.equal(absoluteResult.stored?.type, 'image');
     assert.equal(
-      migratedUnexpected.length,
-      0,
-      `Migration console errors: ${migratedUnexpected.join(' | ')}`
+      absoluteResult.stored?.value,
+      'assets/default_background/bg-mountain-dawn.jpg',
+      `chrome-extension URL should migrate, got ${absoluteResult.stored?.value}`
     );
+    assertNoLegacyAssetFetch(absoluteResult.failed, 'chrome-extension URL');
     assert.equal(
-      migratedFailed.filter((url) => url.includes('pexels')).length,
+      unexpectedErrors(absoluteResult.errors).length,
       0,
-      `Legacy Pexels asset was requested: ${migratedFailed.join(' | ')}`
+      `chrome-extension URL console errors: ${unexpectedErrors(absoluteResult.errors).join(' | ')}`
     );
-    await migratedPage.close();
+
+    const unknownResult = await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
+      type: 'image',
+      value: 'assets/default_background/pexels-unknown-999.jpg',
+      source: 'preset-image'
+    });
+    assert.equal(
+      unknownResult.stored?.type,
+      'bing',
+      `unknown bundled path should fall back to bing, got ${JSON.stringify(unknownResult.stored)}`
+    );
+    assertNoLegacyAssetFetch(unknownResult.failed, 'unknown bundled path');
+    assert.equal(
+      unexpectedErrors(unknownResult.errors).length,
+      0,
+      `unknown path console errors: ${unexpectedErrors(unknownResult.errors).join(' | ')}`
+    );
+
+    const customUrl = 'https://example.com/custom-wallpaper.jpg';
+    const customResult = await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
+      type: 'image',
+      value: customUrl,
+      source: 'custom'
+    });
+    assert.equal(customResult.stored?.type, 'image');
+    assert.equal(customResult.stored?.value, customUrl, 'custom https URL must be left unchanged');
+    assert.equal(customResult.stored?.source, 'custom');
+
+    const dataUrlResult = await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
+      type: 'image',
+      value: TINY_PNG_DATA_URL,
+      source: 'local-upload'
+    });
+    assert.equal(dataUrlResult.stored?.type, 'image');
+    assert.equal(dataUrlResult.stored?.value, TINY_PNG_DATA_URL, 'uploaded data URL must be left unchanged');
+    assert.equal(dataUrlResult.stored?.source, 'local-upload');
+    assert.equal(
+      unexpectedErrors(dataUrlResult.errors).length,
+      0,
+      `data URL console errors: ${unexpectedErrors(dataUrlResult.errors).join(' | ')}`
+    );
+
+    await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
+      type: 'bing',
+      value: '',
+      source: ''
+    });
+    const backupErrors = [];
+    const backupFailed = [];
+    const onBackupConsole = (msg) => {
+      if (msg.type() === 'error') backupErrors.push(msg.text());
+    };
+    const onBackupFailed = (request) => backupFailed.push(request.url());
+    migrationPage.on('console', onBackupConsole);
+    migrationPage.on('requestfailed', onBackupFailed);
+    try {
+      await Promise.all([
+        migrationPage.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+        migrationPage.setInputFiles('#backup-import-file', {
+          name: 'opentab-backup.json',
+          mimeType: 'application/json',
+          buffer: Buffer.from(JSON.stringify({
+            background: {
+              type: 'image',
+              value: 'assets/default_background/pexels-pixabay-40896.jpg',
+              source: 'preset-image'
+            }
+          }))
+        })
+      ]);
+      await migrationPage.waitForSelector('#time', { timeout: 10000 });
+      await migrationPage.waitForTimeout(350);
+    } finally {
+      migrationPage.off('console', onBackupConsole);
+      migrationPage.off('requestfailed', onBackupFailed);
+    }
+    const imported = await readStoredBackground(serviceWorker);
+    assert.equal(imported?.type, 'image');
+    assert.equal(
+      imported?.value,
+      'assets/default_background/bg-forest-golden.jpg',
+      `imported backup should migrate pine Pexels path, got ${imported?.value}`
+    );
+    assertNoLegacyAssetFetch(backupFailed, 'backup import');
+    assert.equal(
+      unexpectedErrors(backupErrors).length,
+      0,
+      `backup import console errors: ${unexpectedErrors(backupErrors).join(' | ')}`
+    );
+
+    await migrationPage.close();
 
     console.log('E2E passed: extension newtab UI loaded and core interactions work.');
   } finally {
