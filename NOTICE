@@ -199,6 +199,15 @@ Tool:        Grok Imagine (xAI)
 License:     Apache-2.0 (project-owned Output; Created with Grok)
 Status:      Original project asset; C2PA retained; distributed under Apache-2.0
 
+Name:        assets/default_background/default.webp
+Size:        WebP encode of bg-mountain-dawn.jpg at native 1280×720 (no upscale), first-run default
+Used by:     first install background and the first image preset
+How made:    Same Grok Imagine still as bg-mountain-dawn.jpg, transcoded to WebP for first paint.
+             C2PA stays on the JPEG original; WebP is a size/perf copy.
+Tool:        Grok Imagine (xAI); WebP transcode
+License:     Apache-2.0 (project-owned Output; Created with Grok)
+Status:      Original project asset; distributed under Apache-2.0. Not a Pexels photograph.
+
 Name:        assets/default_background/bg-forest-golden.jpg
 Size:        419,388 bytes (1280×720 JPEG)
 Used by:     home.html preset background (“金色松林”)

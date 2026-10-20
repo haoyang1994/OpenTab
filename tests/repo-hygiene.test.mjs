@@ -94,11 +94,22 @@ assert.ok(exists('search.js'), 'search.js must exist (iteration 4 search logic)'
 assert.ok(exists('folders.js'), 'folders.js must exist so home.js can stay within the 12KB budget');
 assert.ok(exists('import.js'), 'import.js must exist (iteration 6 import logic)');
 assert.ok(exists('sync.js'), 'sync.js must exist (iteration 6 sync logic)');
+assert.ok(exists('boot.js'), 'boot.js must exist for first-paint (R1)');
+assert.ok(exists('bing-cache.js'), 'bing-cache.js must exist for Bing cache (R2)');
+assert.ok(exists('lib/bing-daily.js'), 'lib/bing-daily.js must exist for Bing daily policy (R2)');
+assert.ok(exists('assets/default_background/default.webp'), 'default.webp is the first-install wallpaper');
 const homeHtml = read('home.html');
 assert.match(homeHtml, /<script src="search\.js"><\/script>/, 'home.html must load search.js');
 assert.match(homeHtml, /<script src="folders\.js"><\/script>/, 'home.html must load folders.js');
 assert.match(homeHtml, /<script src="import\.js"><\/script>/, 'home.html must load import.js');
 assert.match(homeHtml, /<script src="sync\.js"><\/script>/, 'home.html must load sync.js');
+assert.match(homeHtml, /<script src="lib\/bing-daily\.js"><\/script>/, 'home.html must load lib/bing-daily.js');
+assert.match(homeHtml, /<script src="bing-cache\.js"><\/script>/, 'home.html must load bing-cache.js');
+assert.match(homeHtml, /<script src="boot\.js"><\/script>/, 'home.html must load boot.js');
+assert.ok(
+  homeHtml.indexOf('boot.js') < homeHtml.indexOf('id="content"'),
+  'boot.js must load before #content'
+);
 assert.ok(
   homeHtml.indexOf('search.js') < homeHtml.indexOf('import.js'),
   'search.js must load before import.js'
@@ -108,8 +119,16 @@ assert.ok(
   'import.js must load before sync.js'
 );
 assert.ok(
-  homeHtml.indexOf('sync.js') < homeHtml.indexOf('home.js'),
-  'sync.js must load before home.js'
+  homeHtml.indexOf('sync.js') < homeHtml.indexOf('lib/bing-daily.js'),
+  'sync.js must load before lib/bing-daily.js'
+);
+assert.ok(
+  homeHtml.indexOf('lib/bing-daily.js') < homeHtml.indexOf('bing-cache.js'),
+  'lib/bing-daily.js must load before bing-cache.js'
+);
+assert.ok(
+  homeHtml.indexOf('bing-cache.js') < homeHtml.indexOf('home.js'),
+  'bing-cache.js must load before home.js'
 );
 assert.ok(
   homeHtml.indexOf('folders.js') < homeHtml.indexOf('home.js'),

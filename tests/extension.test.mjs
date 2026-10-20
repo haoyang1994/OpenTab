@@ -25,6 +25,7 @@ const VENDOR_FILES = [
 ];
 
 const PRESET_BACKGROUNDS = [
+  'assets/default_background/default.webp',
   'assets/default_background/bg-mountain-dawn.jpg',
   'assets/default_background/bg-forest-golden.jpg',
   'assets/default_background/bg-ocean-night.jpg'
@@ -637,7 +638,7 @@ async function runExtensionE2E() {
     await page.click('.tab-btn[data-type="image"]');
     await page.waitForSelector('#image-section.active', { timeout: 5000 });
     const imagePresets = page.locator('#image-presets .preset-item');
-    assert.equal(await imagePresets.count(), 3, 'should ship three bundled image presets');
+    assert.equal(await imagePresets.count(), 4, 'should ship default.webp plus three bundled stills');
     for (let i = 0; i < PRESET_BACKGROUNDS.length; i += 1) {
       await imagePresets.nth(i).click();
       await page.waitForTimeout(250);

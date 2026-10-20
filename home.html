@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenTab</title>
+  <link rel="preload" href="boot.js" as="script">
   <link rel="icon" type="image/svg+xml" href="icons/opentab-icon.svg">
   <link rel="icon" type="image/png" sizes="16x16" href="icons/icon16.png">
   <link rel="stylesheet" href="vendor/flatpickr/flatpickr.min.css">
@@ -12,6 +13,7 @@
 <body>
   <div id="homepage">
     <div id="background-layer"></div>
+    <script src="boot.js"></script>
     <canvas id="particles-canvas"></canvas>
     <video id="background-video" muted loop playsinline autoplay></video>
 
@@ -28,19 +30,19 @@
           <div class="timezone-list" id="timezone-list"></div>
         </div>
 
-        <div id="timezone-label">北京 (UTC+8)</div>
+        <div id="timezone-label"></div>
 
         <div id="time-display">
-          <div id="time">10:30</div>
-          <div id="ampm">AM</div>
+          <div id="time"></div>
+          <div id="ampm"></div>
         </div>
 
-        <div id="welcome-text" aria-live="polite">上午好，今天也很顺利。</div>
-        <button id="date" class="date-btn" title="查看日历">2026年3月21日 星期六</button>
+        <div id="welcome-text" aria-live="polite"></div>
+        <button id="date" class="date-btn" title="查看日历"></button>
         <div id="weather-pill" class="weather-pill" title="天气">
           <span id="weather-icon" class="weather-icon" aria-hidden="true">☁</span>
-          <span id="weather-temp">--°C</span>
-          <span id="weather-location-inline" class="weather-location-inline">定位中...</span>
+          <span id="weather-temp"></span>
+          <span id="weather-location-inline" class="weather-location-inline"></span>
         </div>
 
         <div id="calendar-popover" class="calendar-popover hidden">
@@ -326,6 +328,9 @@
           </div>
           <div id="image-section" class="bg-section">
             <div id="image-presets" class="preset-grid">
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/default.webp" title="默认壁纸" aria-label="默认壁纸">
+                <div class="preset-preview" style="background-image: url('assets/default_background/default.webp'); background-size: cover; background-position: center;"></div>
+              </div>
               <div class="preset-item" data-bg="image" data-value="assets/default_background/bg-mountain-dawn.jpg" title="晨曦雾山湖" aria-label="晨曦雾山湖">
                 <div class="preset-preview" style="background-image: url('assets/default_background/bg-mountain-dawn.jpg'); background-size: cover; background-position: center;"></div>
               </div>
@@ -534,6 +539,8 @@
   <script src="folders.js"></script>
   <script src="import.js"></script>
   <script src="sync.js"></script>
+  <script src="lib/bing-daily.js"></script>
+  <script src="bing-cache.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

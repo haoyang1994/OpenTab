@@ -53,6 +53,8 @@
     applyFromStorage: loadFromStorage,
     init,
     resolve,
+    listEngines,
+    selectEngine,
     getState: () => ({
       searchEngine: searchState.searchEngine,
       customSearchEngines: searchState.customSearchEngines.map((item) => ({ ...item })),
@@ -80,6 +82,14 @@
 
   function engineList() {
     return BUILTIN_ENGINES.concat(searchState.customSearchEngines);
+  }
+
+  function listEngines() {
+    return engineList().map((engine) => ({
+      id: engine.id,
+      name: engine.name,
+      template: engine.template
+    }));
   }
 
   function engineIds() {

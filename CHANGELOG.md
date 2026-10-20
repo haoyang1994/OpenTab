@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Import Infinity / WeTab / iTab backup files, with an automatic snapshot and one-click undo
 - Optional `chrome.storage.sync` for shortcuts, folders/groups, and settings (sharded near the 100KB / 8KB quotas; falls back to local-only when over quota)
 - Local storage usage in Settings → 导入与同步
+- Bundled `assets/default_background/default.webp` (WebP of `bg-mountain-dawn.jpg` at native 1280×720) as the first-install wallpaper
+- Bing daily wallpaper Cache Storage (`opentab-bing-v1`) with once-per-day checks
 - Shortcut grid **+** tile and empty-state hint for adding sites
 - HTML5 drag-and-drop reorder on the desktop grid, with Alt+←/→ keyboard swap
 - Undo toast after deleting a shortcut (6 seconds)
@@ -50,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- First paint applies theme, wallpaper, clock, and timezone from a local boot mirror (`boot.js`) so placeholder copy never flashes
+- Bing wallpaper checks once per day (and at most once per hour when the date has not changed), caches images in Cache Storage, and falls back to the local default when offline
 - Shortcut, tool, and SSH icons render as real `<a href>` links (middle-click / Ctrl / Cmd open a new tab)
 - Escape closes the topmost UI layer (context menu, modal, folder overlay, inline dialog, settings, timezone, calendar, todos) and restores focus from a stack
 - Icon `data-id` selectors use `CSS.escape`
