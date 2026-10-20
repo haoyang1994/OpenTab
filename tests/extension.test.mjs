@@ -18,7 +18,9 @@ const VENDOR_FILES = [
 ];
 
 function assertVendoredRuntimeAssets() {
-  for (const relativePath of ['home.html', 'ssh_terminal.html']) {
+  const htmlFiles = fs.readdirSync(EXTENSION_PATH).filter(name => name.endsWith('.html'));
+  assert.ok(htmlFiles.length > 0, 'expected HTML files in the extension root');
+  for (const relativePath of htmlFiles) {
     const html = fs.readFileSync(path.join(EXTENSION_PATH, relativePath), 'utf8');
     assert.equal(
       html.includes('node_modules/'),
@@ -117,6 +119,11 @@ async function runExtensionE2E() {
       await sshPage.evaluate(() => typeof window.Terminal),
       'function',
       'xterm should load from vendor/ without node_modules'
+    );
+    assert.notEqual(
+      await sshPage.evaluate(() => typeof window.FitAddon),
+      'undefined',
+      'FitAddon should load from vendor/ without node_modules'
     );
     await sshPage.close();
 
