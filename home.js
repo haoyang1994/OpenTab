@@ -171,6 +171,10 @@
     timezoneSelector: document.getElementById('timezone-selector'),
     timezoneList: document.getElementById('timezone-list'),
     iconsContainer: document.getElementById('icons-container'),
+    iconsEmptyHint: document.getElementById('icons-empty-hint'),
+    dragLive: document.getElementById('drag-live'),
+    dropIndicator: document.getElementById('icon-drop-indicator'),
+    toast: document.getElementById('toast'),
     searchEngineButtons: document.querySelectorAll('.engine-btn'),
     searchInput: document.getElementById('search-input'),
     todoInput: document.getElementById('todo-input'),
@@ -246,6 +250,7 @@
     uiBlur: document.getElementById('ui-blur'),
     uiBlurValue: document.getElementById('ui-blur-value'),
     iconFrameEnabled: document.getElementById('icon-frame-enabled'),
+    openInNewTab: document.getElementById('open-in-new-tab'),
     themeModeTabs: document.querySelectorAll('.theme-mode-tab'),
     themeColorPresets: document.querySelectorAll('.theme-color-preset'),
     particlesEnabled: document.getElementById('particles-enabled'),
@@ -276,6 +281,7 @@
     uiOpacity: 32,
     uiBlur: 10,
     iconFrameEnabled: false,
+    openInNewTab: false,
     weatherTag: 'unknown',
     weatherDesc: '',
     weatherLocation: '',
@@ -303,6 +309,7 @@
     'uiOpacity',
     'uiBlur',
     'iconFrameEnabled',
+    'openInNewTab',
     'timezone',
     'bingIndex',
     'themeMode',
@@ -318,6 +325,13 @@
   let pendingIconUploadDataUrl = '';
   let iconSwitchToken = 0;
   let draggingIconId = null;
+  let dragPointerY = 0;
+  let dragScrollRaf = 0;
+  let toastTimer = 0;
+  let pendingUndo = null;
+  const focusStack = [];
+  let gridEventsBound = false;
+  const ICON_DND_TYPE = 'application/x-opentab-icon';
   let workspaceEdgeOpenTimer = null;
   let suppressWorkspaceAutoCloseUntil = 0;
   let clockTimerId = null;
@@ -416,6 +430,7 @@
       uiOpacity: state.uiOpacity,
       uiBlur: state.uiBlur,
       iconFrameEnabled: state.iconFrameEnabled,
+      openInNewTab: state.openInNewTab,
       timezone: state.timezone,
       bingIndex: state.bingIndex,
       themeMode: state.themeMode,
@@ -477,6 +492,7 @@
     normalized.uiOpacity = Number.isFinite(Number(normalized.uiOpacity)) ? Number(normalized.uiOpacity) : 32;
     normalized.uiBlur = Number.isFinite(Number(normalized.uiBlur)) ? Number(normalized.uiBlur) : 10;
     normalized.iconFrameEnabled = Boolean(normalized.iconFrameEnabled);
+    normalized.openInNewTab = Boolean(normalized.openInNewTab);
     normalized.timezone = normalized.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
     normalized.bingIndex = Number.isInteger(normalized.bingIndex) ? normalized.bingIndex : 0;
     normalized.themeMode = ['dark', 'light', 'auto'].includes(normalized.themeMode) ? normalized.themeMode : 'dark';
@@ -590,29 +606,77 @@
     }
   }
 
-  function openIconTarget(icon) {
+  function getIconHref(icon) {
     const iconType = normalizeIconType(icon.type);
     if (iconType === ICON_TYPE_SSH) {
-      if (!icon.sshGatewayUrl || !icon.sshGatewayToken || !icon.sshHost || !icon.sshUsername) {
-        alert('SSH 配置不完整，请先编辑这个图标（含网关访问令牌）。');
-        return;
-      }
-      const terminalUrl = chrome.runtime.getURL(`ssh_terminal.html?iconId=${encodeURIComponent(icon.id)}`);
-      window.location.assign(terminalUrl);
-      return;
+      return isSshConfigComplete(icon) ? chrome.runtime.getURL(`ssh_terminal.html?iconId=${encodeURIComponent(icon.id)}`) : '';
     }
     if (iconType === ICON_TYPE_TOOL) {
       const toolType = icon.toolSubtype || 'json-format';
-      let toolFile = 'tool.html';
-      if (toolType === 'fix-parser') {
-        toolFile = 'fixparser.html';
-      }
-      const toolUrl = chrome.runtime.getURL(`${toolFile}?tool=${encodeURIComponent(toolType)}`);
-      window.location.assign(toolUrl);
-      return;
+      const file = toolType === 'fix-parser' ? 'fixparser.html' : 'tool.html';
+      return chrome.runtime.getURL(`${file}?tool=${encodeURIComponent(toolType)}`);
     }
-    if (!icon.url) return;
-    window.location.assign(icon.url);
+    try {
+      const parsed = new URL(icon.url || '');
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return icon.url;
+    } catch (error) { /* invalid */ }
+    return '';
+  }
+
+  function isSshConfigComplete(icon) {
+    return Boolean(icon.sshGatewayUrl && icon.sshGatewayToken && icon.sshHost && icon.sshUsername);
+  }
+
+  function navigateTo(url) {
+    if (!url) return;
+    if (state.openInNewTab) window.open(url, '_blank', 'noopener,noreferrer');
+    else window.location.assign(url);
+  }
+
+  function disabledIconToast(icon) {
+    return normalizeIconType(icon.type) === ICON_TYPE_SSH ? 'SSH 配置不完整，请先编辑这个图标' : '网址无效，请编辑';
+  }
+
+  function openIconTarget(icon) {
+    const href = getIconHref(icon);
+    if (!href) { showToast(disabledIconToast(icon)); return; }
+    navigateTo(href);
+  }
+
+  function showToast(text, options) {
+    const toast = elements.toast;
+    if (!toast) return;
+    const opts = options || {};
+    toast.textContent = text;
+    if (opts.actionLabel && opts.onAction) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = opts.actionLabel;
+      btn.onclick = () => {
+        clearTimeout(toastTimer);
+        toast.classList.add('hidden');
+        pendingUndo = null;
+        opts.onAction();
+      };
+      toast.appendChild(btn);
+    }
+    toast.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.classList.add('hidden'); pendingUndo = null; }, opts.duration || 6000);
+  }
+
+  function rememberFocus(el) { focusStack.push(el || document.activeElement); }
+  function restoreFocus() {
+    const el = focusStack.pop();
+    if (el && document.contains(el) && el.focus) el.focus();
+  }
+  function hideDropIndicator() {
+    if (elements.dropIndicator) elements.dropIndicator.style.display = 'none';
+  }
+  function refreshIconViews(animated) {
+    renderFolderTabs();
+    renderWorkspacePreview();
+    renderIconsForCurrentFolder(animated);
   }
 
   function readFileAsDataUrl(file) {
@@ -688,6 +752,7 @@
     const open = typeof forceOpen === 'boolean'
       ? forceOpen
       : elements.timezoneSelector.classList.contains('hidden');
+    if (open) rememberFocus(elements.timezoneBtn);
     elements.timezoneSelector.classList.toggle('hidden', !open);
   }
 
@@ -999,6 +1064,7 @@
   }
 
   function setTodoPanelOpen(open) {
+    if (open) rememberFocus(elements.todoToggleBtn);
     state.todoPanelOpen = open;
     elements.todoWidget.classList.toggle('hidden', !open);
     elements.todoToggleBtn.classList.toggle('active', open);
@@ -1312,9 +1378,20 @@
   }
 
   function createIconWidget(icon) {
-    const iconEl = document.createElement('div');
+    const iconEl = document.createElement('a');
     iconEl.className = 'icon-widget';
     iconEl.dataset.id = icon.id;
+    iconEl.draggable = true;
+    iconEl.title = icon.name || '';
+    const href = getIconHref(icon);
+    if (href) {
+      iconEl.href = href;
+      if (state.openInNewTab) { iconEl.target = '_blank'; iconEl.rel = 'noopener noreferrer'; }
+    } else {
+      iconEl.role = 'link';
+      iconEl.ariaDisabled = 'true';
+      iconEl.tabIndex = 0;
+    }
 
     const iconVisual = document.createElement('div');
     iconVisual.className = 'icon-visual';
@@ -1326,7 +1403,8 @@
 
     const iconImg = document.createElement('img');
     iconImg.className = 'icon-image';
-    iconImg.alt = `${icon.name} icon`;
+    iconImg.alt = '';
+    iconImg.draggable = false;
     iconImg.loading = 'eager';
     iconImg.referrerPolicy = 'no-referrer';
 
@@ -1370,15 +1448,197 @@
 
     iconEl.appendChild(iconVisual);
     iconEl.appendChild(nameEl);
-
-    iconEl.addEventListener('click', () => openIconTarget(icon));
-
-    iconEl.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-      openIconContextMenu(event, icon.id);
-    });
-
     return iconEl;
+  }
+
+  function createAddShortcutTile() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'add-shortcut-tile';
+    btn.className = 'icon-widget';
+    btn.setAttribute('aria-label', '添加快捷方式');
+    btn.innerHTML = '<div class="icon-visual">+</div><span class="icon-name">添加</span>';
+    return btn;
+  }
+
+  function getFolderIconEls() {
+    return Array.from(elements.iconsContainer.querySelectorAll('.icon-widget[data-id]'));
+  }
+
+  function folderIconSlots() {
+    const indices = [], items = [];
+    state.icons.forEach((icon, i) => {
+      if (icon.folderId === state.currentFolderId) { indices.push(i); items.push(icon); }
+    });
+    return { indices, items };
+  }
+
+  function reorderFolderIcons(iconId, insertIndex) {
+    const { indices, items } = folderIconSlots();
+    const from = items.findIndex((icon) => icon.id === iconId);
+    if (from < 0) return 0;
+    let dest = Math.max(0, Math.min(insertIndex, items.length));
+    if (from < dest) dest -= 1;
+    if (from === dest) return 0;
+    const [moved] = items.splice(from, 1);
+    items.splice(dest, 0, moved);
+    items.forEach((icon, i) => { state.icons[indices[i]] = icon; });
+    return dest + 1;
+  }
+
+  function computeInsertIndex(event) {
+    const icons = getFolderIconEls();
+    if (event.target.closest('#add-shortcut-tile') || !icons.length) return icons.length;
+    const target = event.target.closest('.icon-widget[data-id]');
+    if (!target) return icons.length;
+    const rect = target.getBoundingClientRect();
+    return event.clientX < rect.left + rect.width / 2 ? icons.indexOf(target) : icons.indexOf(target) + 1;
+  }
+
+  function updateDropLine(event) {
+    const indicator = elements.dropIndicator;
+    if (!indicator) return;
+    const addTile = elements.iconsContainer.querySelector('#add-shortcut-tile');
+    let ref = event.target.closest('#add-shortcut-tile') ? addTile : event.target.closest('.icon-widget[data-id]');
+    let before = true;
+    if (!ref) {
+      if (!addTile) { hideDropIndicator(); return; }
+      ref = addTile;
+    } else if (ref !== addTile) {
+      const rect = ref.getBoundingClientRect();
+      before = event.clientX < rect.left + rect.width / 2;
+    }
+    const r = ref.getBoundingClientRect();
+    indicator.style.cssText = `display:block;left:${(before ? r.left : r.right) - 1}px;top:${r.top}px;height:${r.height}px`;
+  }
+
+  function tickDragScroll() {
+    if (!draggingIconId) { dragScrollRaf = 0; return; }
+    const el = document.getElementById('content');
+    if (el) {
+      const r = el.getBoundingClientRect();
+      if (dragPointerY - r.top < 48) el.scrollTop -= Math.min(12, 48 - (dragPointerY - r.top));
+      else if (r.bottom - dragPointerY < 48) el.scrollTop += Math.min(12, 48 - (r.bottom - dragPointerY));
+    }
+    dragScrollRaf = requestAnimationFrame(tickDragScroll);
+  }
+
+  function endDesktopDrag() {
+    draggingIconId = null;
+    getFolderIconEls().forEach((n) => { n.style.opacity = ''; });
+    hideDropIndicator();
+    if (dragScrollRaf) { cancelAnimationFrame(dragScrollRaf); dragScrollRaf = 0; }
+    document.querySelectorAll('.drop-target,.dragging').forEach((n) => n.classList.remove('drop-target', 'dragging'));
+  }
+
+  function persistOrRollback(beforeIcons) {
+    saveState(() => {
+      state.icons = beforeIcons;
+      refreshIconViews();
+    });
+  }
+
+  function commitFolderReorder(iconId, insertIndex, announce) {
+    const before = state.icons.slice();
+    const position = reorderFolderIcons(iconId, insertIndex);
+    if (!position) { endDesktopDrag(); return false; }
+    persistOrRollback(before);
+    const container = elements.iconsContainer;
+    const add = container.querySelector('#add-shortcut-tile');
+    folderIconSlots().items.forEach((icon) => {
+      const node = container.querySelector(`[data-id="${CSS.escape(icon.id)}"]`);
+      if (node && add) container.insertBefore(node, add);
+    });
+    endDesktopDrag();
+    if (!elements.workspaceDrawer.classList.contains('hidden')) renderWorkspacePreview();
+    if (announce) {
+      const node = container.querySelector(`[data-id="${CSS.escape(iconId)}"]`);
+      if (node) node.focus();
+      if (elements.dragLive) elements.dragLive.textContent = `已移动到第 ${position} 位`;
+    }
+    return true;
+  }
+
+  function onGridDragStart(event) {
+    const widget = event.target.closest('.icon-widget[data-id]');
+    if (!widget) { event.preventDefault(); return; }
+    const icon = state.icons.find((item) => item.id === widget.dataset.id);
+    if (!icon) return;
+    draggingIconId = icon.id;
+    widget.style.opacity = '0.4';
+    const transfer = event.dataTransfer;
+    if (!transfer) return;
+    transfer.effectAllowed = 'copyMove';
+    transfer.setData(ICON_DND_TYPE, icon.id);
+    const href = getIconHref(icon);
+    if (href) {
+      transfer.setData('text/uri-list', href);
+      transfer.setData('text/plain', href);
+    }
+  }
+
+  function onGridDragOver(event) {
+    if (!draggingIconId) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    dragPointerY = event.clientY;
+    updateDropLine(event);
+    if (!dragScrollRaf) dragScrollRaf = requestAnimationFrame(tickDragScroll);
+  }
+
+  function onGridDrop(event) {
+    if (!draggingIconId) return;
+    event.preventDefault();
+    const iconId = (event.dataTransfer && event.dataTransfer.getData(ICON_DND_TYPE)) || draggingIconId;
+    endDesktopDrag();
+    commitFolderReorder(iconId, computeInsertIndex(event), false);
+  }
+
+  function onGridClick(event) {
+    const addTile = event.target.closest('#add-shortcut-tile');
+    if (addTile) { rememberFocus(addTile); openAddIconModal(); return; }
+    const widget = event.target.closest('.icon-widget[data-id]');
+    if (!widget) return;
+    const icon = state.icons.find((item) => item.id === widget.dataset.id);
+    if (icon && !getIconHref(icon)) { event.preventDefault(); showToast(disabledIconToast(icon)); }
+  }
+
+  function onGridContextMenu(event) {
+    const widget = event.target.closest('.icon-widget[data-id]');
+    if (!widget) return;
+    event.preventDefault();
+    rememberFocus(widget);
+    openIconContextMenu(event, widget.dataset.id);
+  }
+
+  function onGridKeydown(event) {
+    const widget = event.target.closest('.icon-widget[data-id]');
+    if (!widget) return;
+    if ((event.key === 'Enter' || event.key === ' ') && widget.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+      const icon = state.icons.find((item) => item.id === widget.dataset.id);
+      if (icon) showToast(disabledIconToast(icon));
+      return;
+    }
+    if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+    event.preventDefault();
+    const { items } = folderIconSlots();
+    const from = items.findIndex((icon) => icon.id === widget.dataset.id);
+    const dir = event.key === 'ArrowRight' ? 1 : -1;
+    const to = from + dir;
+    if (from < 0 || to < 0 || to >= items.length) return;
+    commitFolderReorder(widget.dataset.id, dir > 0 ? to + 1 : to, true);
+  }
+
+  function bindDesktopGridEvents() {
+    if (gridEventsBound) return;
+    gridEventsBound = true;
+    const c = elements.iconsContainer;
+    [
+      ['dragstart', onGridDragStart], ['dragover', onGridDragOver], ['drop', onGridDrop],
+      ['dragend', endDesktopDrag], ['click', onGridClick], ['contextmenu', onGridContextMenu], ['keydown', onGridKeydown]
+    ].forEach(([type, fn]) => c.addEventListener(type, fn));
+    c.addEventListener('dragleave', (event) => { if (!c.contains(event.relatedTarget)) hideDropIndicator(); });
   }
 
   function renderWorkspacePreview() {
@@ -1406,19 +1666,11 @@
           event.dataTransfer.setData('text/plain', icon.id);
         }
       });
-      chip.addEventListener('dragend', () => {
-        draggingIconId = null;
-        chip.classList.remove('dragging');
-        document.querySelectorAll('.folder-tab.drop-target').forEach((tab) => {
-          tab.classList.remove('drop-target');
-        });
-      });
+      chip.addEventListener('dragend', endDesktopDrag);
       chip.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (confirm(`删除图标「${icon.name}」？`)) {
-          deleteIcon(icon.id);
-        }
+        deleteIcon(icon.id);
       });
       elements.workspaceIconsContainer.appendChild(chip);
     });
@@ -1467,10 +1719,9 @@
       });
       tab.addEventListener('drop', (event) => {
         event.preventDefault();
-        tab.classList.remove('drop-target');
-        const iconId = (event.dataTransfer && event.dataTransfer.getData('text/plain')) || draggingIconId;
-        if (!iconId) return;
-        moveIconToFolder(iconId, folder.id);
+        const iconId = (event.dataTransfer && event.dataTransfer.getData(ICON_DND_TYPE)) || draggingIconId;
+        endDesktopDrag();
+        if (iconId) moveIconToFolder(iconId, folder.id);
       });
       tab.addEventListener('contextmenu', (event) => {
         if (folder.id === HOME_FOLDER_ID) return;
@@ -1532,42 +1783,50 @@
   }
 
   function moveIconToFolder(iconId, targetFolderId) {
+    endDesktopDrag();
     if (!getFolderById(targetFolderId)) return;
     const icon = state.icons.find((item) => item.id === iconId);
     if (!icon || icon.folderId === targetFolderId) return;
     icon.folderId = targetFolderId;
     saveState();
-    renderFolderTabs();
-    renderWorkspacePreview();
-    renderIconsForCurrentFolder(true);
+    refreshIconViews(true);
   }
 
   function renderIconsForCurrentFolder(animated = false) {
     const nextIcons = getIconsForFolder(state.currentFolderId);
     const container = elements.iconsContainer;
-    const oldNodes = Array.from(container.querySelectorAll('.icon-widget'));
+    const oldNodes = Array.from(container.querySelectorAll('.icon-widget[data-id]'));
     const token = ++iconSwitchToken;
+    const skipEnter = animated !== true;
+    bindDesktopGridEvents();
 
     const mountNewIcons = () => {
       if (token !== iconSwitchToken) return;
       container.innerHTML = '';
       nextIcons.forEach((icon, idx) => {
         const node = createIconWidget(icon);
-        node.classList.add('entering');
-        node.style.transitionDelay = `${Math.min(idx * 22, 220)}ms`;
+        if (!skipEnter) {
+          node.classList.add('entering');
+          node.style.transitionDelay = `${Math.min(idx * 22, 220)}ms`;
+        }
         container.appendChild(node);
       });
-      requestAnimationFrame(() => {
+      container.appendChild(createAddShortcutTile());
+      if (elements.iconsEmptyHint) elements.iconsEmptyHint.classList.toggle('hidden', nextIcons.length !== 0);
+      if (!skipEnter) {
         requestAnimationFrame(() => {
-          container.querySelectorAll('.icon-widget.entering').forEach((node) => {
-            node.classList.remove('entering');
-            node.style.transitionDelay = '';
+          requestAnimationFrame(() => {
+            container.querySelectorAll('.icon-widget.entering').forEach((node) => {
+              node.classList.remove('entering');
+              node.style.transitionDelay = '';
+            });
           });
         });
-      });
+      }
+      performance.mark('opentab:grid-ready');
     };
 
-    if (!animated || oldNodes.length === 0) {
+    if (skipEnter || oldNodes.length === 0) {
       mountNewIcons();
       return;
     }
@@ -1585,12 +1844,11 @@
     state.currentFolderId = folderId;
     saveState();
     updateWorkspaceButtonLabel();
-    renderFolderTabs();
-    renderWorkspacePreview();
-    renderIconsForCurrentFolder(animated);
+    refreshIconViews(animated);
   }
 
   function openWorkspaceDrawer() {
+    rememberFocus(elements.workspaceBtn);
     elements.workspaceDrawer.classList.remove('hidden');
     updateWorkspaceButtonLabel();
     renderFolderTabs();
@@ -1659,11 +1917,10 @@
       toolSubtype: isTool ? (payload.toolSubtype || '') : ''
     };
 
+    const before = state.icons.slice();
     state.icons.push(newIcon);
-    saveState();
-    renderFolderTabs();
-    renderWorkspacePreview();
-    renderIconsForCurrentFolder();
+    persistOrRollback(before);
+    refreshIconViews();
   }
 
   function updateIcon(iconId, payload) {
@@ -1708,20 +1965,36 @@
     }
 
     saveState();
-    renderFolderTabs();
-    renderWorkspacePreview();
-    renderIconsForCurrentFolder();
+    refreshIconViews();
+  }
+
+  function undoDelete(snapshot) {
+    const before = state.icons.slice();
+    const next = before.slice();
+    next.splice(Math.min(snapshot.index, next.length), 0, snapshot.icon);
+    state.icons = next;
+    persistOrRollback(before);
+    refreshIconViews();
+    showToast('已恢复', { duration: 1500 });
   }
 
   function deleteIcon(iconId) {
-    state.icons = state.icons.filter((icon) => icon.id !== iconId);
-    saveState();
-    renderFolderTabs();
-    renderWorkspacePreview();
-    renderIconsForCurrentFolder();
+    const index = state.icons.findIndex((icon) => icon.id === iconId);
+    if (index < 0) return;
+    const snapshot = { icon: { ...state.icons[index] }, index };
+    const before = state.icons.slice();
+    state.icons = before.filter((icon) => icon.id !== iconId);
+    pendingUndo = snapshot;
+    persistOrRollback(before);
+    refreshIconViews();
+    showToast(`已删除「${snapshot.icon.name}」`, {
+      actionLabel: '撤销',
+      onAction: () => undoDelete(snapshot),
+      duration: 6000
+    });
   }
 
-  function saveState() {
+  function saveState(rollback, onOk) {
     chrome.storage.local.set({
       icons: state.icons,
       folders: state.folders,
@@ -1735,6 +2008,7 @@
       uiOpacity: state.uiOpacity,
       uiBlur: state.uiBlur,
       iconFrameEnabled: state.iconFrameEnabled,
+      openInNewTab: state.openInNewTab,
       timezone: state.timezone,
       bingIndex: state.bingIndex,
       themeMode: state.themeMode,
@@ -1742,12 +2016,19 @@
       particlesEnabled: state.particlesEnabled,
       gradientFlow: state.gradientFlow,
       minimalMode: state.minimalMode
+    }, () => {
+      if (chrome.runtime.lastError) {
+        showToast('保存失败，请重试');
+        if (typeof rollback === 'function') rollback();
+        return;
+      }
+      if (typeof onOk === 'function') onOk();
     });
   }
 
   function loadState() {
     chrome.storage.local.get(
-      ['icons', 'folders', 'currentFolderId', 'searchEngine', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'],
+      ['icons', 'folders', 'currentFolderId', 'searchEngine', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'],
       (result) => {
         state.folders = ensureFolders(result.folders).filter(
           (folder) => !LEGACY_PRESET_FOLDER_IDS.has(folder.id)
@@ -1799,6 +2080,7 @@
         if (result.uiOpacity !== undefined) state.uiOpacity = Number(result.uiOpacity);
         if (result.uiBlur !== undefined) state.uiBlur = Number(result.uiBlur);
         if (result.iconFrameEnabled !== undefined) state.iconFrameEnabled = Boolean(result.iconFrameEnabled);
+        state.openInNewTab = Boolean(result.openInNewTab);
         if (result.timezone) state.timezone = result.timezone;
         if (result.bingIndex !== undefined) state.bingIndex = result.bingIndex;
         if (result.themeMode) state.themeMode = result.themeMode;
@@ -1823,6 +2105,7 @@
         applyUiOpacitySetting();
         applyUiBlurSetting();
         elements.iconFrameEnabled.checked = state.iconFrameEnabled;
+        if (elements.openInNewTab) elements.openInNewTab.checked = state.openInNewTab;
         applyIconFrameSetting();
         applyThemeMode();
         applyAccentColor();
@@ -2113,6 +2396,7 @@
   }
 
   function openSettings() {
+    rememberFocus(elements.settingsBtn);
     elements.settingsPanel.classList.remove('hidden');
   }
 
@@ -2227,6 +2511,38 @@
     saveState();
   }
 
+  function handleOpenInNewTabChange() {
+    state.openInNewTab = Boolean(elements.openInNewTab && elements.openInNewTab.checked);
+    saveState();
+    renderIconsForCurrentFolder();
+  }
+
+  function handleEscape(event) {
+    if (event.key !== 'Escape') return;
+    endDesktopDrag();
+    const layers = [
+      [elements.iconContextMenu, hideIconContextMenu],
+      [elements.addIconModal, closeAddIconModal],
+      [elements.settingsPanel, closeSettingsPanel],
+      [elements.timezoneSelector, () => toggleTimezoneSelector(false)],
+      [elements.calendarPopover, () => toggleCalendar(false)],
+      [elements.workspaceDrawer, closeWorkspaceDrawer]
+    ];
+    for (const [el, close] of layers) {
+      if (el && !el.classList.contains('hidden')) {
+        event.preventDefault();
+        close();
+        restoreFocus();
+        return;
+      }
+    }
+    if (state.todoPanelOpen) {
+      event.preventDefault();
+      closeTodoPanel();
+      restoreFocus();
+    }
+  }
+
   // ===== 主题事件处理函数 =====
 
   function handleThemeModeChange(mode) {
@@ -2338,6 +2654,7 @@
 
     elements.calendarPopover.classList.toggle('hidden', !open);
     if (open) {
+      rememberFocus(elements.date);
       initCalendar();
       if (calendarPicker) {
         calendarPicker.jumpToDate(new Date(), false);
@@ -2360,20 +2677,17 @@
   }
 
   document.addEventListener('contextmenu', (event) => {
-    if (
-      !event.target.closest('.icon-widget')
-      && !event.target.closest('.modal')
-      && !event.target.closest('.icon-context-menu')
-      && !event.target.closest('.settings-panel')
-      && !event.target.closest('.timezone-selector')
-      && !event.target.closest('.calendar-popover')
-      && !event.target.closest('.workspace-drawer')
-    ) {
-      event.preventDefault();
-      hideIconContextMenu();
-      openAddIconModal();
-    }
+    if (event.altKey || (window.getSelection && String(window.getSelection()))) return;
+    if (event.target.closest('input, textarea, [contenteditable], #search-widget, #todo-widget, .icon-widget[data-id], .modal, .icon-context-menu, .settings-panel, .timezone-selector, .calendar-popover, .workspace-drawer')) return;
+    event.preventDefault();
+    hideIconContextMenu();
+    focusStack.length = 0;
+    openAddIconModal();
   });
+
+  document.addEventListener('keydown', handleEscape);
+  document.addEventListener('dragover', (event) => { if (draggingIconId) event.preventDefault(); });
+  document.addEventListener('drop', (event) => { if (draggingIconId) { event.preventDefault(); endDesktopDrag(); } });
 
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.icon-context-menu')) hideIconContextMenu();
@@ -2434,12 +2748,9 @@
 
   elements.deleteIconBtn.addEventListener('click', () => {
     if (!contextMenuIconId) return;
-    const icon = state.icons.find((item) => item.id === contextMenuIconId);
     const currentId = contextMenuIconId;
     hideIconContextMenu();
-    if (icon && confirm(`删除图标「${icon.name}」？`)) {
-      deleteIcon(currentId);
-    }
+    deleteIcon(currentId);
   });
 
   elements.refreshBgBtn.addEventListener('click', fetchRandomBackground);
@@ -2461,6 +2772,9 @@
   elements.uiBlur.addEventListener('input', handleUiBlurChange);
   elements.uiBlur.addEventListener('change', handleUiBlurChange);
   elements.iconFrameEnabled.addEventListener('change', handleIconFrameChange);
+  if (elements.openInNewTab) {
+    elements.openInNewTab.addEventListener('change', handleOpenInNewTabChange);
+  }
 
   // 主题相关事件监听
   elements.themeModeTabs.forEach((tab) => {
@@ -2560,14 +2874,6 @@
 
   elements.todoInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') handleAddTodo();
-  });
-
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === 'openAddIconModal') {
-      openAddIconModal();
-    } else if (message.action === 'deleteIcon') {
-      deleteIcon(message.iconId);
-    }
   });
 
   loadState();

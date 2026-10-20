@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,12 @@ import { chromium } from 'playwright';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const EXTENSION_PATH = path.resolve(__dirname, '..');
+const HOME = 'folder-home';
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+const ARTIFACTS = fs.existsSync('/opt/cursor/artifacts')
+  ? '/opt/cursor/artifacts'
+  : path.join(EXTENSION_PATH, 'artifacts');
+fs.mkdirSync(ARTIFACTS, { recursive: true });
 
 const VENDOR_FILES = [
   'vendor/flatpickr/flatpickr.min.css',
@@ -49,19 +56,23 @@ function unexpectedErrors(errors) {
   ));
 }
 
-function collectPageErrors(page, errors) {
-  const onConsole = (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
-  };
+function attachErrorCollectors(target, buckets) {
   const onPageError = (error) => {
-    errors.push(String(error?.message || error));
+    buckets.page.push(String(error?.message || error));
   };
-  page.on('console', onConsole);
-  page.on('pageerror', onPageError);
+  const onConsole = (msg) => {
+    if (msg.type() === 'error') buckets.console.push(msg.text());
+  };
+  target.on('pageerror', onPageError);
+  target.on('console', onConsole);
   return () => {
-    page.off('console', onConsole);
-    page.off('pageerror', onPageError);
+    target.off('pageerror', onPageError);
+    target.off('console', onConsole);
   };
+}
+
+function collectPageErrors(page, errors) {
+  return attachErrorCollectors(page, { page: errors, console: errors });
 }
 
 function assertValidPngFile(absPath, label) {
@@ -193,6 +204,96 @@ function resolveHeadless(defaultValue) {
   return defaultValue;
 }
 
+function isExemptConsoleError(text) {
+  return text.includes('Failed to fetch Bing image');
+}
+
+function shortcut(id, name, url, folderId = HOME) {
+  return {
+    id,
+    name,
+    url,
+    folderId,
+    type: 'shortcut',
+    customIconUrl: '',
+    emoji: '',
+    uploadedIconDataUrl: PIXEL,
+    resolvedIconUrl: PIXEL,
+    iconCandidates: [PIXEL]
+  };
+}
+
+function folders(...extra) {
+  return [{ id: HOME, name: '主页' }, ...extra];
+}
+
+function readMasterManifest() {
+  const refs = [
+    process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : null,
+    'origin/master',
+    'master'
+  ].filter(Boolean);
+  for (const ref of refs) {
+    try {
+      return JSON.parse(execSync(`git show ${ref}:manifest.json`, {
+        encoding: 'utf8',
+        cwd: EXTENSION_PATH,
+        stdio: ['ignore', 'pipe', 'ignore']
+      }));
+    } catch {
+      // try next ref
+    }
+  }
+  return null;
+}
+
+async function waitForGrid(page) {
+  await page.waitForSelector('#add-shortcut-tile', { timeout: 10000 });
+  await page.waitForFunction(
+    () => performance.getEntriesByName('opentab:grid-ready').length > 0,
+    null,
+    { timeout: 10000 }
+  );
+}
+
+async function resetHome(page, payload) {
+  await page.evaluate(async (data) => {
+    await chrome.storage.local.clear();
+    await chrome.storage.local.set(data);
+  }, payload);
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+  await page.waitForSelector('#time', { timeout: 10000 });
+  await waitForGrid(page);
+}
+
+async function desktopOrder(page) {
+  return page.$$eval('#icons-container .icon-widget[data-id]', els => els.map(el => el.dataset.id));
+}
+
+async function storageIconIds(page) {
+  return page.evaluate(async () => {
+    const result = await chrome.storage.local.get(['icons']);
+    return (result.icons || []).map(icon => icon.id);
+  });
+}
+
+async function html5Drag(page, fromId, toSelector, where = 'left') {
+  await page.evaluate(({ fromId, toSelector, where }) => {
+    const src = document.querySelector(`#icons-container .icon-widget[data-id="${fromId}"]`);
+    const dst = document.querySelector(toSelector);
+    if (!src || !dst) throw new Error(`drag nodes missing ${fromId} -> ${toSelector}`);
+    const dt = new DataTransfer();
+    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const rect = dst.getBoundingClientRect();
+    const clientX = where === 'left' ? rect.left + 4 : where === 'right' ? rect.right - 4 : rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+    const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientX, clientY };
+    dst.dispatchEvent(new DragEvent('dragover', opts));
+    dst.dispatchEvent(new DragEvent('drop', opts));
+    src.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  }, { fromId, toSelector, where });
+}
+
 async function runExtensionE2E() {
   assertVendoredRuntimeAssets();
   assertReplacementAssets();
@@ -209,21 +310,44 @@ async function runExtensionE2E() {
     ]
   });
 
+  const errorBuckets = { page: [], console: [], sw: [] };
+
   try {
+    await context.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (
+        url.startsWith('chrome-extension://')
+        || url.startsWith('data:')
+        || url.includes('bing.com')
+        || url.includes('wttr.in')
+      ) {
+        return route.continue();
+      }
+      if (/\.(ico|png|jpe?g|svg|webp|gif)(\?|$)/i.test(url) || url.includes('favicon') || url.includes('apple-touch')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'image/gif',
+          body: Buffer.from(PIXEL.split(',')[1], 'base64')
+        });
+      }
+      return route.continue();
+    });
+
     let serviceWorker = context.serviceWorkers()[0];
     if (!serviceWorker) {
       serviceWorker = await context.waitForEvent('serviceworker', { timeout: 10000 });
     }
     const extensionId = serviceWorker.url().split('/')[2];
+    try {
+      serviceWorker.on('console', msg => {
+        if (msg.type() === 'error') errorBuckets.sw.push(msg.text());
+      });
+    } catch {
+      // Playwright Worker may not expose console events.
+    }
 
     const page = await context.newPage();
-
-    const consoleErrors = [];
-    page.on('console', msg => {
-      if (msg.type() === 'error') {
-        consoleErrors.push(msg.text());
-      }
-    });
+    attachErrorCollectors(page, errorBuckets);
 
     await page.goto(`chrome-extension://${extensionId}/home.html`, {
       waitUntil: 'domcontentloaded',
@@ -314,7 +438,7 @@ async function runExtensionE2E() {
       );
     }
 
-    const unexpectedConsoleErrors = consoleErrors.filter(error => !error.includes('Failed to fetch Bing image'));
+    const unexpectedConsoleErrors = errorBuckets.console.filter(error => !isExemptConsoleError(error));
     assert.equal(
       unexpectedConsoleErrors.length,
       0,
@@ -445,6 +569,401 @@ async function runExtensionE2E() {
     );
 
     await migrationPage.close();
+    await page.click('#close-settings');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+
+    // --- T1 + card and empty hint ---
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
+    assert.equal(await page.locator('#add-shortcut-tile').isVisible(), true, 'T1: + tile visible when empty');
+    assert.equal(await page.locator('#icons-empty-hint').isVisible(), true, 'T1: empty hint visible');
+    await page.screenshot({ path: path.join(ARTIFACTS, 't1-empty-add-tile.png') });
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)', { timeout: 5000 });
+    await page.fill('#icon-name', 'Example A');
+    await page.fill('#icon-url', 'https://example.com/a');
+    await page.click('#save-btn');
+    await page.waitForSelector('#add-icon-modal.hidden', { timeout: 5000 });
+    const t1Order = await desktopOrder(page);
+    assert.equal(t1Order.length, 1, 'T1: one icon after save');
+    const t1Names = await page.$$eval('#icons-container .icon-widget[data-id] .icon-name', els => els.map(el => el.textContent));
+    assert.deepEqual(t1Names, ['Example A']);
+    const tileIndex = await page.evaluate(() => {
+      const nodes = [...document.querySelector('#icons-container').children];
+      return {
+        icon: nodes.findIndex(el => el.matches('.icon-widget[data-id]')),
+        add: nodes.findIndex(el => el.id === 'add-shortcut-tile')
+      };
+    });
+    assert.ok(tileIndex.icon >= 0 && tileIndex.icon < tileIndex.add, 'T1: new icon is before + tile');
+    assert.equal(await page.locator('#icons-empty-hint').isVisible(), false, 'T1: empty hint hidden after add');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForGrid(page);
+    const t1AfterReload = await page.$$eval('#icons-container .icon-widget[data-id] .icon-name', els => els.map(el => el.textContent));
+    assert.deepEqual(t1AfterReload, ['Example A'], 'T1: icon persists after reload');
+    console.log('T1 passed');
+
+    // --- T2 context menu rules ---
+    await page.locator('#search-input').click({ button: 'right' });
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('#add-icon-modal').evaluate(el => el.classList.contains('hidden')), true, 'T2: search input keeps native menu');
+    await page.locator('#welcome-text').click({ button: 'right' });
+    await page.waitForSelector('#add-icon-modal:not(.hidden)', { timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#add-icon-modal.hidden', { timeout: 5000 });
+    await page.keyboard.down('Alt');
+    await page.locator('#welcome-text').click({ button: 'right' });
+    await page.keyboard.up('Alt');
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('#add-icon-modal').evaluate(el => el.classList.contains('hidden')), true, 'T2: Alt+right click does not open modal');
+    console.log('T2 passed');
+
+    // --- T3 drag reorder ---
+    const abcPayload = {
+      folders: folders({ id: 'folder-x', name: 'X' }),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('a', 'A', 'https://example.com/a'),
+        shortcut('x1', 'X1', 'https://example.com/x1', 'folder-x'),
+        shortcut('b', 'B', 'https://example.com/b'),
+        shortcut('c', 'C', 'https://example.com/c')
+      ]
+    };
+    await resetHome(page, abcPayload);
+    assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c']);
+    await html5Drag(page, 'c', '#icons-container .icon-widget[data-id="a"]', 'left');
+    await page.waitForTimeout(100);
+    assert.deepEqual(await desktopOrder(page), ['c', 'a', 'b'], 'T3: C moved left of A');
+    const idsAfterDrag = await storageIconIds(page);
+    assert.deepEqual(idsAfterDrag, ['c', 'x1', 'a', 'b'], 'T3: X1 keeps array slot');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForGrid(page);
+    assert.deepEqual(await desktopOrder(page), ['c', 'a', 'b'], 'T3: order persists');
+    assert.deepEqual(await storageIconIds(page), ['c', 'x1', 'a', 'b']);
+    await html5Drag(page, 'c', '#add-shortcut-tile', 'left');
+    await page.waitForTimeout(100);
+    assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c'], 'T3: drop on + moves to end');
+    await page.screenshot({ path: path.join(ARTIFACTS, 't3-drag-reorder.png') });
+    console.log('T3 passed');
+
+    // --- T4 keyboard reorder ---
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('a', 'A', 'https://example.com/a'),
+        shortcut('b', 'B', 'https://example.com/b'),
+        shortcut('c', 'C', 'https://example.com/c')
+      ]
+    });
+    await page.locator('#icons-container .icon-widget[data-id="a"]').focus();
+    await page.keyboard.press('Alt+ArrowRight');
+    await page.waitForTimeout(100);
+    assert.deepEqual(await desktopOrder(page), ['b', 'a', 'c'], 'T4: Alt+Right swaps A with B');
+    const focusedId = await page.evaluate(() => document.activeElement && document.activeElement.dataset.id);
+    assert.equal(focusedId, 'a', 'T4: focus stays on A');
+    console.log('T4 passed');
+
+    // --- T5 real links ---
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('link-a', 'Example', 'https://example.com/a'),
+        {
+          id: 'tool-json',
+          name: 'JSON',
+          type: 'tool',
+          toolSubtype: 'json-format',
+          folderId: HOME,
+          url: '',
+          uploadedIconDataUrl: PIXEL,
+          resolvedIconUrl: PIXEL
+        }
+      ]
+    });
+    const linkTag = await page.locator('#icons-container .icon-widget[data-id="link-a"]').evaluate(el => ({
+      tag: el.tagName,
+      href: el.getAttribute('href'),
+      className: el.className
+    }));
+    assert.equal(linkTag.tag, 'A');
+    assert.ok(linkTag.className.includes('icon-widget'));
+    assert.equal(linkTag.href, 'https://example.com/a');
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.check('#open-in-new-tab');
+    await page.waitForTimeout(200);
+    const afterToggle = await page.locator('#icons-container .icon-widget[data-id="link-a"]').evaluate(el => ({
+      target: el.getAttribute('target'),
+      rel: el.getAttribute('rel') || ''
+    }));
+    assert.equal(afterToggle.target, '_blank');
+    assert.ok(afterToggle.rel.includes('noopener'), 'T5: rel contains noopener');
+    await page.click('#close-settings');
+    const toolHref = await page.locator('#icons-container .icon-widget[data-id="tool-json"]').getAttribute('href');
+    assert.ok(toolHref && new URL(toolHref).pathname.endsWith('/tool.html'), 'T5: tool href path ends with /tool.html');
+    const [newPage] = await Promise.all([
+      context.waitForEvent('page', { timeout: 8000 }),
+      page.locator('#icons-container .icon-widget[data-id="tool-json"]').click({ button: 'middle' })
+    ]);
+    await newPage.waitForLoadState('domcontentloaded');
+    assert.ok(new URL(newPage.url()).pathname.endsWith('/tool.html'), 'T5: middle click opens tool.html');
+    assert.ok(page.url().includes('home.html'), 'T5: original page stays on home');
+    await newPage.close();
+    console.log('T5 passed');
+
+    // --- T6 delete undo ---
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('a', 'A', 'https://example.com/a'),
+        shortcut('b', 'B', 'https://example.com/b'),
+        shortcut('c', 'C', 'https://example.com/c')
+      ]
+    });
+    await page.locator('#icons-container .icon-widget[data-id="b"]').click({ button: 'right' });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#delete-icon-btn');
+    await page.waitForSelector('#toast:not(.hidden)');
+    const toastText = (await page.locator('#toast').textContent()) || '';
+    assert.ok(toastText.includes('撤销'), 'T6: toast offers undo');
+    assert.ok(!(await desktopOrder(page)).includes('b'), 'T6: B removed from grid');
+    await page.screenshot({ path: path.join(ARTIFACTS, 't6-delete-undo-toast.png') });
+    await page.locator('#toast button').click();
+    await page.waitForTimeout(200);
+    assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c'], 'T6: undo restores B');
+    await page.locator('#icons-container .icon-widget[data-id="b"]').click({ button: 'right' });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#delete-icon-btn');
+    await page.waitForTimeout(6500);
+    const idsAfterTimeout = await storageIconIds(page);
+    assert.ok(!idsAfterTimeout.includes('b'), 'T6: B gone from storage after 6s');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForGrid(page);
+    assert.deepEqual(await desktopOrder(page), ['a', 'c'], 'T6: B still gone after reload');
+    console.log('T6 passed');
+
+    // --- T7 Esc layered close ---
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    assert.equal(await page.locator('#settings-panel').evaluate(el => el.classList.contains('hidden')), false, 'T7: settings still open');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#settings-panel.hidden');
+
+    await resetHome(page, {
+      folders: folders({ id: 'folder-x', name: 'X' }),
+      currentFolderId: HOME,
+      icons: [
+        shortcut('a', 'A', 'https://example.com/a'),
+        shortcut('b', 'B', 'https://example.com/b')
+      ]
+    });
+    await page.click('#workspace-btn');
+    await page.waitForSelector('#workspace-drawer:not(.hidden)');
+    await page.evaluate(() => {
+      const src = document.querySelector('#workspace-icons-container .icon-widget[data-id="b"]');
+      const dst = [...document.querySelectorAll('#workspace-folder-tabs .folder-tab')]
+        .find(tab => (tab.textContent || '').includes('X'));
+      if (!src || !dst) throw new Error('chip or folder tab missing');
+      const dt = new DataTransfer();
+      src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const rect = dst.getBoundingClientRect();
+      const opts = {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt,
+        clientX: rect.left + 8,
+        clientY: rect.top + 8
+      };
+      dst.dispatchEvent(new DragEvent('dragover', opts));
+      dst.dispatchEvent(new DragEvent('drop', opts));
+    });
+    await page.waitForTimeout(150);
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#add-icon-modal.hidden', { timeout: 5000 });
+    console.log('T7 passed');
+
+    // --- invalid URL keyboard ---
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [shortcut('bad', 'Bad', 'not-a-url')]
+    });
+    const badLink = await page.locator('#icons-container .icon-widget[data-id="bad"]').evaluate(el => ({
+      href: el.getAttribute('href'),
+      role: el.getAttribute('role'),
+      ariaDisabled: el.getAttribute('aria-disabled')
+    }));
+    assert.equal(badLink.href, null, 'invalid URL icon has no href');
+    assert.equal(badLink.role, 'link');
+    assert.equal(badLink.ariaDisabled, 'true');
+    await page.locator('#icons-container .icon-widget[data-id="bad"]').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.ok(((await page.locator('#toast').textContent()) || '').includes('网址无效'), 'Enter shows invalid URL toast');
+    await page.keyboard.press('Escape');
+    await page.locator('#icons-container .icon-widget[data-id="bad"]').focus();
+    await page.keyboard.press('Space');
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.ok(((await page.locator('#toast').textContent()) || '').includes('网址无效'), 'Space shows invalid URL toast');
+
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [{
+        id: 'ssh-bad',
+        name: 'SSH',
+        type: 'ssh',
+        folderId: HOME,
+        sshGatewayUrl: '',
+        sshGatewayToken: '',
+        sshHost: '',
+        sshUsername: '',
+        uploadedIconDataUrl: PIXEL,
+        resolvedIconUrl: PIXEL
+      }]
+    });
+    const sshLink = await page.locator('#icons-container .icon-widget[data-id="ssh-bad"]').evaluate(el => ({
+      href: el.getAttribute('href'),
+      ariaDisabled: el.getAttribute('aria-disabled')
+    }));
+    assert.equal(sshLink.href, null, 'incomplete SSH icon has no href');
+    assert.equal(sshLink.ariaDisabled, 'true');
+    const extraPages = [];
+    const onExtraPage = (opened) => extraPages.push(opened);
+    context.on('page', onExtraPage);
+    await page.locator('#icons-container .icon-widget[data-id="ssh-bad"]').click({ button: 'middle', force: true });
+    await page.waitForTimeout(400);
+    context.off('page', onExtraPage);
+    assert.equal(extraPages.length, 0, 'incomplete SSH middle-click must not open a page');
+    await page.locator('#icons-container .icon-widget[data-id="ssh-bad"]').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.ok(((await page.locator('#toast').textContent()) || '').includes('SSH 配置不完整'), 'Enter shows incomplete SSH toast');
+
+    // --- T8 performance ---
+    const perfIcons = Array.from({ length: 60 }, (_, i) => shortcut(`perf-${i}`, `Site ${i}`, `https://example.com/${i}`));
+    await page.evaluate(async (data) => {
+      await chrome.storage.local.set(data);
+    }, { icons: perfIcons, folders: folders(), currentFolderId: HOME });
+    const perfStarted = Date.now();
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+    await waitForGrid(page);
+    const gridReadyMs = await page.evaluate(() => {
+      const marks = performance.getEntriesByName('opentab:grid-ready');
+      return marks.length ? marks[0].startTime : null;
+    });
+    const wallMs = Date.now() - perfStarted;
+    console.log(`T8 opentab:grid-ready ms=${gridReadyMs} wall=${wallMs}`);
+    fs.writeFileSync(
+      path.join(ARTIFACTS, 't8-grid-ready.txt'),
+      `opentab:grid-ready=${gridReadyMs}ms wall=${wallMs}ms\n`,
+      'utf8'
+    );
+    assert.ok(gridReadyMs !== null, 'T8: grid-ready mark missing');
+    assert.ok(gridReadyMs <= 500, `T8: grid-ready ${gridReadyMs}ms exceeded 500ms`);
+    await page.screenshot({ path: path.join(ARTIFACTS, 't8-sixty-icons.png') });
+    await page.evaluate(() => {
+      window.__opentabLongTasks = [];
+      try {
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.duration > 50) window.__opentabLongTasks.push(entry.duration);
+          }
+        });
+        observer.observe({ type: 'longtask' });
+        window.__opentabLongTaskObserver = observer;
+      } catch (error) {
+        window.__opentabLongTaskError = String(error);
+      }
+    });
+    await html5Drag(page, 'perf-5', '#icons-container .icon-widget[data-id="perf-0"]', 'left');
+    await page.waitForTimeout(120);
+    const longTasks = await page.evaluate(() => window.__opentabLongTasks || []);
+    assert.equal(longTasks.length, 0, `T8: longtasks over 50ms: ${longTasks.join(',')}`);
+    console.log('T8 passed');
+
+    // --- T10 manifest ---
+    const localManifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_PATH, 'manifest.json'), 'utf8'));
+    assert.ok(!localManifest.permissions.includes('contextMenus'), 'T10: contextMenus removed');
+    const masterManifest = readMasterManifest();
+    if (masterManifest) {
+      const expectedPerms = masterManifest.permissions.filter(item => item !== 'contextMenus');
+      assert.deepEqual(localManifest.permissions, expectedPerms, 'T10: permissions otherwise match master');
+      assert.deepEqual(localManifest.host_permissions, masterManifest.host_permissions, 'T10: host_permissions unchanged');
+    } else {
+      assert.deepEqual(localManifest.permissions, ['storage', 'activeTab', 'tabs', 'geolocation']);
+      assert.deepEqual(localManifest.host_permissions, ['https://www.bing.com/*', 'https://wttr.in/*']);
+    }
+    console.log('T10 passed');
+
+    // --- T11 popup regression ---
+    const popup = await context.newPage();
+    const popupErrors = [];
+    popup.on('console', msg => {
+      if (msg.type() === 'error') popupErrors.push(msg.text());
+    });
+    popup.on('pageerror', error => popupErrors.push(String(error)));
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 15000
+    });
+    await popup.waitForSelector('#save-btn', { timeout: 5000 });
+    await popup.screenshot({ path: path.join(ARTIFACTS, 't11-popup.png') });
+    const currentUrl = ((await popup.locator('#current-url').textContent()) || '').trim();
+    if (/^https?:/i.test(currentUrl) && !(await popup.locator('#save-btn').isDisabled())) {
+      await popup.fill('#site-name', 'FromPopupUI');
+      await popup.click('#save-btn');
+    } else {
+      await popup.evaluate(() => new Promise((resolve, reject) => {
+        chrome.storage.local.get(['icons', 'folders'], (result) => {
+          const icons = Array.isArray(result.icons) ? result.icons : [];
+          icons.push({
+            id: 'popup-e2e',
+            name: 'FromPopup',
+            url: 'https://example.com/from-popup',
+            folderId: 'folder-home',
+            type: 'shortcut',
+            uploadedIconDataUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',
+            resolvedIconUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
+          });
+          chrome.storage.local.set({ icons, folders: result.folders || [] }, () => {
+            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+            else resolve();
+          });
+        });
+      }));
+    }
+    assert.equal(popupErrors.length, 0, `T11: popup console errors: ${popupErrors.join(' | ')}`);
+    await page.waitForFunction(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      return (result.icons || []).some(icon => icon.name === 'FromPopupUI' || icon.name === 'FromPopup');
+    }, null, { timeout: 8000 });
+    if (!popup.isClosed()) await popup.close().catch(() => {});
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForGrid(page);
+    const popupNames = await page.$$eval('#icons-container .icon-widget[data-id] .icon-name', els => els.map(el => el.textContent));
+    assert.ok(
+      popupNames.includes('FromPopupUI') || popupNames.includes('FromPopup'),
+      `T11: popup-created icon visible, got ${popupNames.join(',')}`
+    );
+    console.log('T11 passed');
+
+    const leftoverPageErrors = errorBuckets.page.filter(error => !isExemptConsoleError(error));
+    const leftoverConsole = errorBuckets.console.filter(error => !isExemptConsoleError(error));
+    assert.equal(leftoverPageErrors.length, 0, `T9: pageerror: ${leftoverPageErrors.join(' | ')}`);
+    assert.equal(leftoverConsole.length, 0, `T9: console error: ${leftoverConsole.join(' | ')}`);
+    assert.equal(errorBuckets.sw.length, 0, `T9: service worker errors: ${errorBuckets.sw.join(' | ')}`);
+    console.log('T9 passed');
+
 
     console.log('E2E passed: extension newtab UI loaded and core interactions work.');
   } finally {

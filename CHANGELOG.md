@@ -9,11 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Shortcut grid **+** tile and empty-state hint for adding sites
+- HTML5 drag-and-drop reorder on the desktop grid, with Alt+←/→ keyboard swap
+- Undo toast after deleting a shortcut (6 seconds)
+- Setting to open shortcuts in a new tab (`openInNewTab`)
 - E2E coverage for uncaught `pageerror` on background-migration loads, and that `manifest.json` `icons` / `action.default_icon` files exist as valid PNGs
 
 ### Changed
 
+- Shortcut, tool, and SSH icons render as real `<a href>` links (middle-click / Ctrl / Cmd open a new tab)
+- Escape closes the topmost UI layer (context menu, modal, settings, timezone, calendar, drawer, todos)
+- README documents + add, drag reorder, middle-click, undo delete, and Esc
 - Replaced the application icon and three bundled default backgrounds with project-owned assets (Apache-2.0; stills and icon composition Created with Grok Imagine; SVG/PNGs hand-traced and rasterized). Saved Pexels preset paths migrate to the matching new images (or fall back to the Bing default) so existing installs do not 404.
+
+### Removed
+
+- `contextMenus` permission and the unused page context-menu item “Add Icon”
 
 ## [1.1.0] - 2026-10-20
 
