@@ -46,10 +46,10 @@ npm test
 ### 3.2 CI 一致性执行
 
 ```bash
-npm run test:ci
+npm test
 ```
 
-说明：在 `CI=true` 时自动用 `xvfb-run` 启动有头浏览器，避免 Linux 无显示环境问题。
+说明：CI 与本地使用同一条命令。`npm test` 会走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 仍指向同一脚本，仅作兼容别名。
 
 ### 3.3 本地调试模式
 
@@ -57,6 +57,8 @@ npm run test:ci
 npm run test:e2e:headed
 npm run test:e2e:headless
 ```
+
+`test:e2e:headless` 不推荐：Playwright 无头使用 `chrome-headless-shell`，MV3 `--load-extension` 可能失败。需要看浏览器窗口时用 `test:e2e:headed`；无显示器环境请用 `npm test`（自动 xvfb）。
 
 ## 4. 触发规则（Agent Gate）
 
@@ -109,7 +111,7 @@ npm run test:e2e:headless
 - 强制步骤：
 1. `npm ci`
 2. `npx playwright install chromium`
-3. `npm run test:ci`
+3. `npm test`
 
 ## 8. 失败分级与处理
 
@@ -127,8 +129,8 @@ npm run test:e2e:headless
 1. `Executable doesn't exist`
 - 执行 `npm run pw:install`
 
-2. `xvfb-run: command not found`
-- 在 Linux 安装 `xvfb`，或改在带 GUI 环境执行
+2. `xvfb-run` 缺失（`npm test` 会打印友好提示并 exit 1）
+- 在 Linux 安装 `xvfb`（如 `sudo apt-get install xvfb`），或改在带 GUI 环境执行 `npm run test:e2e:headed`
 
 3. 扩展未加载
 - 确认 `manifest_version` 为 3
