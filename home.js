@@ -609,7 +609,7 @@
   function getIconHref(icon) {
     const iconType = normalizeIconType(icon.type);
     if (iconType === ICON_TYPE_SSH) {
-      return chrome.runtime.getURL(`ssh_terminal.html?iconId=${encodeURIComponent(icon.id)}`);
+      return isSshConfigComplete(icon) ? chrome.runtime.getURL(`ssh_terminal.html?iconId=${encodeURIComponent(icon.id)}`) : '';
     }
     if (iconType === ICON_TYPE_TOOL) {
       const toolType = icon.toolSubtype || 'json-format';
@@ -633,17 +633,13 @@
     else window.location.assign(url);
   }
 
+  function disabledIconToast(icon) {
+    return normalizeIconType(icon.type) === ICON_TYPE_SSH ? 'SSH 配置不完整，请先编辑这个图标' : '网址无效，请编辑';
+  }
+
   function openIconTarget(icon) {
-    const iconType = normalizeIconType(icon.type);
-    if (iconType === ICON_TYPE_SSH && !isSshConfigComplete(icon)) {
-      showToast('SSH 配置不完整，请先编辑这个图标');
-      return;
-    }
     const href = getIconHref(icon);
-    if (!href) {
-      showToast('网址无效，请编辑');
-      return;
-    }
+    if (!href) { showToast(disabledIconToast(icon)); return; }
     navigateTo(href);
   }
 
@@ -1604,15 +1600,7 @@
     const widget = event.target.closest('.icon-widget[data-id]');
     if (!widget) return;
     const icon = state.icons.find((item) => item.id === widget.dataset.id);
-    if (!icon) return;
-    const iconType = normalizeIconType(icon.type);
-    if (iconType === ICON_TYPE_SSH && !isSshConfigComplete(icon)) {
-      event.preventDefault();
-      showToast('SSH 配置不完整，请先编辑这个图标');
-    } else if (iconType === ICON_TYPE_SHORTCUT && !getIconHref(icon)) {
-      event.preventDefault();
-      showToast('网址无效，请编辑');
-    }
+    if (icon && !getIconHref(icon)) { event.preventDefault(); showToast(disabledIconToast(icon)); }
   }
 
   function onGridContextMenu(event) {
@@ -1628,7 +1616,8 @@
     if (!widget) return;
     if ((event.key === 'Enter' || event.key === ' ') && widget.getAttribute('aria-disabled') === 'true') {
       event.preventDefault();
-      showToast('网址无效，请编辑');
+      const icon = state.icons.find((item) => item.id === widget.dataset.id);
+      if (icon) showToast(disabledIconToast(icon));
       return;
     }
     if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;

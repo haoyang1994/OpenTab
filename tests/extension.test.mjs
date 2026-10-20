@@ -820,6 +820,40 @@ async function runExtensionE2E() {
     await page.waitForSelector('#toast:not(.hidden)');
     assert.ok(((await page.locator('#toast').textContent()) || '').includes('网址无效'), 'Space shows invalid URL toast');
 
+    await resetHome(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [{
+        id: 'ssh-bad',
+        name: 'SSH',
+        type: 'ssh',
+        folderId: HOME,
+        sshGatewayUrl: '',
+        sshGatewayToken: '',
+        sshHost: '',
+        sshUsername: '',
+        uploadedIconDataUrl: PIXEL,
+        resolvedIconUrl: PIXEL
+      }]
+    });
+    const sshLink = await page.locator('#icons-container .icon-widget[data-id="ssh-bad"]').evaluate(el => ({
+      href: el.getAttribute('href'),
+      ariaDisabled: el.getAttribute('aria-disabled')
+    }));
+    assert.equal(sshLink.href, null, 'incomplete SSH icon has no href');
+    assert.equal(sshLink.ariaDisabled, 'true');
+    const extraPages = [];
+    const onExtraPage = (opened) => extraPages.push(opened);
+    context.on('page', onExtraPage);
+    await page.locator('#icons-container .icon-widget[data-id="ssh-bad"]').click({ button: 'middle', force: true });
+    await page.waitForTimeout(400);
+    context.off('page', onExtraPage);
+    assert.equal(extraPages.length, 0, 'incomplete SSH middle-click must not open a page');
+    await page.locator('#icons-container .icon-widget[data-id="ssh-bad"]').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#toast:not(.hidden)');
+    assert.ok(((await page.locator('#toast').textContent()) || '').includes('SSH 配置不完整'), 'Enter shows incomplete SSH toast');
+
     // --- T8 performance ---
     const perfIcons = Array.from({ length: 60 }, (_, i) => shortcut(`perf-${i}`, `Site ${i}`, `https://example.com/${i}`));
     await page.evaluate(async (data) => {
