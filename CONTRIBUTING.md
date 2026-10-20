@@ -73,7 +73,7 @@ must explain **why** the extra access is required, what data is sent, and why a 
 - Only accept licenses that are compatible with Apache-2.0 (no GPL / AGPL / LGPL copyleft).
 - Update `NOTICE` in the same PR: name, version, purpose, license, and upstream URL.
 - Do not add binary assets without provenance (author, source URL, license).
-- Pexels photos and third-party trademarks are **not** Apache-2.0; do not relicense them.
+- Third-party trademarks (for example Google / GitHub / Bing marks in the UI) are **not** Apache-2.0; do not relicense them.
 
 ## License of contributions
 

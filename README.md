@@ -40,7 +40,7 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 
 - Bing daily wallpaper (and recent history via the refresh button)
 - Preset gradients
-- Three bundled still photos (Pexels; see [NOTICE](NOTICE))
+- Three original bundled stills (mountain dawn, golden forest, night coast)
 - Custom image or video URL, or a local file upload
 
 ### Shortcuts
@@ -60,7 +60,7 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 
 ## Screenshots
 
-Background photos in these screenshots come from [Pexels](https://www.pexels.com/license/) and are **not** Apache-2.0. Attribution is in [NOTICE](NOTICE). The frames also contain Google / GitHub marks, which remain trademarks of their owners.
+The frames contain Google / GitHub marks, which remain trademarks of their owners. See [NOTICE](NOTICE).
 
 ### Dark theme
 
@@ -186,7 +186,7 @@ OpenTab/
 ├── ssh-gateway.mjs            # local SSH WebSocket gateway
 ├── vendor/                    # vendored flatpickr / xterm (with LICENSE files)
 ├── icons/                     # PNG icons + SVG source
-├── assets/default_background/ # bundled Pexels stills
+├── assets/default_background/ # original bundled stills
 ├── screenshots/
 ├── tests/
 ├── docs/                      # SPEC (historical), testing, releases

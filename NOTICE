@@ -3,7 +3,7 @@ OpenTab
 This product includes software and other materials developed by third parties.
 The Apache License 2.0 applies to OpenTab original code as described in LICENSE.
 Items marked “不在 Apache-2.0 授权范围内” are distributed under their own terms and
-are not re-licensed as Apache-2.0. Items marked “需确认” still need owner confirmation.
+are not re-licensed as Apache-2.0.
 
 Upstream versions below match package-lock.json after `npm ci` (2026-10-20) unless noted.
 
@@ -175,49 +175,76 @@ MIT, ISC, BSD-3-Clause, or Unlicense. No GPL / AGPL / LGPL packages.
 4. Repository assets
 ================================================================================
 
-Name:        assets/default_background/pexels-pixabay-40896.jpg
-Size:        791,436 bytes
-Used by:     home.html preset background
-Source:      Pexels photo 40896, photographer Pixabay
-Original:    https://www.pexels.com/photo/green-tree-plant-leaves-40896/
-             (canonical image: https://images.pexels.com/photos/40896/larch-conifer-cone-branch-tree-40896.jpeg)
-License:     Pexels License (https://www.pexels.com/license/)
-Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+The three stills and the icon source bitmap were AI-generated with Grok Imagine
+(xAI). Embedded C2PA on the source JPEGs records softwareAgent “Grok Imagine”
+and IPTC digitalSourceType trainedAlgorithmicMedia
+(http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia).
+They are not photographs and not hand-painted.
 
-Name:        assets/default_background/pexels-elina-sazonova-4275497.jpg
-Size:        2,369,574 bytes
-Used by:     home.html preset background
-Source:      Pexels photo 4275497, photographer Elina Sazonova
-Original:    https://www.pexels.com/photo/scenic-view-of-rocky-mountains-4275497/
-License:     Pexels License (https://www.pexels.com/license/)
-Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+xAI Consumer FAQ (https://x.ai/legal/faq): the user owns Inputs and Outputs,
+including generated images, and may use them commercially. xAI Consumer Terms
+of Service §4 (https://x.ai/legal/terms-of-service): as between the user and
+SpaceXSI/xAI, the user retains ownership of User Content. Those terms allow the
+project to distribute the pixels under Apache-2.0 (this is not a license from
+xAI of Grok itself). Attribution required by those terms / Brand Guidelines:
+Created with Grok. xAI Acceptable Use Policy
+(https://x.ai/legal/acceptable-use-policy) forbids stripping embedded provenance
+metadata or watermarks; the bundled JPEGs keep the Grok Imagine C2PA JUMBF.
 
-Name:        assets/default_background/pexels-souvenirpixels-417074.jpg
-Size:        1,275,751 bytes
-Used by:     home.html preset background
-Source:      Pexels photo 417074, photographer James Wheeler
-             (Pexels username souvenirpixels, https://www.pexels.com/@souvenirpixels/)
-Original:    https://www.pexels.com/photo/lake-and-mountain-417074/
-License:     Pexels License (https://www.pexels.com/license/)
-Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+Name:        assets/default_background/bg-mountain-dawn.jpg
+Size:        168,445 bytes (1280×720 JPEG)
+Used by:     home.html preset background (“晨曦雾山湖”)
+How made:    AI-generated still from Grok Imagine (not a camera photo).
+Tool:        Grok Imagine (xAI)
+License:     Apache-2.0 (project-owned Output; Created with Grok)
+Status:      Original project asset; C2PA retained; distributed under Apache-2.0
+
+Name:        assets/default_background/bg-forest-golden.jpg
+Size:        419,388 bytes (1280×720 JPEG)
+Used by:     home.html preset background (“金色松林”)
+How made:    AI-generated still from Grok Imagine (not a camera photo).
+Tool:        Grok Imagine (xAI)
+License:     Apache-2.0 (project-owned Output; Created with Grok)
+Status:      Original project asset; C2PA retained; distributed under Apache-2.0
+
+Name:        assets/default_background/bg-ocean-night.jpg
+Size:        328,221 bytes (1280×720 JPEG)
+Used by:     home.html preset background (“星空海岸”)
+How made:    AI-generated still from Grok Imagine (not a camera photo).
+Tool:        Grok Imagine (xAI)
+License:     Apache-2.0 (project-owned Output; Created with Grok)
+Status:      Original project asset; C2PA retained; distributed under Apache-2.0
 
 Name:        screenshots/preview-dark.png, screenshots/preview-light.png,
              screenshots/settings-panel.png
 Used by:     README.md / README.zh-CN.md
-License:     Screenshots of OpenTab. Background pixels follow the Pexels License
-             of the photos above. Google and GitHub marks that appear in the
-             frames are trademarks of their owners (see below).
-Status:      不在 Apache-2.0 授权范围内 for the photograph and trademark portions.
-
-Name:        icons/icon16.png, icons/icon48.png, icons/icon128.png
-Used by:     manifest.json icons
-Source:      No attribution in-tree; presumed original artwork
-Status:      需确认 (owner must confirm originality before treating as Apache-2.0)
+How made:    Playwright / Chromium screenshots of the loaded extension.
+             Background pixels are the Grok Imagine stills above.
+License:     OpenTab UI pixels Apache-2.0; stills as above (Created with Grok).
+             Google and GitHub marks in the frames remain trademarks of their
+             owners (see below).
+Status:      Trademark portions remain 不在 Apache-2.0 授权范围内.
 
 Name:        icons/opentab-icon.svg
-Used by:     not referenced by extension pages (source for the PNG icons)
-Source:      Hand-written geometric SVG; presumed original
-Status:      需确认 (owner must confirm originality; file is kept)
+Used by:     favicon on home.html / popup.html / tool.html / fixparser.html;
+             vector source for the PNG icons
+How made:    Hand-written SVG (not exported from a drawing app). Geometry was
+             traced to match a Grok Imagine source bitmap (1024×1024 rounded
+             square, white tab outline + 2×2 grid, C2PA softwareAgent
+             “Grok Imagine”). Chromium rasterization does not copy JPEG pixels.
+Tool:        Hand-authored SVG; Grok Imagine for the reference composition
+License:     Apache-2.0 (vector is original; composition Created with Grok)
+Status:      Original project asset; distributed under Apache-2.0
+
+Name:        icons/icon16.png, icons/icon48.png, icons/icon128.png
+Used by:     manifest.json icons and action.default_icon; HTML favicons
+How made:    Programmatically rasterized from icons/opentab-icon.svg with
+             Playwright’s Chromium (128px downscaled with Lanczos; 48px and
+             16px use simplified SVG so the tab and 2×2 grid stay readable).
+             Transparent corners; the JPEG white margin is not in these PNGs.
+Tool:        Playwright Chromium; SVG as above
+License:     Apache-2.0
+Status:      Original project assets; distributed under Apache-2.0
 
 Name:        Inline Google / Bing / GitHub SVG marks in home.html (search engine switch)
 License:     Third-party trademarks
