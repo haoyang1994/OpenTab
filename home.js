@@ -36,6 +36,67 @@
   const LEGACY_PRESET_FOLDER_IDS = new Set(['folder-blog', 'folder-tools', 'folder-ops']);
 
   const DEFAULT_GRADIENT = 'linear-gradient(135deg, #09203f 0%, #537895 100%)';
+  const DEFAULT_BACKGROUND = { type: 'bing', value: '', source: '' };
+  const PRESET_IMAGE_BACKGROUNDS = [
+    'assets/default_background/bg-mountain-dawn.jpg',
+    'assets/default_background/bg-forest-golden.jpg',
+    'assets/default_background/bg-ocean-night.jpg'
+  ];
+  const PRESET_IMAGE_BACKGROUND_SET = new Set(PRESET_IMAGE_BACKGROUNDS);
+  const LEGACY_PRESET_IMAGE_MAP = {
+    'assets/default_background/pexels-pixabay-40896.jpg': 'assets/default_background/bg-forest-golden.jpg',
+    'assets/default_background/pexels-elina-sazonova-4275497.jpg': 'assets/default_background/bg-mountain-dawn.jpg',
+    'assets/default_background/pexels-souvenirpixels-417074.jpg': 'assets/default_background/bg-mountain-dawn.jpg'
+  };
+
+  function bundledBackgroundPath(value) {
+    if (typeof value !== 'string' || !value) return '';
+    if (/^(data:|https?:|blob:)/i.test(value)) return '';
+    const cleaned = value.split(/[?#]/)[0].replace(/\\/g, '/');
+    const marker = 'assets/default_background/';
+    const idx = cleaned.indexOf(marker);
+    if (idx !== -1) return cleaned.slice(idx);
+    const file = cleaned.split('/').pop() || '';
+    if (!file) return '';
+    const candidate = marker + file;
+    if (PRESET_IMAGE_BACKGROUND_SET.has(candidate) || LEGACY_PRESET_IMAGE_MAP[candidate]) {
+      return candidate;
+    }
+    return '';
+  }
+
+  function migrateBackground(background) {
+    const bg = background && typeof background === 'object'
+      ? {
+        type: background.type || DEFAULT_BACKGROUND.type,
+        value: typeof background.value === 'string' ? background.value : '',
+        source: background.source || ''
+      }
+      : { ...DEFAULT_BACKGROUND };
+
+    if (bg.type !== 'image') return bg;
+
+    const bundled = bundledBackgroundPath(bg.value);
+    if (!bundled) return bg;
+
+    if (PRESET_IMAGE_BACKGROUND_SET.has(bundled)) {
+      if (bg.value === bundled) return bg;
+      return { type: 'image', value: bundled, source: bg.source || 'preset-image' };
+    }
+
+    const mapped = LEGACY_PRESET_IMAGE_MAP[bundled];
+    if (mapped) {
+      return { type: 'image', value: mapped, source: 'preset-image' };
+    }
+
+    return { ...DEFAULT_BACKGROUND };
+  }
+
+  function backgroundsEqual(a, b) {
+    return Boolean(
+      a && b && a.type === b.type && a.value === b.value && a.source === b.source
+    );
+  }
 
   const SOLAR_TERM_NAMES = [
     '小寒', '大寒', '立春', '雨水', '惊蛰', '春分', '清明', '谷雨', '立夏', '小满', '芒种', '夏至',
@@ -423,6 +484,7 @@
     normalized.particlesEnabled = Boolean(normalized.particlesEnabled);
     normalized.gradientFlow = Boolean(normalized.gradientFlow);
     normalized.minimalMode = Boolean(normalized.minimalMode);
+    normalized.background = migrateBackground(normalized.background);
     return normalized;
   }
 
@@ -1717,7 +1779,12 @@
           }))
           : [];
 
-        if (result.background) state.background = result.background;
+        let backgroundChanged = false;
+        if (result.background) {
+          const migratedBackground = migrateBackground(result.background);
+          backgroundChanged = !backgroundsEqual(migratedBackground, result.background);
+          state.background = migratedBackground;
+        }
         if (result.searchEngine) state.searchEngine = result.searchEngine;
         if (Array.isArray(result.todos)) {
           state.todos = result.todos
@@ -1772,6 +1839,8 @@
         renderIconsForCurrentFolder(false);
         renderTodos();
         setTodoPanelOpen(state.todoPanelOpen);
+
+        if (backgroundChanged) saveState();
 
         if (!state.background.value && state.background.type === 'bing') {
           fetchRandomBackground();

@@ -17,6 +17,12 @@ const VENDOR_FILES = [
   'vendor/xterm-addon-fit/xterm-addon-fit.js'
 ];
 
+const PRESET_BACKGROUNDS = [
+  'assets/default_background/bg-mountain-dawn.jpg',
+  'assets/default_background/bg-forest-golden.jpg',
+  'assets/default_background/bg-ocean-night.jpg'
+];
+
 function assertVendoredRuntimeAssets() {
   const htmlFiles = fs.readdirSync(EXTENSION_PATH).filter(name => name.endsWith('.html'));
   assert.ok(htmlFiles.length > 0, 'expected HTML files in the extension root');
@@ -37,6 +43,27 @@ function assertVendoredRuntimeAssets() {
   }
 }
 
+function assertReplacementAssets() {
+  const homeHtml = fs.readFileSync(path.join(EXTENSION_PATH, 'home.html'), 'utf8');
+  assert.equal(homeHtml.includes('pexels'), false, 'home.html should not reference Pexels files');
+  for (const relativePath of PRESET_BACKGROUNDS) {
+    assert.ok(homeHtml.includes(relativePath), `home.html should reference ${relativePath}`);
+    assert.ok(
+      fs.existsSync(path.join(EXTENSION_PATH, relativePath)),
+      `missing bundled background: ${relativePath}`
+    );
+  }
+
+  const backgroundDir = path.join(EXTENSION_PATH, 'assets/default_background');
+  for (const name of fs.readdirSync(backgroundDir)) {
+    assert.equal(name.toLowerCase().includes('pexels'), false, `legacy Pexels file still present: ${name}`);
+  }
+
+  for (const name of ['icon16.png', 'icon48.png', 'icon128.png', 'opentab-icon.svg']) {
+    assert.ok(fs.existsSync(path.join(EXTENSION_PATH, 'icons', name)), `missing icon: ${name}`);
+  }
+}
+
 function resolveHeadless(defaultValue) {
   if (process.env.HEADLESS === 'false') return false;
   if (process.env.HEADLESS === 'true') return true;
@@ -45,6 +72,7 @@ function resolveHeadless(defaultValue) {
 
 async function runExtensionE2E() {
   assertVendoredRuntimeAssets();
+  assertReplacementAssets();
 
   const headless = resolveHeadless(false);
   const context = await chromium.launchPersistentContext('', {
@@ -148,12 +176,71 @@ async function runExtensionE2E() {
     const isAmPmVisible = await page.locator('#ampm').isVisible();
     assert.equal(isAmPmVisible, false, 'AM/PM should be hidden in 24h mode');
 
+    await page.click('.tab-btn[data-type="image"]');
+    await page.waitForSelector('#image-section.active', { timeout: 5000 });
+    const imagePresets = page.locator('#image-presets .preset-item');
+    assert.equal(await imagePresets.count(), 3, 'should ship three bundled image presets');
+    for (let i = 0; i < PRESET_BACKGROUNDS.length; i += 1) {
+      await imagePresets.nth(i).click();
+      await page.waitForTimeout(250);
+      const bgImage = await page.locator('#background-layer').evaluate((el) => getComputedStyle(el).backgroundImage);
+      assert.ok(
+        bgImage.includes(path.basename(PRESET_BACKGROUNDS[i])),
+        `preset ${i} should apply ${PRESET_BACKGROUNDS[i]}, got ${bgImage}`
+      );
+    }
+
     const unexpectedConsoleErrors = consoleErrors.filter(error => !error.includes('Failed to fetch Bing image'));
     assert.equal(
       unexpectedConsoleErrors.length,
       0,
       `Console errors detected: ${unexpectedConsoleErrors.join(' | ')}`
     );
+
+    await serviceWorker.evaluate(() => new Promise((resolve) => {
+      chrome.storage.local.set({
+        background: {
+          type: 'image',
+          value: 'assets/default_background/pexels-souvenirpixels-417074.jpg',
+          source: 'preset-image'
+        }
+      }, resolve);
+    }));
+
+    const migratedPage = await context.newPage();
+    const migratedErrors = [];
+    const migratedFailed = [];
+    migratedPage.on('console', (msg) => {
+      if (msg.type() === 'error') migratedErrors.push(msg.text());
+    });
+    migratedPage.on('requestfailed', (request) => {
+      migratedFailed.push(request.url());
+    });
+    await migratedPage.goto(`chrome-extension://${extensionId}/home.html`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 15000
+    });
+    await migratedPage.waitForSelector('#time', { timeout: 10000 });
+    await migratedPage.waitForTimeout(400);
+    const migratedBg = await migratedPage.locator('#background-layer').evaluate(
+      (el) => getComputedStyle(el).backgroundImage
+    );
+    assert.ok(
+      migratedBg.includes('bg-mountain-dawn.jpg'),
+      `legacy Pexels path should migrate to the mountain preset, got ${migratedBg}`
+    );
+    const migratedUnexpected = migratedErrors.filter((error) => !error.includes('Failed to fetch Bing image'));
+    assert.equal(
+      migratedUnexpected.length,
+      0,
+      `Migration console errors: ${migratedUnexpected.join(' | ')}`
+    );
+    assert.equal(
+      migratedFailed.filter((url) => url.includes('pexels')).length,
+      0,
+      `Legacy Pexels asset was requested: ${migratedFailed.join(' | ')}`
+    );
+    await migratedPage.close();
 
     console.log('E2E passed: extension newtab UI loaded and core interactions work.');
   } finally {
