@@ -67,7 +67,31 @@ function addDays(date, days) {
   if (master) {
     assert.deepEqual(local.permissions, master.permissions);
     assert.deepEqual(local.host_permissions, master.host_permissions);
-    assert.deepEqual(local.content_security_policy, master.content_security_policy);
+    function cspSources(csp, directive) {
+      const chunk = String(csp || '')
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part === directive || part.startsWith(`${directive} `));
+      if (!chunk) return [];
+      return chunk.slice(directive.length).trim().split(/\s+/).filter(Boolean);
+    }
+    function stripImg(csp) {
+      return String(csp || '')
+        .split(';')
+        .map((part) => part.trim())
+        .filter((part) => part && !part.startsWith('img-src'))
+        .join('; ');
+    }
+    const localCsp = local.content_security_policy.extension_pages;
+    const masterCsp = master.content_security_policy.extension_pages;
+    const localImg = cspSources(localCsp, 'img-src');
+    const masterImg = cspSources(masterCsp, 'img-src');
+    assert.ok(localImg.includes('blob:'), 'U4 img-src must include blob:');
+    assert.deepEqual(
+      localImg.filter((src) => src !== 'blob:').sort(),
+      masterImg.filter((src) => src !== 'blob:').sort()
+    );
+    assert.equal(stripImg(localCsp), stripImg(masterCsp));
   }
   console.log('U4 passed');
 }
@@ -85,7 +109,42 @@ function addDays(date, days) {
   const search = fs.readFileSync(path.join(root, 'search.js'), 'utf8');
   assert.match(search, /listEngines/);
   assert.match(search, /selectEngine/);
+  const homeJs = fs.readFileSync(path.join(root, 'home.js'), 'utf8');
+  assert.match(homeJs, /function applyBootMirror/);
+  assert.match(homeJs, /showSeconds: state\.showSeconds/);
   console.log('U5 passed');
+}
+
+{
+  const code = fs.readFileSync(path.join(root, 'boot.js'), 'utf8');
+  const el = {
+    style: { setProperty() {}, background: '', backgroundImage: '', backgroundSize: '', backgroundPosition: '' },
+    classList: { add() {}, remove() {} }
+  };
+  const context = {
+    document: {
+      documentElement: el,
+      body: el,
+      getElementById: () => null
+    },
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    matchMedia: () => ({ matches: true }),
+    performance: { mark() {}, measure() {} },
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
+    requestAnimationFrame: (fn) => { fn(); return 1; },
+    MutationObserver: class { observe() {} disconnect() {} },
+    console
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(code, context);
+  const loc = context.OpenTabBoot.isLocalAsset;
+  assert.equal(loc('assets/default_background/default.webp'), true);
+  assert.equal(loc('chrome-extension://abc/assets/x.webp'), true);
+  assert.equal(loc('https://cdn.example/assets/x.webp'), false);
+  assert.equal(loc('/assets/x.webp'), false);
+  assert.equal(loc('https://www.bing.com/th?id=OHR.x.jpg'), false);
+  console.log('isLocalAsset passed');
 }
 
 console.log('first-screen unit tests passed');

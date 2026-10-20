@@ -5,6 +5,18 @@
   let lastBlob = '';
   let lastMeta = { kind: 'image', css: '', lqip: '', color: '' };
   let paintGen = 0;
+  let dailyInflight = null;
+  let pendingAfterState = false;
+
+  function revokeBlob(url) {
+    if (!url) return;
+    try { URL.revokeObjectURL(url); } catch (e) {}
+  }
+
+  function adoptBlob(next) {
+    if (lastBlob && lastBlob !== next) revokeBlob(lastBlob);
+    lastBlob = next || '';
+  }
 
   function themeColor() {
     try {
@@ -127,6 +139,7 @@
 
     if (bg.type === 'gradient') {
       stopVideo();
+      adoptBlob('');
       layer.style.backgroundImage = 'none';
       layer.style.background = value || ctx.DEFAULT_GRADIENT;
       lastMeta = { kind: 'gradient', css: value || ctx.DEFAULT_GRADIENT, lqip: '', color: '' };
@@ -135,6 +148,7 @@
     }
 
     if (ctx.isVideoBackground(value)) {
+      adoptBlob('');
       lastMeta = { kind: 'video', css: '', lqip: '', color: lastMeta.color || themeColor() };
       layer.style.background = lastMeta.color;
       layer.style.backgroundImage = 'none';
@@ -154,6 +168,7 @@
     const url = value || fallback;
     if (g.OpenTabBoot.isLocalAsset(url)) {
       if (gen !== paintGen) return;
+      adoptBlob('');
       paintPhoto(`url(${url})`, fade);
       lastMeta = { kind: 'image', css: url, lqip: lastMeta.lqip || '', color: lastMeta.color || themeColor() };
       ctx.writeBootMirror();
@@ -179,7 +194,10 @@
       const sameOrigin = resolved.fromCache || resolved.local || /^(data:|blob:|chrome-extension:)/.test(resolved.display || '');
       const extra = sameOrigin ? lqipFromImage(img) : { lqip: '', color: '' };
       if (!extra.color) extra.color = themeColor();
-      if (gen !== paintGen) return;
+      if (gen !== paintGen) {
+        revokeBlob(resolved.blobUrl);
+        return;
+      }
       paintPhoto(`url(${resolved.display})`, fade);
       lastMeta = {
         kind: bg.type === 'bing' ? 'bing' : 'image',
@@ -187,14 +205,16 @@
         lqip: extra.lqip,
         color: extra.color
       };
-      lastBlob = resolved.blobUrl || lastBlob;
+      adoptBlob(resolved.blobUrl || '');
       ctx.writeBootMirror();
     } catch (e) {
       console.warn('Failed to refresh background:', e);
+      revokeBlob(resolved && resolved.blobUrl);
       if (url !== fallback && gen === paintGen) {
         try {
           const img = await loadImage(fallback);
           if (gen !== paintGen) return;
+          adoptBlob('');
           paintPhoto(`url(${fallback})`, false);
           lastMeta = { kind: 'image', css: fallback, lqip: '', color: themeColor() };
           ctx.writeBootMirror();
@@ -247,7 +267,7 @@
     }
   }
 
-  async function refreshDailyIfNeeded() {
+  async function doRefreshDailyIfNeeded() {
     const bg = ctx.state.background || {};
     if (bg.type !== 'bing') return;
     if (!g.OpenTabBing.shouldCheck(bg.bing, new Date())) {
@@ -294,15 +314,27 @@
     }
   }
 
-  function afterDcl(fn) {
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
-    else fn();
+  function refreshDailyIfNeeded() {
+    if (dailyInflight) return dailyInflight;
+    dailyInflight = doRefreshDailyIfNeeded().finally(() => { dailyInflight = null; });
+    return dailyInflight;
   }
 
   function afterStateLoaded() {
-    const bg = ctx.state.background || {};
-    if (bg.type === 'bing') afterDcl(() => refreshDailyIfNeeded());
-    else updateBackground({ fade: false });
+    const run = () => {
+      pendingAfterState = false;
+      const bg = ctx.state.background || {};
+      if (bg.type === 'bing') refreshDailyIfNeeded();
+      else updateBackground({ fade: false });
+    };
+    if (document.readyState === 'loading') {
+      if (!pendingAfterState) {
+        pendingAfterState = true;
+        document.addEventListener('DOMContentLoaded', run, { once: true });
+      }
+      return;
+    }
+    run();
   }
 
   function describeBackground() {

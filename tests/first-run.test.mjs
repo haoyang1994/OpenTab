@@ -14,6 +14,57 @@ fs.mkdirSync(ARTIFACTS, { recursive: true });
 const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
 const BING_JPG = fs.readFileSync(path.join(__dirname, 'fixtures/bing-test.jpg'));
 const BANNED = ['北京 (UTC+8)', '10:30', '上午好，今天也很顺利。', '2026年3月21日', '定位中'];
+const E4_TZ = 'America/New_York';
+const E4_FORMAT = '24h';
+
+function expectedClockAt(at, tz = E4_TZ, clockFormat = E4_FORMAT, showSeconds = false) {
+  const options = {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: clockFormat === '12h'
+  };
+  if (showSeconds) options.second = '2-digit';
+  const time = new Intl.DateTimeFormat('zh-CN', options)
+    .formatToParts(at)
+    .filter((part) => part.type !== 'dayPeriod')
+    .map((part) => part.value)
+    .join('')
+    .trim();
+  const date = at.toLocaleDateString('zh-CN', {
+    timeZone: tz,
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long'
+  });
+  return { time, date };
+}
+
+function clockSampleMatches(sample) {
+  const at = new Date(sample.at);
+  for (const delta of [-1000, 0, 1000]) {
+    const expected = expectedClockAt(new Date(at.getTime() + delta));
+    if (sample.time === expected.time && (!sample.date || sample.date === expected.date)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertClockSample(sample, label) {
+  assert.ok(sample, `${label} missing`);
+  assert.ok(sample.time, `${label} empty time`);
+  assert.ok(sample.date, `${label} empty date`);
+  assert.match(sample.time, /^\d{2}:\d{2}$/, `${label} time ${sample.time}`);
+  const expected = expectedClockAt(new Date(sample.at));
+  assert.ok(
+    clockSampleMatches(sample),
+    `${label} time=${sample.time} date=${sample.date} at=${sample.at} expected≈${expected.time} ${expected.date}`
+  );
+  assert.equal(sample.ampm, '', `${label} ampm text`);
+  assert.equal(sample.ampmDisplay, 'none', `${label} ampm display`);
+}
 
 function ymd(date = new Date()) {
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -172,62 +223,189 @@ async function run() {
 
   {
     const observer = () => {
-      window.__otSeen = { tz: [], time: [], welcome: [] };
-      const watch = (id, key) => {
-        const rec = () => {
-          const el = document.getElementById(id);
-          if (el) window.__otSeen[key].push(el.textContent || '');
-        };
-        const obs = new MutationObserver(rec);
-        const start = () => {
-          const el = document.getElementById(id);
-          if (!el) return false;
-          obs.observe(el, { childList: true, characterData: true, subtree: true });
-          rec();
-          return true;
-        };
-        if (!start()) {
-          const boot = new MutationObserver(() => { if (start()) boot.disconnect(); });
-          boot.observe(document.documentElement, { childList: true, subtree: true });
+      try {
+        const TZ = 'America/New_York';
+        window.__otLog = [];
+        window.__otFirstFrame = null;
+        window.__otPreLoadState = null;
+        window.__otInitErr = null;
+        function expectedNow() {
+          const at = Date.now();
+          const n = new Date(at);
+          const time = new Intl.DateTimeFormat('zh-CN', {
+            timeZone: TZ,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }).formatToParts(n).filter((p) => p.type !== 'dayPeriod').map((p) => p.value).join('').trim();
+          const date = n.toLocaleDateString('zh-CN', {
+            timeZone: TZ,
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            weekday: 'long'
+          });
+          return { time, date, at };
         }
-      };
-      document.addEventListener('DOMContentLoaded', () => {
-        const layer = document.getElementById('background-layer');
-        window.__otDcl = {
-          themeLight: document.body.classList.contains('theme-light'),
-          bg: layer ? (layer.getAttribute('style') || '') + layer.style.background + layer.style.backgroundImage : '',
-          tz: document.getElementById('timezone-label')?.textContent || '',
-          time: document.getElementById('time')?.textContent || ''
+        function snap(tag) {
+          const timeEl = document.getElementById('time');
+          const ampmEl = document.getElementById('ampm');
+          const dateEl = document.getElementById('date');
+          const exp = expectedNow();
+          return {
+            tag,
+            time: timeEl ? (timeEl.textContent || '').trim() : '',
+            ampm: ampmEl ? (ampmEl.textContent || '').trim() : '',
+            ampmDisplay: ampmEl ? (ampmEl.style.display || '') : '',
+            date: dateEl ? (dateEl.textContent || '').trim() : '',
+            expectedTime: exp.time,
+            expectedDate: exp.date,
+            at: exp.at
+          };
+        }
+        function remember(rec) {
+          window.__otLog.push(rec);
+          return rec;
+        }
+        const captureFirst = () => {
+          const s = snap('first-frame');
+          if (s.time && !window.__otFirstFrame) {
+            window.__otFirstFrame = remember(s);
+          }
+          return Boolean(window.__otFirstFrame);
         };
-      });
-      watch('timezone-label', 'tz');
-      watch('time', 'time');
-      watch('welcome-text', 'welcome');
+        function wrapStorage() {
+          if (!window.chrome || !chrome.storage || !chrome.storage.local || chrome.storage.local.__otWrapped) return;
+          const orig = chrome.storage.local.get.bind(chrome.storage.local);
+          const wrapped = function (keys, callback) {
+            const isLoadState = Array.isArray(keys)
+              && keys.includes('timezone')
+              && keys.includes('clockFormat')
+              && keys.includes('icons');
+            const before = (result) => {
+              if (isLoadState && !window.__otPreLoadState) {
+                window.__otPreLoadState = remember(snap('pre-loadState'));
+              }
+              return result;
+            };
+            if (typeof callback === 'function') {
+              return orig(keys, function (result) {
+                before(result);
+                callback(result);
+              });
+            }
+            const ret = orig(keys);
+            if (ret && typeof ret.then === 'function') {
+              return ret.then((result) => {
+                before(result);
+                return result;
+              });
+            }
+            return ret;
+          };
+          try {
+            chrome.storage.local.get = wrapped;
+          } catch (e) {
+            Object.defineProperty(chrome.storage.local, 'get', { configurable: true, value: wrapped });
+          }
+          chrome.storage.local.__otWrapped = true;
+        }
+        wrapStorage();
+        try {
+          const root = document.documentElement || document;
+          const firstObs = new MutationObserver(() => { if (captureFirst()) firstObs.disconnect(); });
+          firstObs.observe(root, { childList: true, characterData: true, subtree: true });
+        } catch (e) {
+          window.__otInitErr = String(e && e.stack || e);
+        }
+        (function pump() {
+          if (captureFirst()) return;
+          if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pump);
+          else setTimeout(pump, 0);
+        }());
+        document.addEventListener('DOMContentLoaded', () => {
+          wrapStorage();
+          captureFirst();
+          const layer = document.getElementById('background-layer');
+          const ampmEl = document.getElementById('ampm');
+          window.__otDcl = {
+            themeLight: document.body.classList.contains('theme-light'),
+            bg: layer ? (layer.getAttribute('style') || '') + layer.style.background + layer.style.backgroundImage : '',
+            tz: document.getElementById('timezone-label')?.textContent || '',
+            time: document.getElementById('time')?.textContent || '',
+            ampm: ampmEl ? (ampmEl.textContent || '').trim() : '',
+            ampmDisplay: ampmEl ? (ampmEl.style.display || '') : '',
+            date: document.getElementById('date')?.textContent || '',
+            at: Date.now()
+          };
+        });
+      } catch (e) {
+        window.__otInitErr = String(e && e.stack || e);
+      }
     };
     const ext = await launchExt();
     await waitStorage(ext.serviceWorker, (value) => Boolean(value?.background));
     await storageSet(ext.serviceWorker, {
       themeMode: 'light',
       background: { type: 'gradient', value: 'linear-gradient(135deg, #09203f 0%, #537895 100%)', source: 'gradient' },
-      timezone: 'America/New_York',
-      clockFormat: '24h'
+      timezone: E4_TZ,
+      clockFormat: E4_FORMAT,
+      showSeconds: false
     });
     await openHome(ext.page, ext.extensionId);
     await ext.page.waitForFunction(() => (document.getElementById('time')?.textContent || '').trim().length > 0, null, { timeout: 8000 });
-    await ext.page.waitForTimeout(400);
+    await ext.page.waitForFunction(() => {
+      try {
+        const data = JSON.parse(localStorage.getItem('opentab.boot.v1') || 'null');
+        return data
+          && data.tz === 'America/New_York'
+          && data.clockFormat === '24h'
+          && data.showSeconds === false;
+      } catch {
+        return false;
+      }
+    }, null, { timeout: 8000 });
     await ext.context.addInitScript(observer);
     ext.net.bing.length = 0;
     await ext.page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
-    await ext.page.waitForFunction(() => window.__otDcl, null, { timeout: 8000 });
+    await ext.page.waitForFunction(
+      () => window.__otFirstFrame && window.__otPreLoadState && window.__otDcl,
+      null,
+      { timeout: 8000 }
+    );
     const snap = await ext.page.evaluate(() => window.__otDcl);
-    const seen = await ext.page.evaluate(() => window.__otSeen);
+    const seen = await ext.page.evaluate(() => ({
+      first: window.__otFirstFrame,
+      pre: window.__otPreLoadState,
+      log: window.__otLog
+    }));
     assert.equal(snap.themeLight, true, 'E4 DCL theme-light');
     assert.match(String(snap.bg), /linear-gradient/);
     assert.match(String(snap.tz), /美东 \(UTC-5\)|美东 \(UTC-4\)/);
-    assert.match(String(snap.time).trim(), /^\d{2}:\d{2}$/);
-    const texts = [...seen.tz, ...seen.time, ...seen.welcome, snap.tz, snap.time].join('\n');
-    for (const banned of BANNED) {
-      assert.equal(texts.includes(banned), false, `E4 saw ${banned}`);
+    assertClockSample(seen.first, 'E4 first frame');
+    assertClockSample(seen.pre, 'E4 before loadState');
+    assertClockSample({
+      time: String(snap.time || '').trim(),
+      date: String(snap.date || '').trim(),
+      ampm: String(snap.ampm || '').trim(),
+      ampmDisplay: snap.ampmDisplay,
+      at: snap.at
+    }, 'E4 DCL');
+    for (const rec of seen.log) {
+      if (rec.ampm === 'AM' || rec.ampm === 'PM') {
+        assert.equal(true, false, `E4 ${rec.tag} flashed ${rec.ampm} at ${rec.at}`);
+      }
+      if (rec.time) {
+        assert.match(rec.time, /^\d{2}:\d{2}$/, `E4 ${rec.tag} time ${rec.time}`);
+        assert.ok(clockSampleMatches(rec), `E4 ${rec.tag} wrong time ${rec.time} date=${rec.date} expected≈${rec.expectedTime}`);
+      }
+      if (rec.date) {
+        assert.ok(clockSampleMatches(rec), `E4 ${rec.tag} wrong date ${rec.date}`);
+      }
+      for (const banned of BANNED) {
+        const blob = `${rec.time}\n${rec.ampm}\n${rec.date}`;
+        assert.equal(blob.includes(banned), false, `E4 ${rec.tag} saw ${banned}`);
+      }
     }
     await ext.page.screenshot({ path: path.join(ARTIFACTS, 'ac3_light_theme.png'), fullPage: true });
     console.log('E4 passed');

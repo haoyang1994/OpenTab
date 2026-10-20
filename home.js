@@ -1034,8 +1034,21 @@
       bg: OpenTabBingCache.describeBackground(),
       tz: state.timezone,
       tzLabel: tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone,
-      clockFormat: state.clockFormat
+      clockFormat: state.clockFormat,
+      showSeconds: state.showSeconds
     });
+  }
+
+  function applyBootMirror() {
+    const mirror = OpenTabBoot.readMirror();
+    if (!mirror) return;
+    if (mirror.tz) state.timezone = mirror.tz;
+    if (mirror.clockFormat === '12h' || mirror.clockFormat === '24h') {
+      state.clockFormat = mirror.clockFormat;
+    }
+    if (mirror.showSeconds !== undefined) state.showSeconds = Boolean(mirror.showSeconds);
+    if (mirror.tzLabel) elements.timezoneLabel.textContent = mirror.tzLabel;
+    updateClock();
   }
 
   function createIconWidget(icon) {
@@ -2393,10 +2406,10 @@
     loadState();
   });
 
+  applyBootMirror();
   loadState();
   fetchWeather();
   weatherTimerId = setInterval(fetchWeather, 30 * 60 * 1000);
-  updateClock();
   clockTimerId = setInterval(updateClock, 1000);
   window.addEventListener('beforeunload', cleanupRuntimeResources);
 })();

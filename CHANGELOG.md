@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `currentFolderId` stays on the local device and is not written to `chrome.storage.sync`
 - Startup migrates leftover plaintext SSH secrets into the encrypted vault
 - Importing or restoring a backup no longer deletes SSH secrets that were only absent from the file (BUG-020)
+- Clock no longer flashes the host timezone or 12-hour time over the boot mirror before storage loads (BUG-024)
 
 ### Changed
 

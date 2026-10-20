@@ -169,6 +169,7 @@ assert.ok(
 assert.ok(connectSrc.includes('https://wttr.in'), 'weather fetch needs wttr.in in connect-src');
 assert.ok(imgSrc.includes("'self'"), 'img-src must keep self');
 assert.ok(imgSrc.includes('data:'), 'img-src must keep data: for uploads');
+assert.ok(imgSrc.includes('blob:'), 'img-src must allow blob: for Bing cache object URLs');
 assert.ok(
   imgSrc.includes('https:'),
   'AC7: img-src retains https: (product: narrow connect-src, keep img-src https:)'
@@ -180,6 +181,8 @@ assert.equal(
 );
 
 const homeJs = read('home.js');
+assert.match(homeJs, /function applyBootMirror/, 'home.js must apply the boot mirror before loadState');
+assert.match(homeJs, /showSeconds: state\.showSeconds/, 'boot mirror must include showSeconds');
 const nativeDialogs = [...homeJs.matchAll(/\b(prompt|confirm|alert)\s*\(/g)].map((match) => match[0]);
 assert.ok(
   nativeDialogs.every((call) => call.startsWith('alert')),

@@ -9,7 +9,8 @@ function absoluteBingUrl(url) {
   return url.startsWith('http') ? url : `https://www.bing.com${url}`;
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason !== 'install') return;
   chrome.storage.local.get(['icons', 'background', 'clockFormat', 'showSeconds'], (result) => {
     if (!result.icons) {
       chrome.storage.local.set({
