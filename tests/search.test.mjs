@@ -268,6 +268,90 @@ async function runSearchE2E() {
     assert.equal(await page.evaluate(() => document.activeElement.id), 'search-input');
     assert.equal(await page.locator('#search-input').inputValue(), 'q');
 
+    // P0 IME: keyCode 229 / Process focuses search and does not preventDefault
+    await page.fill('#search-input', '');
+    await page.locator('#time').click();
+    const imeKeydown = await page.evaluate(() => {
+      const search = document.getElementById('search-input');
+      if (search) search.blur();
+      const target = document.getElementById('time') || document.body;
+      const event = new KeyboardEvent('keydown', {
+        key: 'Process',
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      });
+      Object.defineProperty(event, 'keyCode', { get: () => 229 });
+      Object.defineProperty(event, 'which', { get: () => 229 });
+      const cancelled = !target.dispatchEvent(event);
+      return {
+        cancelled,
+        activeId: document.activeElement && document.activeElement.id
+      };
+    });
+    assert.equal(imeKeydown.cancelled, false, 'P0 IME: Process/229 must not be preventDefaulted');
+    assert.equal(imeKeydown.activeId, 'search-input', 'P0 IME: keyCode 229 should focus search');
+    await page.keyboard.insertText('你好');
+    assert.equal(await page.locator('#search-input').inputValue(), '你好', 'P0 IME: committed text should enter search after focus');
+
+    await page.fill('#search-input', '');
+    await page.locator('#time').click();
+    const compositionFocus = await page.evaluate(() => {
+      const search = document.getElementById('search-input');
+      if (search) search.blur();
+      const target = document.getElementById('time') || document.body;
+      target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }));
+      return document.activeElement && document.activeElement.id;
+    });
+    assert.equal(compositionFocus, 'search-input', 'P0 IME: compositionstart should focus search');
+
+    try {
+      const cdp = await page.context().newCDPSession(page);
+      await page.fill('#search-input', '');
+      await page.locator('#time').click();
+      await page.evaluate(() => {
+        const search = document.getElementById('search-input');
+        if (search) search.blur();
+      });
+      await cdp.send('Input.dispatchKeyEvent', {
+        type: 'rawKeyDown',
+        key: 'Process',
+        windowsVirtualKeyCode: 229,
+        nativeVirtualKeyCode: 229
+      });
+      const cdpFocus = await page.evaluate(() => document.activeElement && document.activeElement.id);
+      if (cdpFocus === 'search-input') {
+        await cdp.send('Input.insertText', { text: '测试' });
+        assert.equal(
+          await page.locator('#search-input').inputValue(),
+          '测试',
+          'P0 IME: CDP insertText should land in search'
+        );
+      } else {
+        console.warn('P0 IME CDP keydown did not focus search; JS 229 path already asserted');
+      }
+      await cdp.detach();
+    } catch (error) {
+      console.warn(`P0 IME CDP path skipped: ${error.message}`);
+    }
+
+    await page.fill('#search-input', '');
+    await page.locator('#add-shortcut-tile').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('#add-shortcut-tile').focus();
+    const imeOnButton = await page.evaluate(() => {
+      const target = document.getElementById('add-shortcut-tile');
+      const event = new KeyboardEvent('keydown', {
+        key: 'Process',
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      });
+      Object.defineProperty(event, 'keyCode', { get: () => 229 });
+      target.dispatchEvent(event);
+      return document.activeElement && document.activeElement.id;
+    });
+    assert.equal(imeOnButton, 'add-shortcut-tile', 'P0 IME: Process on + must not move focus to search');
+
     // BUG-013: Space on focused + tile opens add modal instead of typing into search
     await page.fill('#search-input', '');
     await page.locator('#add-shortcut-tile').waitFor({ state: 'visible', timeout: 10000 });

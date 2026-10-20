@@ -133,7 +133,7 @@ assert.ok(imgSrc.includes("'self'"), 'img-src must keep self');
 assert.ok(imgSrc.includes('data:'), 'img-src must keep data: for uploads');
 assert.ok(
   imgSrc.includes('https:'),
-  'img-src keeps https: for user shortcut favicons and custom wallpaper URLs'
+  'AC7: img-src retains https: (product: narrow connect-src, keep img-src https:)'
 );
 assert.equal(
   connectSrc.some((src) => src.includes('baidu') || src.includes('duckduckgo')),

@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Type-to-search no longer intercepts keys when focus is on a `button`, `a[href]`, `[role=button]`, `summary`, or `[tabindex]`. Space on the + tile, toast Undo, engine buttons, or the todo toggle activates the control instead of inserting a space in the search box. IME `Process` only focuses search and does not call `preventDefault`.
+- Type-to-search no longer intercepts keys when focus is on a `button`, `a[href]`, `[role=button]`, `summary`, or `[tabindex]`. Space on the + tile, toast Undo, engine buttons, or the todo toggle activates the control instead of inserting a space in the search box. Chinese IME (`Process` / keyCode 229 / `compositionstart`) focuses search without `preventDefault`.
 
 ### Changed
 
@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
-- Narrowed extension-page CSP: dropped blanket `https:` / `ws:` / `wss:` from `connect-src`. `connect-src` keeps Bing, wttr.in, and loopback WebSocket (`ws://127.0.0.1`, `ws://localhost`, and the `wss://` equivalents) for the local SSH gateway. `img-src` still allows `https:` because shortcut favicons and custom wallpaper URLs are user-chosen origins. Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
+- AC7: narrowed extension-page `connect-src` (dropped blanket `https:` / `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). `img-src` retains `https:` for shortcut favicons and custom wallpaper URLs (product decision). Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
 
 ### Breaking
 

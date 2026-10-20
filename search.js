@@ -318,6 +318,19 @@
     return Boolean(el.closest('button, a[href], [role="button"], summary, [tabindex]'));
   }
 
+  function isImeKeydown(event) {
+    if (!event) return false;
+    if (event.key === 'Process') return true;
+    return event.keyCode === 229 || event.which === 229;
+  }
+
+  function shouldIgnoreTypeToSearch(target) {
+    if (isOverlayOpen()) return true;
+    if (isEditable(target) && target !== inputEl()) return true;
+    if (isInteractiveTarget(target)) return true;
+    return false;
+  }
+
   function inputEl() {
     return $('search-input');
   }
@@ -646,18 +659,16 @@
   }
 
   function onGlobalKeydown(event) {
-    if (event.defaultPrevented || event.isComposing) return;
+    if (event.defaultPrevented) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isOverlayOpen()) return;
 
     const input = inputEl();
     if (!input) return;
     if (document.activeElement === input) return;
-    if (isEditable(event.target)) return;
-    if (isInteractiveTarget(event.target)) return;
+    if (shouldIgnoreTypeToSearch(event.target)) return;
 
-    // IME key is "Process": move focus to search but keep the event so composition can start.
-    if (event.key === 'Process') {
+    // IME: Process / keyCode 229 / isComposing → focus only, never preventDefault.
+    if (isImeKeydown(event) || event.isComposing) {
       input.focus();
       return;
     }
@@ -669,9 +680,8 @@
     insertIntoSearch(event.key);
   }
 
-  function onCompositionStart() {
-    if (isOverlayOpen()) return;
-    if (isEditable(document.activeElement) && document.activeElement !== inputEl()) return;
+  function onCompositionStart(event) {
+    if (shouldIgnoreTypeToSearch(event.target)) return;
     const input = inputEl();
     if (!input) return;
     if (document.activeElement !== input) input.focus();
