@@ -1550,7 +1550,7 @@
       if (node && add) container.insertBefore(node, add);
     });
     endDesktopDrag();
-    renderWorkspacePreview();
+    if (!elements.workspaceDrawer.classList.contains('hidden')) renderWorkspacePreview();
     if (announce) {
       const node = container.querySelector(`[data-id="${CSS.escape(iconId)}"]`);
       if (node) node.focus();

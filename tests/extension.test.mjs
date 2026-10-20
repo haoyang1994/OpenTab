@@ -56,19 +56,23 @@ function unexpectedErrors(errors) {
   ));
 }
 
-function collectPageErrors(page, errors) {
-  const onConsole = (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
-  };
+function attachErrorCollectors(target, buckets) {
   const onPageError = (error) => {
-    errors.push(String(error?.message || error));
+    buckets.page.push(String(error?.message || error));
   };
-  page.on('console', onConsole);
-  page.on('pageerror', onPageError);
+  const onConsole = (msg) => {
+    if (msg.type() === 'error') buckets.console.push(msg.text());
+  };
+  target.on('pageerror', onPageError);
+  target.on('console', onConsole);
   return () => {
-    page.off('console', onConsole);
-    page.off('pageerror', onPageError);
+    target.off('pageerror', onPageError);
+    target.off('console', onConsole);
   };
+}
+
+function collectPageErrors(page, errors) {
+  return attachErrorCollectors(page, { page: errors, console: errors });
 }
 
 function assertValidPngFile(absPath, label) {
@@ -241,15 +245,6 @@ function readMasterManifest() {
     }
   }
   return null;
-}
-
-function attachErrorCollectors(target, buckets) {
-  target.on('pageerror', error => {
-    buckets.page.push(String(error));
-  });
-  target.on('console', msg => {
-    if (msg.type() === 'error') buckets.console.push(msg.text());
-  });
 }
 
 async function waitForGrid(page) {
@@ -884,7 +879,7 @@ async function runExtensionE2E() {
             if (entry.duration > 50) window.__opentabLongTasks.push(entry.duration);
           }
         });
-        observer.observe({ type: 'longtask', buffered: true });
+        observer.observe({ type: 'longtask' });
         window.__opentabLongTaskObserver = observer;
       } catch (error) {
         window.__opentabLongTaskError = String(error);
