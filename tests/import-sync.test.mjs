@@ -594,6 +594,14 @@ async function run() {
       currentFolderId: 'folder-home'
     }
   }, async (chromeApi) => {
+    const repairedIds = [];
+    globalThis.OpenTabFolders = {
+      repairIconGraph(icons) {
+        repairedIds.push((icons || []).map((icon) => icon.id));
+        return icons;
+      }
+    };
+    try {
     await OpenTabImport.applyOpenTabBackup({
       folders: [
         { id: 'folder-home', name: '主页' },
@@ -625,6 +633,10 @@ async function run() {
     assert.equal(nested.parentId, 'folder-icon-1');
     assert.equal(nested.type, 'shortcut');
     assert.equal(chromeApi._local.currentFolderId, 'folder-work');
+    assert.deepEqual(repairedIds[0], ['folder-icon-1', 'nested-site']);
+    } finally {
+      delete globalThis.OpenTabFolders;
+    }
   });
 
   await withChrome({

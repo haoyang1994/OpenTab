@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sync shards and quota checks use UTF-8 bytes with 7800-byte chunks (BUG-018)
 - Sync shards are sized by stored `JSON.stringify(chunk)` UTF-8 bytes plus the key, so escaped quotes and backslashes cannot blow the 8KB item cap (BUG-022)
 - Enabling browser sync on a second device with local shortcuts no longer silently overwrites them; choose 用云端 / 用本机, and 用云端 first writes a local snapshot with an undo toast (BUG-023)
+- Applying remote sync data closes an open folder overlay and re-renders from storage
 - `currentFolderId` stays on the local device and is not written to `chrome.storage.sync`
 - Startup migrates leftover plaintext SSH secrets into the encrypted vault
 - Importing or restoring a backup no longer deletes SSH secrets that were only absent from the file (BUG-020)

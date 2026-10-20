@@ -1555,6 +1555,16 @@ async function runExtensionE2E() {
     await page.keyboard.press('Escape');
     await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
     console.log('search folder Enter passed');
+
+    await resetHome(page, nestedFolderFixture());
+    await page.locator(widgetSelector('pack')).click();
+    await page.waitForSelector('#folder-overlay:not(.hidden)');
+    await page.evaluate(() => {
+      document.dispatchEvent(new CustomEvent('opentab-sync-applied'));
+    });
+    await page.locator('#folder-overlay').waitFor({ state: 'hidden' });
+    console.log('sync-applied closes folder overlay');
+
     const bookmarkTree = [{
       id: '0',
       title: '',
