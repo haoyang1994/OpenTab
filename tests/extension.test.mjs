@@ -40,11 +40,67 @@ const LEGACY_PEXELS_TO_PRESET = [
 
 const TINY_PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 function unexpectedErrors(errors) {
   return errors.filter((error) => (
     !error.includes('Failed to fetch Bing image')
     && !error.includes('example.com')
   ));
+}
+
+function collectPageErrors(page, errors) {
+  const onConsole = (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text());
+  };
+  const onPageError = (error) => {
+    errors.push(String(error?.message || error));
+  };
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+  return () => {
+    page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+  };
+}
+
+function assertValidPngFile(absPath, label) {
+  const buf = fs.readFileSync(absPath);
+  assert.ok(
+    buf.length >= 33 && buf.subarray(0, 8).equals(PNG_SIGNATURE),
+    `${label} must start with a PNG signature`
+  );
+  const chunkLength = buf.readUInt32BE(8);
+  const chunkType = buf.subarray(12, 16).toString('ascii');
+  assert.equal(chunkType, 'IHDR', `${label} must have an IHDR chunk`);
+  assert.equal(chunkLength, 13, `${label} IHDR length must be 13`);
+  const width = buf.readUInt32BE(16);
+  const height = buf.readUInt32BE(20);
+  assert.ok(width > 0 && height > 0, `${label} PNG dimensions must be positive`);
+}
+
+function collectManifestIconPaths(value, iconPaths) {
+  if (!value) return;
+  if (typeof value === 'string') {
+    iconPaths.add(value);
+    return;
+  }
+  for (const rel of Object.values(value)) {
+    if (typeof rel === 'string') iconPaths.add(rel);
+  }
+}
+
+function assertManifestIconsAreValidPng() {
+  const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_PATH, 'manifest.json'), 'utf8'));
+  const iconPaths = new Set();
+  collectManifestIconPaths(manifest.icons, iconPaths);
+  collectManifestIconPaths(manifest.action?.default_icon, iconPaths);
+  assert.ok(iconPaths.size > 0, 'manifest.json must declare icons and/or action.default_icon');
+  for (const rel of iconPaths) {
+    const absPath = path.join(EXTENSION_PATH, rel);
+    assert.ok(fs.existsSync(absPath), `missing manifest icon: ${rel}`);
+    assertValidPngFile(absPath, rel);
+  }
 }
 
 async function readStoredBackground(serviceWorker) {
@@ -63,11 +119,8 @@ async function loadHomeWithBackground(page, serviceWorker, extensionId, backgrou
   await writeStoredBackground(serviceWorker, background);
   const errors = [];
   const failed = [];
-  const onConsole = (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
-  };
   const onFailed = (request) => failed.push(request.url());
-  page.on('console', onConsole);
+  const stopCollecting = collectPageErrors(page, errors);
   page.on('requestfailed', onFailed);
   try {
     await page.goto(`chrome-extension://${extensionId}/home.html`, {
@@ -79,7 +132,7 @@ async function loadHomeWithBackground(page, serviceWorker, extensionId, backgrou
     const stored = await readStoredBackground(serviceWorker);
     return { stored, errors, failed };
   } finally {
-    page.off('console', onConsole);
+    stopCollecting();
     page.off('requestfailed', onFailed);
   }
 }
@@ -143,6 +196,7 @@ function resolveHeadless(defaultValue) {
 async function runExtensionE2E() {
   assertVendoredRuntimeAssets();
   assertReplacementAssets();
+  assertManifestIconsAreValidPng();
 
   const headless = resolveHeadless(false);
   const context = await chromium.launchPersistentContext('', {
@@ -233,7 +287,7 @@ async function runExtensionE2E() {
     assert.equal(
       sshConsoleErrors.length,
       0,
-      `SSH terminal console errors: ${sshConsoleErrors.join(' | ')}`
+      `SSH terminal console/page errors: ${sshConsoleErrors.join(' | ')}`
     );
     await sshPage.close();
 
@@ -281,7 +335,7 @@ async function runExtensionE2E() {
       assert.equal(
         unexpectedErrors(result.errors).length,
         0,
-        `${legacy} console errors: ${unexpectedErrors(result.errors).join(' | ')}`
+        `${legacy} console/page errors: ${unexpectedErrors(result.errors).join(' | ')}`
       );
     }
 
@@ -301,7 +355,7 @@ async function runExtensionE2E() {
     assert.equal(
       unexpectedErrors(absoluteResult.errors).length,
       0,
-      `chrome-extension URL console errors: ${unexpectedErrors(absoluteResult.errors).join(' | ')}`
+      `chrome-extension URL console/page errors: ${unexpectedErrors(absoluteResult.errors).join(' | ')}`
     );
 
     const unknownResult = await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
@@ -318,7 +372,7 @@ async function runExtensionE2E() {
     assert.equal(
       unexpectedErrors(unknownResult.errors).length,
       0,
-      `unknown path console errors: ${unexpectedErrors(unknownResult.errors).join(' | ')}`
+      `unknown path console/page errors: ${unexpectedErrors(unknownResult.errors).join(' | ')}`
     );
 
     const customUrl = 'https://example.com/custom-wallpaper.jpg';
@@ -342,7 +396,7 @@ async function runExtensionE2E() {
     assert.equal(
       unexpectedErrors(dataUrlResult.errors).length,
       0,
-      `data URL console errors: ${unexpectedErrors(dataUrlResult.errors).join(' | ')}`
+      `data URL console/page errors: ${unexpectedErrors(dataUrlResult.errors).join(' | ')}`
     );
 
     await loadHomeWithBackground(migrationPage, serviceWorker, extensionId, {
@@ -352,11 +406,8 @@ async function runExtensionE2E() {
     });
     const backupErrors = [];
     const backupFailed = [];
-    const onBackupConsole = (msg) => {
-      if (msg.type() === 'error') backupErrors.push(msg.text());
-    };
     const onBackupFailed = (request) => backupFailed.push(request.url());
-    migrationPage.on('console', onBackupConsole);
+    const stopBackupCollecting = collectPageErrors(migrationPage, backupErrors);
     migrationPage.on('requestfailed', onBackupFailed);
     try {
       await Promise.all([
@@ -376,7 +427,7 @@ async function runExtensionE2E() {
       await migrationPage.waitForSelector('#time', { timeout: 10000 });
       await migrationPage.waitForTimeout(350);
     } finally {
-      migrationPage.off('console', onBackupConsole);
+      stopBackupCollecting();
       migrationPage.off('requestfailed', onBackupFailed);
     }
     const imported = await readStoredBackground(serviceWorker);
@@ -390,7 +441,7 @@ async function runExtensionE2E() {
     assert.equal(
       unexpectedErrors(backupErrors).length,
       0,
-      `backup import console errors: ${unexpectedErrors(backupErrors).join(' | ')}`
+      `backup import console/page errors: ${unexpectedErrors(backupErrors).join(' | ')}`
     );
 
     await migrationPage.close();
