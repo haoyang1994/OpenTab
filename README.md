@@ -19,6 +19,8 @@ A Chrome Manifest V3 new tab page with an iPad-style glass UI. Open source and a
 
 OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, shortcuts, search, weather, and a few developer tools. Settings stay on your machine.
 
+First paint applies the saved theme, clock, and wallpaper from a local boot mirror so placeholder copy never flashes. First install uses a bundled `default.webp` and does not call Bing until you choose Bing wallpaper.
+
 ## Features
 
 ### Clock and calendar
@@ -38,9 +40,10 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 
 ### Backgrounds
 
-- Bing daily wallpaper (and recent history via the refresh button)
+- Bundled default wallpaper (`default.webp`) that works offline; first install does not call Bing
+- Bing daily wallpaper that refreshes once per day and caches locally (recent history via the refresh button)
 - Preset gradients
-- Three original bundled stills (mountain dawn, golden forest, night coast)
+- Three original bundled stills (mountain dawn, golden forest, night coast) plus `default.webp`
 - Custom image or video URL, or a local file upload
 
 ### Shortcuts
@@ -87,7 +90,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, search history, the current folder, or SSH secrets). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, search history, the current folder, or SSH secrets). Bing wallpaper cache metadata stays in `chrome.storage.local` (it is not synced and is omitted from JSON backups). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
 - The search box does not fetch suggestions or typeahead from any engine.
 - Bookmarks and most-visited sites are `optional_permissions`: Chrome does not prompt for them at install. OpenTab requests each one when you click the matching import button.
 - OpenTab does not include analytics, ads, or account login.
@@ -96,7 +99,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 | Service | Purpose | Data |
 | --- | --- | --- |
-| Bing homepage image API (`www.bing.com`) | Daily wallpaper | Image URL/metadata. Photo copyright stays with the original authors; OpenTab only displays the image. |
+| Bing homepage image API (`www.bing.com`) | Daily wallpaper, **only if you choose Bing wallpaper** | Image URL/metadata. Photo copyright stays with the original authors; OpenTab only displays the image. First install uses a local wallpaper and does not contact Bing. |
 | [wttr.in](https://wttr.in) | Weather pill | Approximate location from the browser geolocation permission. |
 | Favicons of sites you add | Shortcut icons | Direct request to that site for its icon. |
 

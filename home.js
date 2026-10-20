@@ -38,6 +38,7 @@
   const DEFAULT_GRADIENT = 'linear-gradient(135deg, #09203f 0%, #537895 100%)';
   const DEFAULT_BACKGROUND = { type: 'bing', value: '', source: '' };
   const PRESET_IMAGE_BACKGROUNDS = [
+    'assets/default_background/default.webp',
     'assets/default_background/bg-mountain-dawn.jpg',
     'assets/default_background/bg-forest-golden.jpg',
     'assets/default_background/bg-ocean-night.jpg'
@@ -68,6 +69,7 @@
   function migrateBackground(background) {
     const bg = background && typeof background === 'object'
       ? {
+        ...background,
         type: background.type || DEFAULT_BACKGROUND.type,
         value: typeof background.value === 'string' ? background.value : '',
         source: background.source || ''
@@ -839,41 +841,8 @@
     renderTodos();
   }
 
-  function updateBackground() {
-    elements.backgroundLayer.className = 'image-bg';
-
-    if (state.background.type === 'gradient') {
-      if (elements.backgroundVideo) {
-        elements.backgroundVideo.pause();
-        elements.backgroundVideo.style.display = 'none';
-        elements.backgroundVideo.removeAttribute('src');
-      }
-      elements.backgroundLayer.style.backgroundImage = 'none';
-      elements.backgroundLayer.style.background = state.background.value || DEFAULT_GRADIENT;
-      return;
-    }
-
-    const value = state.background.value || '';
-    const isVideo = isVideoBackground(value);
-
-    if (elements.backgroundVideo) {
-      if (isVideo && value) {
-        if (elements.backgroundVideo.src !== value) {
-          elements.backgroundVideo.src = value;
-        }
-        elements.backgroundVideo.style.display = 'block';
-        elements.backgroundVideo.play().catch(() => {});
-      } else {
-        elements.backgroundVideo.pause();
-        elements.backgroundVideo.style.display = 'none';
-        elements.backgroundVideo.removeAttribute('src');
-      }
-    }
-
-    elements.backgroundLayer.style.background = '';
-    elements.backgroundLayer.style.backgroundImage = isVideo
-      ? 'none'
-      : (value ? `url(${value})` : 'none');
+  function updateBackground(opts) {
+    return OpenTabBingCache.updateBackground(opts);
   }
 
   function isVideoBackground(url) {
@@ -887,64 +856,30 @@
   }
 
   function applyUiOpacitySetting() {
-    const raw = Number(state.uiOpacity);
-    const value = Number.isFinite(raw) ? Math.min(70, Math.max(12, raw)) : 32;
-    const alpha = value / 100;
-    const root = document.documentElement;
-    root.style.setProperty('--ui-frame-opacity', alpha.toFixed(2));
-    root.style.setProperty('--ui-frame-opacity-strong', Math.min(alpha + 0.1, 0.88).toFixed(2));
-    root.style.setProperty('--ui-frame-opacity-soft', Math.max(0.04, alpha * 0.42).toFixed(2));
-    root.style.setProperty('--ui-frame-opacity-soft-strong', Math.max(0.08, alpha * 0.68).toFixed(2));
-    root.style.setProperty('--ui-border-opacity', Math.min(0.58, Math.max(0.18, alpha * 0.95)).toFixed(2));
+    const value = OpenTabBoot.applyUiOpacity(state.uiOpacity);
     if (elements.uiOpacity) elements.uiOpacity.value = String(value);
     if (elements.uiOpacityValue) elements.uiOpacityValue.textContent = `${value}%`;
     state.uiOpacity = value;
   }
 
   function applyUiBlurSetting() {
-    const raw = Number(state.uiBlur);
-    const strong = Number.isFinite(raw) ? Math.min(20, Math.max(0, raw)) : 10;
-    const medium = Math.max(0, strong - 2);
-    const root = document.documentElement;
-    root.style.setProperty('--ui-blur-strong', `${strong}px`);
-    root.style.setProperty('--ui-blur-medium', `${medium}px`);
+    const strong = OpenTabBoot.applyUiBlur(state.uiBlur);
     if (elements.uiBlur) elements.uiBlur.value = String(strong);
     if (elements.uiBlurValue) elements.uiBlurValue.textContent = `${strong}px`;
     state.uiBlur = strong;
   }
 
-  // ===== 主题系统函数 =====
-
   function applyThemeMode() {
-    const body = document.body;
-    body.classList.remove('theme-dark', 'theme-light');
-
-    let effectiveTheme = state.themeMode;
-    if (effectiveTheme === 'auto') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      effectiveTheme = prefersDark ? 'dark' : 'light';
-    }
-
-    if (effectiveTheme === 'light') {
-      body.classList.add('theme-light');
-    }
-
-    // 更新 tab 激活状态
+    OpenTabBoot.applyTheme(state.themeMode);
     elements.themeModeTabs.forEach((tab) => {
-      const mode = tab.dataset.theme;
-      tab.classList.toggle('active', mode === state.themeMode);
+      tab.classList.toggle('active', tab.dataset.theme === state.themeMode);
     });
   }
 
   function applyAccentColor() {
-    const root = document.documentElement;
-    const hue = Number(state.accentHue) || 200;
-    root.style.setProperty('--accent-hue', hue);
-
-    // 更新预设选中状态
+    const hue = OpenTabBoot.applyAccentHue(state.accentHue);
     elements.themeColorPresets.forEach((preset) => {
-      const presetHue = Number(preset.dataset.hue);
-      preset.classList.toggle('active', presetHue === hue);
+      preset.classList.toggle('active', Number(preset.dataset.hue) === hue);
     });
   }
 
@@ -1084,42 +1019,36 @@
     particleAnimationId = requestAnimationFrame(animateParticles);
   }
 
-  async function fetchBingImageFromWorker() {
-    const result = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Background script no response')), 5000);
-      chrome.runtime.sendMessage({ action: 'fetchBingImage', index: state.bingIndex }, (response) => {
-        clearTimeout(timeout);
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
-        }
-        resolve(response);
-      });
-    });
-
-    if (!result.success) {
-      throw new Error(result.error || 'Unknown Bing fetch error');
-    }
-
-    state.bingIndex = result.nextIndex || ((state.bingIndex + 1) % 8);
-    return result.url;
+  function fetchRandomBackground() {
+    return OpenTabBingCache.fetchRandomBackground();
   }
 
-  async function fetchRandomBackground() {
-    elements.refreshBgBtn.classList.add('loading');
-    elements.backgroundLayer.classList.add('loading');
+  function writeBootMirror() {
+    const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
+    OpenTabBoot.writeMirror({
+      theme: state.themeMode || 'dark',
+      accentHue: state.accentHue,
+      uiOpacity: state.uiOpacity,
+      uiBlur: state.uiBlur,
+      minimalMode: state.minimalMode,
+      bg: OpenTabBingCache.describeBackground(),
+      tz: state.timezone,
+      tzLabel: tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone,
+      clockFormat: state.clockFormat,
+      showSeconds: state.showSeconds
+    });
+  }
 
-    try {
-      const imageUrl = await fetchBingImageFromWorker();
-      state.background = { type: 'bing', value: imageUrl, source: 'bing' };
-      saveState();
-      updateBackground();
-    } catch (error) {
-      console.error('Failed to refresh background:', error);
-    } finally {
-      elements.refreshBgBtn.classList.remove('loading');
-      elements.backgroundLayer.classList.remove('loading');
+  function applyBootMirror() {
+    const mirror = OpenTabBoot.readMirror();
+    if (!mirror) return;
+    if (mirror.tz) state.timezone = mirror.tz;
+    if (mirror.clockFormat === '12h' || mirror.clockFormat === '24h') {
+      state.clockFormat = mirror.clockFormat;
     }
+    if (mirror.showSeconds !== undefined) state.showSeconds = Boolean(mirror.showSeconds);
+    if (mirror.tzLabel) elements.timezoneLabel.textContent = mirror.tzLabel;
+    updateClock();
   }
 
   function createIconWidget(icon) {
@@ -1623,6 +1552,7 @@
         return;
       }
       if (typeof onOk === 'function') onOk();
+      writeBootMirror();
     });
   }
 
@@ -1696,7 +1626,6 @@
         const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
         elements.timezoneLabel.textContent = tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
 
-        updateBackground();
         updateClock();
         renderTimezoneList();
         initCalendar();
@@ -1721,10 +1650,8 @@
         setTodoPanelOpen(state.todoPanelOpen);
 
         if (backgroundChanged) saveState();
-
-        if (!state.background.value && state.background.type === 'bing') {
-          fetchRandomBackground();
-        }
+        OpenTabBingCache.afterStateLoaded();
+        writeBootMirror();
       }
     );
   }
@@ -2436,6 +2363,14 @@
       openIconTarget(icon);
     }
   });
+  OpenTabBingCache.init({
+    state,
+    elements,
+    saveState,
+    writeBootMirror,
+    DEFAULT_GRADIENT,
+    isVideoBackground
+  });
   if (window.OpenTabFolders) {
     OpenTabFolders.init({
       state,
@@ -2471,10 +2406,10 @@
     loadState();
   });
 
+  applyBootMirror();
   loadState();
   fetchWeather();
   weatherTimerId = setInterval(fetchWeather, 30 * 60 * 1000);
-  updateClock();
   clockTimerId = setInterval(updateClock, 1000);
   window.addEventListener('beforeunload', cleanupRuntimeResources);
 })();

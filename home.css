@@ -185,6 +185,26 @@ button {
   opacity: 0.75;
 }
 
+#background-layer.boot-lqip {
+  filter: blur(24px);
+  transform: scale(1.1);
+  transform-origin: center center;
+}
+
+#background-layer .bg-fade-in {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #background-layer .bg-fade-in { transition: none; }
+}
+
 #background-video {
   position: absolute;
   inset: 0;
@@ -294,6 +314,7 @@ body.particles-enabled #particles-canvas {
 }
 
 #time {
+  min-width: 4.2ch;
   font-size: clamp(78px, 9.6vw, 132px);
   font-weight: 200;
   line-height: 0.94;
@@ -325,6 +346,8 @@ body.theme-light #time {
 
 #timezone-label {
   align-self: flex-start;
+  min-height: 1.15em;
+  min-width: 7em;
   max-width: 210px;
   margin: -4px 0 10px 2px;
   overflow: hidden;
@@ -338,6 +361,7 @@ body.theme-light #time {
 }
 
 #welcome-text {
+  min-height: 1.35em;
   margin-top: 20px;
   font-size: 13px;
   font-weight: 500;
@@ -347,6 +371,8 @@ body.theme-light #time {
 
 .date-btn {
   display: block;
+  min-height: 1.45em;
+  min-width: 12em;
   margin-top: 10px;
   padding: 4px 8px;
   font-size: clamp(16px, 1.5vw, 19px);

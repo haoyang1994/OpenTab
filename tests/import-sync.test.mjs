@@ -422,13 +422,17 @@ async function run() {
     bingIndex: 4,
     clockFormat: '24h',
     searchEngine: 'bing',
-    currentFolderId: 'folder-should-stay-local'
+    currentFolderId: 'folder-should-stay-local',
+    bingCacheMeta: [{ url: 'https://www.bing.com/th?id=x.jpg', startdate: '20260101' }]
   });
   const syncJson = JSON.stringify(syncPayload);
   assert.equal(syncJson.includes('nope'), false);
   assert.equal(syncJson.includes('WALLPAPER'), false);
   assert.equal(syncJson.includes('secret todo'), false);
+  assert.equal(syncJson.includes('bingCacheMeta'), false);
+  assert.equal(syncJson.includes('th?id=x.jpg'), false);
   assert.equal(syncPayload.background, undefined);
+  assert.equal(syncPayload.bingCacheMeta, undefined);
   assert.equal(syncPayload.todos, undefined);
   assert.equal(syncPayload.bingIndex, undefined);
   assert.equal(syncPayload.settings.clockFormat, '24h');
@@ -567,6 +571,17 @@ async function run() {
       settings: {}
     });
     assert.equal(again, false, 'BUG-016: same content hash is not applied twice');
+  });
+
+  await withChrome({
+    local: {
+      clockFormat: '24h',
+      bingCacheMeta: [{ url: 'https://www.bing.com/th?id=x.jpg', startdate: '20260101' }]
+    }
+  }, async () => {
+    const payload = await OpenTabImport.buildBackupPayload(false);
+    assert.equal(payload.bingCacheMeta, undefined);
+    assert.equal(JSON.stringify(payload).includes('th?id=x.jpg'), false);
   });
 
   const backup = OpenTabImport.mergeBackupPayload(
