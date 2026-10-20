@@ -153,13 +153,13 @@ npm run ssh:gateway
 ```
 
 3. 首次启动会打印 **access token**（之后只显示 token 文件路径）。把它填进 OpenTab SSH 图标的「网关访问令牌」。
-4. 网关地址填 `ws://127.0.0.1:8787/ssh`。
+4. 网关地址填 `ws://127.0.0.1:8787/ssh`（或 `ws://localhost:8787/ssh`）。**只支持 `127.0.0.1` / `localhost`：** 扩展 CSP 仅允许连到这两个主机。已保存的非回环网关地址（包括 `[::1]`）会被拦截。
 
 未设置扩展 ID 时网关不会启动。任意网页（以及缺少 Origin 头的客户端）无法连接；缺少或错误令牌时握手会被拒绝。
 
 环境变量：
 
-- `SSH_GATEWAY_HOST` — 监听主机（默认 `127.0.0.1`）
+- `SSH_GATEWAY_HOST` — 监听主机（默认 `127.0.0.1`）。**只支持** `127.0.0.1` / `localhost`。绑到非回环地址时，扩展侧 CSP 会拒绝连接。
 - `SSH_GATEWAY_PORT` — 监听端口（默认 `8787`）
 - `SSH_GATEWAY_PATH` — WebSocket 路径（默认 `/ssh`）
 - `SSH_GATEWAY_EXTENSION_ID` — 本扩展 ID（**必填**；Origin 白名单。未设置则拒绝启动）
@@ -173,6 +173,7 @@ npm run ssh:gateway
 
 升级说明（已有 SSH 图标）：
 
+- **破坏性变更：** 网关地址只支持 `127.0.0.1` / `localhost`。非回环主机（包括 `[::1]`）会被 CSP 拦截。
 - 每个旧 SSH 图标都要补填「网关访问令牌」，否则连不上新网关。
 - 网关不再默认使用 `~/.ssh/id_rsa`。如果仍要用私钥登录，启动前设置 `SSH_PRIVATE_KEY_PATH`。
 - 必须设置 `SSH_GATEWAY_EXTENSION_ID`（`chrome://extensions` 里 OpenTab 的 ID）。

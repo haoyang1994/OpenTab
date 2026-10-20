@@ -9,7 +9,12 @@ const __dirname = path.dirname(__filename);
 const EXTENSION_PATH = path.resolve(__dirname, '..');
 const ARTIFACT_DIR = '/opt/cursor/artifacts/screenshots';
 const HOME_JS_MASTER_BYTES = 106755;
-const MASTER_DCL_BUDGET_MS = 2500;
+// Same ceiling as T8 (`opentab:grid-ready` ≤ 500ms). dcl===0 must not pass.
+// Same-machine 5-run medians (this VM, headed Chromium, 2026-10-20):
+//   master 48d62d4  DCL=60.1ms  grid-ready=128.5ms  wall=226ms
+//   feat/search     DCL=51.9ms  grid-ready=141.8ms  wall=216ms
+// n=10 (second 5+5, quieter median): DCL 52.8→56.8ms (+7.5%), grid-ready 124.4→135.5ms (+8.9%)
+const GRID_READY_BUDGET_MS = 500;
 
 function resolveHeadless(defaultValue) {
   if (process.env.HEADLESS === 'false') return false;
@@ -102,18 +107,33 @@ async function runSearchE2E() {
     await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
     await page.waitForSelector('#time', { timeout: 10000 });
     await waitForSearch(page);
+    await page.waitForFunction(
+      () => performance.getEntriesByName('opentab:grid-ready').length > 0,
+      null,
+      { timeout: 10000 }
+    );
     const wallMs = Date.now() - started;
     const navTiming = await page.evaluate(() => {
       const nav = performance.getEntriesByType('navigation')[0];
+      const marks = performance.getEntriesByName('opentab:grid-ready');
       return {
-        dcl: nav ? nav.domContentLoadedEventEnd : 0,
-        load: nav ? nav.loadEventEnd : 0
+        dcl: nav ? nav.domContentLoadedEventEnd : null,
+        load: nav ? nav.loadEventEnd : null,
+        gridReady: marks.length ? marks[0].startTime : null
       };
     });
-    console.log(`AC8 first-screen wall=${wallMs}ms dcl=${navTiming.dcl}ms load=${navTiming.load}ms`);
+    console.log(
+      `AC8 first-screen wall=${wallMs}ms dcl=${navTiming.dcl}ms load=${navTiming.load}ms grid-ready=${navTiming.gridReady}ms`
+    );
+    assert.ok(navTiming.dcl != null && navTiming.dcl > 0, `AC8 DCL missing or zero: ${navTiming.dcl}`);
+    assert.ok(navTiming.gridReady != null, 'AC8: opentab:grid-ready mark missing');
     assert.ok(
-      navTiming.dcl === 0 || navTiming.dcl <= MASTER_DCL_BUDGET_MS,
-      `AC8 first-screen DCL ${navTiming.dcl}ms exceeds ${MASTER_DCL_BUDGET_MS}ms budget (~master + 10% headroom)`
+      navTiming.gridReady <= GRID_READY_BUDGET_MS,
+      `AC8 opentab:grid-ready ${navTiming.gridReady}ms exceeded ${GRID_READY_BUDGET_MS}ms`
+    );
+    assert.ok(
+      navTiming.dcl <= GRID_READY_BUDGET_MS,
+      `AC8 first-screen DCL ${navTiming.dcl}ms exceeded ${GRID_READY_BUDGET_MS}ms`
     );
 
     await installNavHook(page);
@@ -247,6 +267,26 @@ async function runSearchE2E() {
     await page.keyboard.type('q');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'search-input');
     assert.equal(await page.locator('#search-input').inputValue(), 'q');
+
+    // BUG-013: Space on focused + tile opens add modal instead of typing into search
+    await page.fill('#search-input', '');
+    await page.locator('#add-shortcut-tile').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('#add-shortcut-tile').focus();
+    assert.equal(
+      await page.evaluate(() => document.activeElement && document.activeElement.id),
+      'add-shortcut-tile',
+      'BUG-013: + tile should be focused before Space'
+    );
+    await page.keyboard.press('Space');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)', { timeout: 5000 });
+    await screenshot(page, 'search_space_on_add_tile.png');
+    assert.equal(
+      await page.locator('#search-input').inputValue(),
+      '',
+      'BUG-013: Space on + must not insert a space into search'
+    );
+    await page.click('#cancel-btn');
+    await page.waitForFunction(() => document.getElementById('add-icon-modal').classList.contains('hidden'));
 
     // AC4 history
     await page.fill('#search-input', '');

@@ -153,13 +153,13 @@ npm run ssh:gateway
 ```
 
 3. The first start prints an **access token** (later starts only print the token file path). Put it in the OpenTab SSH shortcut field “网关访问令牌”.
-4. Use gateway URL `ws://127.0.0.1:8787/ssh`.
+4. Use gateway URL `ws://127.0.0.1:8787/ssh` (or `ws://localhost:8787/ssh`). **Loopback only (`127.0.0.1` / `localhost`):** the extension CSP allows WebSocket only to those hosts. A saved non-loopback gateway URL (including `[::1]`) will be blocked.
 
 The gateway will not start without an extension ID. Arbitrary websites (and clients without an Origin header) cannot connect. A missing or wrong token is rejected at handshake.
 
 Environment variables:
 
-- `SSH_GATEWAY_HOST` — bind host (default `127.0.0.1`)
+- `SSH_GATEWAY_HOST` — bind host (default `127.0.0.1`). **Loopback only:** `127.0.0.1` or `localhost`. The extension cannot connect to a non-loopback bind.
 - `SSH_GATEWAY_PORT` — bind port (default `8787`)
 - `SSH_GATEWAY_PATH` — WebSocket path (default `/ssh`)
 - `SSH_GATEWAY_EXTENSION_ID` — this extension ID (**required**; Origin allowlist; refuses to start if unset)
@@ -173,6 +173,7 @@ SOCKS5 proxies are supported from the shortcut editor. SSH passwords are current
 
 Upgrading existing SSH shortcuts:
 
+- **Breaking:** Gateway URLs must be `127.0.0.1` or `localhost`. Non-loopback hosts (including `[::1]`) are blocked by CSP.
 - Each old SSH shortcut needs a gateway access token, or it cannot connect to the new gateway.
 - The gateway no longer defaults to `~/.ssh/id_rsa`. Set `SSH_PRIVATE_KEY_PATH` if you still log in with a key.
 - You must set `SSH_GATEWAY_EXTENSION_ID` (OpenTab’s ID on `chrome://extensions`).

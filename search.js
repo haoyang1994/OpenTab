@@ -312,6 +312,12 @@
     return Boolean(el.closest && el.closest('input, textarea, select, [contenteditable="true"]'));
   }
 
+  function isInteractiveTarget(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    if (typeof el.closest !== 'function') return false;
+    return Boolean(el.closest('button, a[href], [role="button"], summary, [tabindex]'));
+  }
+
   function inputEl() {
     return $('search-input');
   }
@@ -640,7 +646,7 @@
   }
 
   function onGlobalKeydown(event) {
-    if (event.defaultPrevented || event.isComposing || event.key === 'Process') return;
+    if (event.defaultPrevented || event.isComposing) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (isOverlayOpen()) return;
 
@@ -648,8 +654,17 @@
     if (!input) return;
     if (document.activeElement === input) return;
     if (isEditable(event.target)) return;
+    if (isInteractiveTarget(event.target)) return;
+
+    // IME key is "Process": move focus to search but keep the event so composition can start.
+    if (event.key === 'Process') {
+      input.focus();
+      return;
+    }
 
     if (event.key.length !== 1) return;
+    // Space activates focused controls; never steal it for type-to-search.
+    if (event.key === ' ') return;
     event.preventDefault();
     insertIntoSearch(event.key);
   }

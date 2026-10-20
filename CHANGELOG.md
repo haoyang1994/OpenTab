@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Open search results in a new tab, plus Ctrl/Cmd+Enter and middle-click
 - E2E coverage for the search flow in `tests/search.test.mjs`
 
+### Fixed
+
+- Type-to-search no longer intercepts keys when focus is on a `button`, `a[href]`, `[role=button]`, `summary`, or `[tabindex]`. Space on the + tile, toast Undo, engine buttons, or the todo toggle activates the control instead of inserting a space in the search box. IME `Process` only focuses search and does not call `preventDefault`.
+
 ### Changed
 
 - Shortcut, tool, and SSH icons render as real `<a href>` links (middle-click / Ctrl / Cmd open a new tab)
@@ -32,7 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
-- Narrowed extension-page CSP: dropped blanket `https:` / `ws:` / `wss:` from `connect-src`. `connect-src` keeps Bing, wttr.in, and loopback WebSocket (`ws://127.0.0.1`, `ws://localhost`) for the local SSH gateway. `img-src` still allows `https:` because shortcut favicons and custom wallpaper URLs are user-chosen origins. Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts.
+- Narrowed extension-page CSP: dropped blanket `https:` / `ws:` / `wss:` from `connect-src`. `connect-src` keeps Bing, wttr.in, and loopback WebSocket (`ws://127.0.0.1`, `ws://localhost`, and the `wss://` equivalents) for the local SSH gateway. `img-src` still allows `https:` because shortcut favicons and custom wallpaper URLs are user-chosen origins. Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
+
+### Breaking
+
+- **SSH gateway URLs are loopback-only.** After dropping blanket `ws:` / `wss:` from `connect-src`, the extension can no longer open a WebSocket to a non-loopback SSH gateway. Saved shortcuts that used another host (LAN IP, hostname, IPv6 `[::1]`, etc.) will fail to connect until the URL is changed to `127.0.0.1` or `localhost`. `SSH_GATEWAY_HOST` must bind loopback (`127.0.0.1` / `localhost`); a non-loopback bind is blocked by CSP.
 
 ### Removed
 
