@@ -152,6 +152,7 @@
     toolFields: document.getElementById('tool-fields'),
     toolSubtype: document.getElementById('tool-subtype'),
     sshGatewayUrl: document.getElementById('ssh-gateway-url'),
+    sshGatewayToken: document.getElementById('ssh-gateway-token'),
     sshHost: document.getElementById('ssh-host'),
     sshPort: document.getElementById('ssh-port'),
     sshUsername: document.getElementById('ssh-username'),
@@ -391,6 +392,7 @@
       uploadedIconDataUrl: icon.uploadedIconDataUrl || '',
       resolvedIconUrl: icon.resolvedIconUrl || '',
       sshGatewayUrl: icon.sshGatewayUrl || '',
+      sshGatewayToken: icon.sshGatewayToken || '',
       sshHost: icon.sshHost || '',
       sshPort: Number.isInteger(icon.sshPort) ? icon.sshPort : 22,
       sshUsername: icon.sshUsername || '',
@@ -529,8 +531,8 @@
   function openIconTarget(icon) {
     const iconType = normalizeIconType(icon.type);
     if (iconType === ICON_TYPE_SSH) {
-      if (!icon.sshGatewayUrl || !icon.sshHost || !icon.sshUsername) {
-        alert('SSH 配置不完整，请先编辑这个图标。');
+      if (!icon.sshGatewayUrl || !icon.sshGatewayToken || !icon.sshHost || !icon.sshUsername) {
+        alert('SSH 配置不完整，请先编辑这个图标（含网关访问令牌）。');
         return;
       }
       const terminalUrl = chrome.runtime.getURL(`ssh_terminal.html?iconId=${encodeURIComponent(icon.id)}`);
@@ -1577,6 +1579,7 @@
       type: iconType,
       url: isSsh ? '' : (isTool ? '' : payload.url),
       sshGatewayUrl: isSsh ? (payload.sshGatewayUrl || '') : '',
+      sshGatewayToken: isSsh ? (payload.sshGatewayToken || '') : '',
       sshHost: isSsh ? (payload.sshHost || '') : '',
       sshPort: isSsh ? safePort : 22,
       sshUsername: isSsh ? (payload.sshUsername || '') : '',
@@ -1614,6 +1617,7 @@
     icon.type = iconType;
     icon.url = isSsh ? '' : (isTool ? '' : payload.url);
     icon.sshGatewayUrl = isSsh ? (payload.sshGatewayUrl || '') : '';
+    icon.sshGatewayToken = isSsh ? (payload.sshGatewayToken || '') : '';
     icon.sshHost = isSsh ? (payload.sshHost || '') : '';
     icon.sshPort = isSsh ? safePort : 22;
     icon.sshUsername = isSsh ? (payload.sshUsername || '') : '';
@@ -1701,6 +1705,7 @@
             uploadedIconDataUrl: icon.uploadedIconDataUrl || '',
             resolvedIconUrl: icon.resolvedIconUrl || '',
             sshGatewayUrl: icon.sshGatewayUrl || '',
+            sshGatewayToken: icon.sshGatewayToken || '',
             sshHost: icon.sshHost || '',
             sshPort: Number.isInteger(icon.sshPort) ? icon.sshPort : 22,
             sshUsername: icon.sshUsername || '',
@@ -1809,6 +1814,7 @@
     elements.iconFile.value = '';
     elements.iconUploadStatus.textContent = '支持 PNG / JPG / SVG / WebP。';
     elements.sshGatewayUrl.value = '';
+    elements.sshGatewayToken.value = '';
     elements.sshHost.value = '';
     elements.sshPort.value = '22';
     elements.sshUsername.value = '';
@@ -1840,6 +1846,7 @@
     elements.iconCustomUrl.value = icon.customIconUrl || '';
     elements.iconFile.value = '';
     elements.sshGatewayUrl.value = icon.sshGatewayUrl || '';
+    elements.sshGatewayToken.value = icon.sshGatewayToken || '';
     elements.sshHost.value = icon.sshHost || '';
     elements.sshPort.value = String(icon.sshPort || 22);
     elements.sshUsername.value = icon.sshUsername || '';
@@ -1869,6 +1876,7 @@
     const rawUrl = elements.iconUrl.value.trim();
     const rawCustomUrl = elements.iconCustomUrl.value.trim();
     const rawGatewayUrl = elements.sshGatewayUrl.value.trim();
+    const rawGatewayToken = elements.sshGatewayToken.value.trim();
     const rawSshHost = elements.sshHost.value.trim();
     const rawSshPort = elements.sshPort.value.trim();
     const rawSshUsername = elements.sshUsername.value.trim();
@@ -1888,6 +1896,7 @@
     let url;
     let customIconUrl = '';
     let sshGatewayUrl = '';
+    let sshGatewayToken = '';
     let sshHost = '';
     let sshPort = 22;
     let sshUsername = '';
@@ -1905,6 +1914,10 @@
           elements.sshGatewayUrl.focus();
           return;
         }
+        if (!rawGatewayToken) {
+          elements.sshGatewayToken.focus();
+          return;
+        }
         if (!rawSshHost) {
           elements.sshHost.focus();
           return;
@@ -1914,6 +1927,7 @@
           return;
         }
         sshGatewayUrl = normalizeSshGatewayUrl(rawGatewayUrl);
+        sshGatewayToken = rawGatewayToken;
         sshHost = rawSshHost;
         sshUsername = rawSshUsername;
         sshPassword = rawSshPassword;
@@ -1959,6 +1973,7 @@
         url,
         type: iconType,
         sshGatewayUrl,
+        sshGatewayToken,
         sshHost,
         sshPort,
         sshUsername,
@@ -1979,6 +1994,7 @@
         url,
         type: iconType,
         sshGatewayUrl,
+        sshGatewayToken,
         sshHost,
         sshPort,
         sshUsername,
@@ -2439,6 +2455,9 @@
     if (event.key === 'Enter') handleSaveIcon();
   });
   elements.sshGatewayUrl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') handleSaveIcon();
+  });
+  elements.sshGatewayToken.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') handleSaveIcon();
   });
   elements.sshHost.addEventListener('keydown', (event) => {

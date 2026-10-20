@@ -24,6 +24,14 @@
 - 时间格式切换为 24h 后 `#ampm` 隐藏
 - 无异常 console error（已知网络类 Bing 错误可豁免）
 
+SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gateway`，已纳入 `npm test` / `npm run test:ci`）
+
+- Origin 非 `chrome-extension://<id>` 时握手拒绝（含真实 WebSocket 升级）
+- 缺少或错误 token 时握手拒绝
+- compress 命令参数经 POSIX 单引号转义，注入载荷不会作为额外 shell 命令执行
+- 未设置 `SSH_PRIVATE_KEY_PATH` 时不会加载 `~/.ssh/id_rsa`
+- 无需真实 SSH 主机
+
 ### 2.2 当前未覆盖（需要手工/后续自动化）
 
 - 右键新增图标完整流程（emoji/name/url 输入校验）
@@ -49,7 +57,7 @@ npm test
 npm test
 ```
 
-说明：CI 与本地使用同一条命令。`npm test` 会走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 仍指向同一脚本，仅作兼容别名。
+说明：CI 与本地使用同一条命令。`npm test` 会先跑 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
 
 ### 3.3 本地调试模式
 
@@ -69,6 +77,8 @@ npm run test:e2e:headless
 - `home.js`
 - `background.js`
 - `manifest.json`
+- `ssh-gateway.mjs`
+- `ssh_terminal.js`
 - `tests/**`
 
 当改动涉及背景请求、权限或外部接口时，除 `npm test` 外还应手工验证 Bing 刷新按钮。

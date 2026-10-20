@@ -109,25 +109,47 @@
 - **自定义背景**：填入图片或视频 URL 即可
 
 ### SSH 终端
-SSH 功能需要本地运行 WebSocket 网关：
+SSH 功能需要在本机运行 WebSocket 网关。网关**只接受本扩展页面**（`chrome-extension://<扩展ID>`）的连接，并要求访问令牌；**不会**默认读取 `~/.ssh/id_rsa`。
+
+1. 打开 `chrome://extensions`，开启开发者模式，复制 OpenTab 的扩展 ID。
+2. 启动网关：
 
 ```bash
 # 安装依赖
 npm install
 
-# 启动 SSH 网关
+# 必填：Origin 白名单钉到本扩展，否则网关拒绝启动
+export SSH_GATEWAY_EXTENSION_ID='你的扩展ID'
+
+# 可选：显式指定私钥。不设置则只用 SSH 图标里填写的密码登录。
+# export SSH_PRIVATE_KEY_PATH="$HOME/.ssh/id_ed25519"
+# export SSH_PRIVATE_KEY_PASSPHRASE='如有口令'
+
 npm run ssh:gateway
 ```
 
-默认网关地址：`ws://127.0.0.1:8787/ssh`
+3. 首次启动会打印 **access token**（之后只显示 token 文件路径）。把它填进 OpenTab SSH 图标的「网关访问令牌」。
+4. 网关地址填 `ws://127.0.0.1:8787/ssh`。
+
+未设置扩展 ID 时网关不会启动。任意网页（以及缺少 Origin 头的客户端）无法连接；缺少或错误令牌时握手会被拒绝。
 
 **环境变量配置：**
 - `SSH_GATEWAY_HOST` - 网关主机（默认 `127.0.0.1`）
 - `SSH_GATEWAY_PORT` - 网关端口（默认 `8787`）
-- `SSH_PRIVATE_KEY_PATH` - 私钥路径（默认 `~/.ssh/id_rsa`）
+- `SSH_GATEWAY_PATH` - WebSocket 路径（默认 `/ssh`）
+- `SSH_GATEWAY_EXTENSION_ID` - 本扩展 ID（**必填**；Origin 白名单。未设置则拒绝启动）
+- `SSH_GATEWAY_ALLOWED_ORIGINS` - 可选，逗号分隔的 `chrome-extension://...`
+- `SSH_GATEWAY_TOKEN` - 固定访问令牌；不设则生成并写入 `~/.config/opentab/ssh-gateway.token`
+- `SSH_GATEWAY_TOKEN_FILE` - 令牌文件路径
+- `SSH_PRIVATE_KEY_PATH` - **显式**私钥路径；省略时不会使用 `~/.ssh/id_rsa`
 - `SSH_PRIVATE_KEY_PASSPHRASE` - 私钥口令（如有）
 
 支持 SOCKS5 代理连接。
+
+**升级说明（已有 SSH 图标）：**
+- 每个旧 SSH 图标都要补填「网关访问令牌」，否则连不上新网关。
+- 网关不再默认使用 `~/.ssh/id_rsa`。如果仍要用私钥登录，启动前设置 `SSH_PRIVATE_KEY_PATH`。
+- 必须设置 `SSH_GATEWAY_EXTENSION_ID`（`chrome://extensions` 里 OpenTab 的 ID）。
 
 ---
 
@@ -182,6 +204,9 @@ npm run pw:install
 ```bash
 # 运行所有测试（CI 与本地同一条命令；Linux 无显示器时自动走 xvfb）
 npm test
+
+# 仅 SSH 网关安全测试（无需真实 SSH 主机）
+npm run test:ssh-gateway
 
 # 强制有头模式（需要显示器，便于本地调试）
 npm run test:e2e:headed

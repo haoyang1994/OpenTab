@@ -25,6 +25,10 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# SSH gateway pairing token if generated in the working tree
+.opentab-ssh-gateway.token
+ssh-gateway.token
+
 # Test outputs
 test-results/
 playwright-report/

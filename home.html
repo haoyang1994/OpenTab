@@ -180,8 +180,13 @@
         <div id="ssh-fields" class="form-section hidden">
           <div class="form-group">
             <label>SSH 网关 WebSocket 地址</label>
-            <input type="url" id="ssh-gateway-url" placeholder="wss://gateway.example.com/ssh">
-            <p class="form-hint">浏览器连接到网关，网关再连接 SSH 主机。</p>
+            <input type="url" id="ssh-gateway-url" placeholder="ws://127.0.0.1:8787/ssh">
+            <p class="form-hint">仅本扩展页面可连接本地网关。默认本地地址：ws://127.0.0.1:8787/ssh</p>
+          </div>
+          <div class="form-group">
+            <label>网关访问令牌</label>
+            <input type="password" id="ssh-gateway-token" placeholder="与网关启动时打印的 token 一致" autocomplete="off">
+            <p class="form-hint">从网关终端输出或 SSH_GATEWAY_TOKEN 复制。没有令牌时网关会拒绝连接。</p>
           </div>
           <div class="form-group">
             <label>SSH 主机</label>
