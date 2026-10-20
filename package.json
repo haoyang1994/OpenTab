@@ -4,11 +4,12 @@
   "scripts": {
     "pw:install": "playwright install chromium",
     "ssh:gateway": "node ssh-gateway.mjs",
-    "test": "bash scripts/run-e2e.sh",
+    "test": "npm run test:ssh-gateway && bash scripts/run-e2e.sh",
+    "test:ssh-gateway": "node tests/ssh-gateway.test.mjs",
     "test:e2e": "bash scripts/run-e2e.sh",
     "test:e2e:headed": "HEADLESS=false node tests/extension.test.mjs",
     "test:e2e:headless": "HEADLESS=true node tests/extension.test.mjs",
-    "test:ci": "bash scripts/run-e2e.sh"
+    "test:ci": "npm run test:ssh-gateway && bash scripts/run-e2e.sh"
   },
   "devDependencies": {
     "crx": "^5.0.1",

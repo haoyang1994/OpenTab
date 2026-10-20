@@ -213,6 +213,15 @@
     }
   }
 
+  function gatewayWebSocketUrl(icon) {
+    const parsed = new URL(icon.sshGatewayUrl);
+    const token = String(icon.sshGatewayToken || '').trim();
+    if (token) {
+      parsed.searchParams.set('token', token);
+    }
+    return parsed.toString();
+  }
+
   function connect(icon) {
     const target = `${icon.sshUsername}@${icon.sshHost}:${icon.sshPort}`;
     titleEl.textContent = icon.name;
@@ -222,7 +231,7 @@
     setStatus('连接中', 'status-idle');
     writeLine(`[info] connecting to gateway ${icon.sshGatewayUrl}`);
 
-    socket = new WebSocket(icon.sshGatewayUrl);
+    socket = new WebSocket(gatewayWebSocketUrl(icon));
 
     socket.addEventListener('open', () => {
       scheduleFit();
@@ -354,9 +363,9 @@
       return;
     }
 
-    if (icon.type !== 'ssh' || !icon.sshGatewayUrl || !icon.sshHost || !icon.sshUsername) {
+    if (icon.type !== 'ssh' || !icon.sshGatewayUrl || !icon.sshGatewayToken || !icon.sshHost || !icon.sshUsername) {
       setStatus('配置错误', 'status-offline');
-      writeLine('[error] invalid ssh icon config');
+      writeLine('[error] invalid ssh icon config (gateway token required)');
       return;
     }
 
@@ -417,9 +426,17 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
+  const FOLDER_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"></path></svg>';
+  const FILE_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"></path></svg>';
+
   function renderFileTree(files, path) {
+    fileTreeContainer.replaceChildren();
+
     if (!files || files.length === 0) {
-      fileTreeContainer.innerHTML = '<div class="file-tree-empty">空目录</div>';
+      const empty = document.createElement('div');
+      empty.className = 'file-tree-empty';
+      empty.textContent = '空目录';
+      fileTreeContainer.appendChild(empty);
       return;
     }
 
@@ -429,34 +446,43 @@
       return a.name.localeCompare(b.name);
     });
 
-    const html = sorted.map(item => {
-      const icon = item.isDirectory
-        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"></path></svg>'
-        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"></path></svg>';
-      
-      return `<div class="tree-item ${item.isDirectory ? 'directory' : 'file'}" data-path="${item.path}" data-name="${item.name}" data-is-dir="${item.isDirectory}">
-        <span class="icon">${icon}</span>
-        <span class="name" title="${item.name}">${item.name}</span>
-        ${item.size !== undefined ? `<span class="size">${formatSize(item.size)}</span>` : ''}
-      </div>`;
-    }).join('');
+    for (const file of sorted) {
+      const item = document.createElement('div');
+      item.className = `tree-item ${file.isDirectory ? 'directory' : 'file'}`;
+      item.dataset.path = file.path || '';
+      item.dataset.name = file.name || '';
+      item.dataset.isDir = file.isDirectory ? 'true' : 'false';
 
-    fileTreeContainer.innerHTML = html;
-    currentPath = path;
-    filePathInput.value = path === '.' ? '' : path;
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.innerHTML = file.isDirectory ? FOLDER_ICON_SVG : FILE_ICON_SVG;
 
-    fileTreeContainer.querySelectorAll('.tree-item').forEach(item => {
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.title = file.name || '';
+      name.textContent = file.name || '';
+
+      item.appendChild(icon);
+      item.appendChild(name);
+
+      if (file.size !== undefined) {
+        const size = document.createElement('span');
+        size.className = 'size';
+        size.textContent = formatSize(file.size);
+        item.appendChild(size);
+      }
+
       item.addEventListener('click', (e) => {
         e.stopPropagation();
-        const path = item.dataset.path;
+        const itemPath = item.dataset.path;
         const isDir = item.dataset.isDir === 'true';
-        
+
         if (isDir) {
-          sendPacket({ type: 'ls', path });
+          sendPacket({ type: 'ls', path: itemPath });
         } else {
           fileTreeContainer.querySelectorAll('.tree-item').forEach(i => i.classList.remove('selected'));
           item.classList.add('selected');
-          selectedItem = { path, name: item.dataset.name, isDirectory: false };
+          selectedItem = { path: itemPath, name: item.dataset.name, isDirectory: false };
         }
       });
 
@@ -464,31 +490,36 @@
         e.preventDefault();
         e.stopPropagation();
         hideContextMenu();
-        
+
         fileTreeContainer.querySelectorAll('.tree-item').forEach(i => i.classList.remove('selected'));
         item.classList.add('selected');
-        
+
         const isDir = item.dataset.isDir === 'true';
         selectedItem = { path: item.dataset.path, name: item.dataset.name, isDirectory: isDir };
-        
+
         ctxUpload.style.display = isDir ? 'block' : 'none';
         ctxDownload.style.display = isDir ? 'none' : 'block';
-        
+
         const menuHeight = 120;
         let top = e.clientY;
         let flipUp = false;
-        
+
         if (e.clientY + menuHeight > window.innerHeight) {
           top = e.clientY - menuHeight;
           flipUp = true;
         }
-        
+
         contextMenu.style.left = e.clientX + 'px';
         contextMenu.style.top = top + 'px';
         contextMenu.classList.toggle('flip-up', flipUp);
         contextMenu.classList.remove('hidden');
       });
-    });
+
+      fileTreeContainer.appendChild(item);
+    }
+
+    currentPath = path;
+    filePathInput.value = path === '.' ? '' : path;
   }
 
   fileTreeContainer.addEventListener('dragover', (e) => {
