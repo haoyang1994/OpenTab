@@ -283,8 +283,15 @@
 
   function loadSshIcon(iconId) {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['icons'], (result) => {
-        const icons = Array.isArray(result.icons) ? result.icons : [];
+      chrome.storage.local.get(['icons', 'opentab.secretVault', 'opentab.cryptoKey'], async (result) => {
+        let icons = Array.isArray(result.icons) ? result.icons : [];
+        if (window.OpenTabSync && OpenTabSync.hydrateIcons) {
+          try {
+            icons = await OpenTabSync.hydrateIcons(icons, result);
+          } catch (error) {
+            // fall through with stored icons
+          }
+        }
         const icon = icons.find((item) => item && item.id === iconId);
         resolve(icon || null);
       });

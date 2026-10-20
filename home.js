@@ -392,7 +392,7 @@
   }
 
   function getBackupPayloadFromState() {
-    return {
+    const payload = {
       version: 1,
       exportedAt: new Date().toISOString(),
       icons: state.icons,
@@ -416,6 +416,9 @@
       gradientFlow: state.gradientFlow,
       minimalMode: state.minimalMode
     };
+    return window.OpenTabImport && OpenTabImport.stripSecretsFromState
+      ? OpenTabImport.stripSecretsFromState(payload)
+      : payload;
   }
 
   function normalizeBackupPayload(rawPayload) {
@@ -478,7 +481,9 @@
     normalized.minimalMode = Boolean(normalized.minimalMode);
     normalized.background = migrateBackground(normalized.background);
     if (window.OpenTabFolders) OpenTabFolders.repairIconGraph(normalized.icons);
-    return normalized;
+    return window.OpenTabImport && OpenTabImport.stripSecretsFromState
+      ? OpenTabImport.stripSecretsFromState(normalized)
+      : normalized;
   }
 
   function makeBackupFilename(prefix = 'opentab-backup') {
@@ -521,7 +526,11 @@
     BACKUP_STATE_KEYS.forEach((key) => {
       writePayload[key] = normalized[key];
     });
-    await storageSet(writePayload);
+    const sealed = window.OpenTabSync && OpenTabSync.prepareLocalPersistSync
+      ? OpenTabSync.prepareLocalPersistSync(writePayload)
+      : writePayload;
+    await storageSet(sealed);
+    if (window.OpenTabSync && OpenTabSync.flushVault) await OpenTabSync.flushVault();
     location.reload();
   }
 
@@ -1816,7 +1825,7 @@
   }
 
   function saveState(rollback, onOk) {
-    chrome.storage.local.set({
+    const payload = {
       icons: state.icons,
       folders: state.folders,
       currentFolderId: state.currentFolderId,
@@ -1836,12 +1845,17 @@
       particlesEnabled: state.particlesEnabled,
       gradientFlow: state.gradientFlow,
       minimalMode: state.minimalMode
-    }, () => {
+    };
+    const toStore = window.OpenTabSync && OpenTabSync.prepareLocalPersistSync
+      ? OpenTabSync.prepareLocalPersistSync(payload)
+      : payload;
+    chrome.storage.local.set(toStore, () => {
       if (chrome.runtime.lastError) {
         showToast('保存失败，请重试');
         if (typeof rollback === 'function') rollback();
         return;
       }
+      if (window.OpenTabSync && OpenTabSync.flushVault) OpenTabSync.flushVault();
       if (typeof onOk === 'function') onOk();
     });
   }
@@ -1850,6 +1864,19 @@
     chrome.storage.local.get(
       ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'],
       (result) => {
+        Promise.resolve((async () => {
+          const hadPlaintext = window.OpenTabSync && OpenTabSync.iconsHavePlaintextSecrets
+            ? OpenTabSync.iconsHavePlaintextSecrets(result.icons)
+            : false;
+          if (window.OpenTabSync && OpenTabSync.hydrateIcons) {
+            try {
+              result = Object.assign({}, result, {
+                icons: await OpenTabSync.hydrateIcons(Array.isArray(result.icons) ? result.icons : [], result)
+              });
+            } catch (error) {
+              // keep stored icons if the vault cannot be read
+            }
+          }
         state.folders = ensureFolders(result.folders).filter(
           (folder) => !LEGACY_PRESET_FOLDER_IDS.has(folder.id)
         );
@@ -1940,11 +1967,23 @@
         renderTodos();
         setTodoPanelOpen(state.todoPanelOpen);
 
-        if (backgroundChanged) saveState();
+        if (backgroundChanged || hadPlaintext) saveState();
 
         if (!state.background.value && state.background.type === 'bing') {
           fetchRandomBackground();
         }
+
+        if (window.OpenTabImport && OpenTabImport.consumeNotice) {
+          OpenTabImport.consumeNotice((notice) => {
+            if (!notice || !notice.text) return;
+            showToast(notice.text, notice.canUndo ? {
+              actionLabel: '撤销',
+              onAction: () => { OpenTabImport.undoLastImport(); },
+              duration: 8000
+            } : { duration: 5000 });
+          });
+        }
+        })()).catch(() => {});
       }
     );
   }
@@ -2217,6 +2256,8 @@
   function openSettings() {
     rememberFocus(elements.settingsBtn);
     elements.settingsPanel.classList.remove('hidden');
+    if (window.OpenTabSync && OpenTabSync.refreshUsage) OpenTabSync.refreshUsage();
+    if (window.OpenTabImport && OpenTabImport.refreshUndoButton) OpenTabImport.refreshUndoButton();
   }
 
   function closeSettingsPanel() {

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Import Chrome bookmarks (optional `bookmarks` permission, requested on click) into a new folder/group
+- Import the first 12 Chrome most-visited sites (optional `topSites` permission)
+- Import Infinity / WeTab / iTab backup files, with an automatic snapshot and one-click undo
+- Optional `chrome.storage.sync` for shortcuts, folders/groups, and settings (sharded near the 100KB / 8KB quotas; falls back to local-only when over quota)
+- Local storage usage in Settings → 导入与同步
 - Shortcut grid **+** tile and empty-state hint for adding sites
 - HTML5 drag-and-drop reorder on the desktop grid, with Alt+←/→ keyboard swap
 - Undo toast after deleting a shortcut (6 seconds)
@@ -48,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
 - AC7: narrowed extension-page `connect-src` (dropped blanket `https:` / `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). `img-src` retains `https:` for shortcut favicons and custom wallpaper URLs (product decision). Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
+- SSH / SOCKS passwords and gateway tokens are stripped from backup export and browser sync, and encrypted at rest instead of stored as plaintext in `chrome.storage.local`
 
 ### Breaking
 
@@ -82,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- SSH / SOCKS passwords and gateway tokens are omitted from backup export and browser sync, and are encrypted at rest instead of stored as plaintext in `chrome.storage.local`
 - Local SSH gateway requires an extension-ID Origin allowlist and an access token; it does not load `~/.ssh/id_rsa` unless `SSH_PRIVATE_KEY_PATH` is set; compress arguments are POSIX single-quoted (#3)
 
 ### Removed

@@ -46,4 +46,4 @@ Out of scope:
 
 Known limitations that are tracked as product work rather than vulnerability reports:
 
-- SSH passwords currently stored in `chrome.storage.local` as plaintext
+- SSH / SOCKS secrets are encrypted at rest in this browser profile (the wrapping key is also local). They are never written to backups or `chrome.storage.sync`. A local attacker who can read extension storage can still recover them.

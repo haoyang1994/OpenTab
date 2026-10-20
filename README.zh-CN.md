@@ -66,6 +66,8 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 - 天气胶囊：浏览器地理位置 + [wttr.in](https://wttr.in)
 - 侧边抽屉待办和进度条
 - JSON 备份导出 / 导入，以及本地快照
+- 可导入 Chrome 书签、常用网站，以及 Infinity / WeTab / iTab 备份（`bookmarks` / `topSites` 为可选权限，点击按钮时才申请）
+- 可选的浏览器同步（只同步快捷方式、分组和设置，不同步壁纸和历史）；设置里显示本地存储用量
 
 ## 截图
 
@@ -85,8 +87,9 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 
 ## 隐私说明
 
-- 偏好设置、快捷方式、待办、快照和搜索历史保存在当前浏览器配置的 `chrome.storage.local`。
+- 偏好设置、快捷方式、待办、快照和搜索历史保存在当前浏览器配置的 `chrome.storage.local`。打开浏览器同步时，只会同步快捷方式、分组和设置（不同步壁纸、待办或搜索历史）。
 - 搜索框不会向任何引擎请求联想或建议。
+- 书签和常用网站使用 `optional_permissions`：安装时不会多要权限，只有点击对应导入按钮才会申请。
 - OpenTab 没有统计、没有广告、没有账号登录。
 - OpenTab 不会改写或拦截你打开的链接。
 - 可选功能会请求少量外部主机：
@@ -129,7 +132,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` 会先跑 `tests/repo-hygiene.test.mjs`，再跑 SSH 网关安全测试（`npm run test:ssh-gateway`），最后跑 Playwright E2E（`scripts/run-e2e.sh`）。Linux 无显示器时该脚本会用 `xvfb` 包装有头 Chromium（需安装 `xvfb` 包）。`npm run test:ci` 与 `npm test` 相同。详见 [docs/TESTING.md](docs/TESTING.md)。
+`npm test` 会先跑 `tests/repo-hygiene.test.mjs`，再跑 `tests/import-sync.test.mjs`，再跑 SSH 网关安全测试（`npm run test:ssh-gateway`），最后跑 Playwright E2E（`scripts/run-e2e.sh`）。Linux 无显示器时该脚本会用 `xvfb` 包装有头 Chromium（需安装 `xvfb` 包）。`npm run test:ci` 与 `npm test` 相同。详见 [docs/TESTING.md](docs/TESTING.md)。
 
 修改扩展文件后，在 `chrome://extensions/` 点击扩展卡片上的「重新加载」。
 
