@@ -192,9 +192,6 @@
     weatherTemp: document.getElementById('weather-temp'),
 
     refreshBgBtn: document.getElementById('refresh-bg-btn'),
-    settingsBtn: document.getElementById('settings-btn'),
-    settingsPanel: document.getElementById('settings-panel'),
-    closeSettings: document.getElementById('close-settings'),
 
     addIconModal: document.getElementById('add-icon-modal'),
     iconModalTitle: document.getElementById('icon-modal-title'),
@@ -225,29 +222,6 @@
     editIconBtn: document.getElementById('edit-icon-btn'),
     deleteIconBtn: document.getElementById('delete-icon-btn'),
 
-    bgTypeTabs: document.querySelectorAll('.tab-btn'),
-    bingSection: document.getElementById('bing-section'),
-    gradientSection: document.getElementById('gradient-section'),
-    imageSection: document.getElementById('image-section'),
-    backgroundPresets: document.getElementById('background-presets'),
-    imagePresets: document.getElementById('image-presets'),
-    customBgUrl: document.getElementById('custom-bg-url'),
-    customBgFile: document.getElementById('custom-bg-file'),
-    applyBgBtn: document.getElementById('apply-bg-btn'),
-    applyBgFileBtn: document.getElementById('apply-bg-file-btn'),
-    timeFormat: document.getElementById('time-format'),
-    showSeconds: document.getElementById('show-seconds'),
-    uiOpacity: document.getElementById('ui-opacity'),
-    uiOpacityValue: document.getElementById('ui-opacity-value'),
-    uiBlur: document.getElementById('ui-blur'),
-    uiBlurValue: document.getElementById('ui-blur-value'),
-    iconFrameEnabled: document.getElementById('icon-frame-enabled'),
-    openInNewTab: document.getElementById('open-in-new-tab'),
-    themeModeTabs: document.querySelectorAll('.theme-mode-tab'),
-    themeColorPresets: document.querySelectorAll('.theme-color-preset'),
-    particlesEnabled: document.getElementById('particles-enabled'),
-    gradientFlowEnabled: document.getElementById('gradient-flow-enabled'),
-    minimalModeEnabled: document.getElementById('minimal-mode-enabled'),
     particlesCanvas: document.getElementById('particles-canvas'),
 
     calendarPopover: document.getElementById('calendar-popover'),
@@ -856,61 +830,33 @@
   }
 
   function applyUiOpacitySetting() {
-    const value = OpenTabBoot.applyUiOpacity(state.uiOpacity);
-    if (elements.uiOpacity) elements.uiOpacity.value = String(value);
-    if (elements.uiOpacityValue) elements.uiOpacityValue.textContent = `${value}%`;
-    state.uiOpacity = value;
+    state.uiOpacity = OpenTabBoot.applyUiOpacity(state.uiOpacity);
   }
 
   function applyUiBlurSetting() {
-    const strong = OpenTabBoot.applyUiBlur(state.uiBlur);
-    if (elements.uiBlur) elements.uiBlur.value = String(strong);
-    if (elements.uiBlurValue) elements.uiBlurValue.textContent = `${strong}px`;
-    state.uiBlur = strong;
+    state.uiBlur = OpenTabBoot.applyUiBlur(state.uiBlur);
   }
 
   function applyThemeMode() {
     OpenTabBoot.applyTheme(state.themeMode);
-    elements.themeModeTabs.forEach((tab) => {
-      tab.classList.toggle('active', tab.dataset.theme === state.themeMode);
-    });
   }
 
   function applyAccentColor() {
-    const hue = OpenTabBoot.applyAccentHue(state.accentHue);
-    elements.themeColorPresets.forEach((preset) => {
-      preset.classList.toggle('active', Number(preset.dataset.hue) === hue);
-    });
+    OpenTabBoot.applyAccentHue(state.accentHue);
   }
 
   function applyParticles() {
-    const body = document.body;
-    body.classList.toggle('particles-enabled', state.particlesEnabled);
-    if (elements.particlesEnabled) {
-      elements.particlesEnabled.checked = state.particlesEnabled;
-    }
-
-    if (state.particlesEnabled) {
-      initParticles();
-    } else {
-      stopParticles();
-    }
+    document.body.classList.toggle('particles-enabled', state.particlesEnabled);
+    if (state.particlesEnabled) initParticles();
+    else stopParticles();
   }
 
   function applyGradientFlow() {
-    const body = document.body;
-    body.classList.toggle('gradient-flow', state.gradientFlow);
-    if (elements.gradientFlowEnabled) {
-      elements.gradientFlowEnabled.checked = state.gradientFlow;
-    }
+    document.body.classList.toggle('gradient-flow', state.gradientFlow);
   }
 
   function applyMinimalMode() {
-    const body = document.body;
-    body.classList.toggle('minimal-mode', state.minimalMode);
-    if (elements.minimalModeEnabled) {
-      elements.minimalModeEnabled.checked = state.minimalMode;
-    }
+    document.body.classList.toggle('minimal-mode', state.minimalMode);
   }
 
   // ===== 粒子背景系统 =====
@@ -1025,7 +971,7 @@
 
   function writeBootMirror() {
     const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
-    OpenTabBoot.writeMirror({
+    OpenTabBoot.writeMirror(Object.assign({
       theme: state.themeMode || 'dark',
       accentHue: state.accentHue,
       uiOpacity: state.uiOpacity,
@@ -1036,7 +982,7 @@
       tzLabel: tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone,
       clockFormat: state.clockFormat,
       showSeconds: state.showSeconds
-    });
+    }, window.OpenTabLayout ? OpenTabLayout.bootMirrorSlice() : {}));
   }
 
   function applyBootMirror() {
@@ -1558,8 +1504,11 @@
 
   function loadState() {
     chrome.storage.local.get(
-      ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'],
+      ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'].concat(
+        window.OpenTabLayout ? OpenTabLayout.STORAGE_KEYS : []
+      ),
       (result) => {
+        if (window.OpenTabLayout) OpenTabLayout.loadFromStorage(result);
         state.folders = ensureFolders(result.folders).filter(
           (folder) => !LEGACY_PRESET_FOLDER_IDS.has(folder.id)
         );
@@ -1630,21 +1579,18 @@
         renderTimezoneList();
         initCalendar();
 
-        elements.timeFormat.value = state.clockFormat;
-        elements.showSeconds.checked = state.showSeconds;
         applyUiOpacitySetting();
         applyUiBlurSetting();
-        elements.iconFrameEnabled.checked = state.iconFrameEnabled;
-        if (elements.openInNewTab) elements.openInNewTab.checked = state.openInNewTab;
         applyIconFrameSetting();
         applyThemeMode();
         applyAccentColor();
         applyParticles();
         applyGradientFlow();
         applyMinimalMode();
-
-        updatePresetSelection();
-        updateBgTabs();
+        if (window.OpenTabSettingsNav) {
+          OpenTabSettingsNav.syncFromState();
+          OpenTabSettingsNav.noteIcons(state.icons);
+        }
         refreshIconViews(false);
         renderTodos();
         setTodoPanelOpen(state.todoPanelOpen);
@@ -1654,26 +1600,6 @@
         writeBootMirror();
       }
     );
-  }
-
-  function updatePresetSelection() {
-    const allPresets = document.querySelectorAll('#background-presets .preset-item, #image-presets .preset-item');
-    allPresets.forEach((preset) => {
-      const bgType = preset.dataset.bg || '';
-      preset.classList.toggle(
-        'active',
-        bgType === state.background.type && preset.dataset.value === state.background.value
-      );
-    });
-  }
-
-  function updateBgTabs() {
-    elements.bgTypeTabs.forEach((tab) => {
-      tab.classList.toggle('active', tab.dataset.type === state.background.type);
-    });
-    elements.bingSection.classList.toggle('active', state.background.type === 'bing');
-    elements.gradientSection.classList.toggle('active', state.background.type === 'gradient');
-    elements.imageSection.classList.toggle('active', state.background.type === 'image');
   }
 
   function openAddIconModal() {
@@ -1923,128 +1849,6 @@
     if (window.OpenTabFolders) OpenTabFolders.syncContextMenu(iconId);
   }
 
-  function openSettings() {
-    rememberFocus(elements.settingsBtn);
-    elements.settingsPanel.classList.remove('hidden');
-  }
-
-  function closeSettingsPanel() {
-    elements.settingsPanel.classList.add('hidden');
-  }
-
-  function handleBgTabClick(event) {
-    const tab = event.target.closest('.tab-btn');
-    if (!tab) return;
-
-    const type = tab.dataset.type;
-    const previousType = state.background.type;
-    state.background.type = type;
-
-    if (type === 'bing') {
-      if (!state.background.value || previousType !== 'bing') fetchRandomBackground();
-      else updateBackground();
-    } else if (type === 'gradient') {
-      state.background.value = DEFAULT_GRADIENT;
-      state.background.source = 'gradient';
-      updateBackground();
-    }
-
-    saveState();
-    updateBgTabs();
-    updatePresetSelection();
-  }
-
-  function handlePresetClick(event) {
-    const preset = event.target.closest('.preset-item');
-    if (!preset) return;
-    const bgType = preset.dataset.bg || 'gradient';
-    state.background = {
-      type: bgType === 'gradient' ? 'gradient' : 'image',
-      value: preset.dataset.value,
-      source: bgType === 'gradient' ? 'gradient' : 'preset-image'
-    };
-    saveState();
-    updateBackground();
-    updatePresetSelection();
-    updateBgTabs();
-  }
-
-  function handleCustomBgApply() {
-    const raw = elements.customBgUrl.value.trim();
-    if (!raw) return;
-
-    let url;
-    try {
-      url = normalizeUrl(raw);
-    } catch (error) {
-      showToast('请输入有效的图片网址。');
-      elements.customBgUrl.focus();
-      return;
-    }
-
-    state.background = { type: 'image', value: url, source: 'custom' };
-    saveState();
-    updateBackground();
-    updateBgTabs();
-    updatePresetSelection();
-  }
-
-  async function handleCustomBgFileApply() {
-    const [file] = elements.customBgFile.files || [];
-    if (!file) {
-      elements.customBgFile.click();
-      return;
-    }
-
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      if (!dataUrl) return;
-      state.background = { type: 'image', value: dataUrl, source: 'local-upload' };
-      saveState();
-      updateBackground();
-      updateBgTabs();
-      updatePresetSelection();
-    } catch (error) {
-      showToast('读取本地图片失败，请重试。');
-    }
-  }
-
-  function handleTimeFormatChange() {
-    state.clockFormat = elements.timeFormat.value;
-    saveState();
-    updateClock();
-  }
-
-  function handleShowSecondsChange() {
-    state.showSeconds = elements.showSeconds.checked;
-    saveState();
-    updateClock();
-  }
-
-  function handleUiOpacityChange() {
-    state.uiOpacity = Number(elements.uiOpacity.value || 32);
-    applyUiOpacitySetting();
-    saveState();
-  }
-
-  function handleUiBlurChange() {
-    state.uiBlur = Number(elements.uiBlur.value || 10);
-    applyUiBlurSetting();
-    saveState();
-  }
-
-  function handleIconFrameChange() {
-    state.iconFrameEnabled = elements.iconFrameEnabled.checked;
-    applyIconFrameSetting();
-    saveState();
-  }
-
-  function handleOpenInNewTabChange() {
-    state.openInNewTab = Boolean(elements.openInNewTab && elements.openInNewTab.checked);
-    saveState();
-    renderIconsForCurrentFolder();
-  }
-
   function handleEscape(event) {
     if (event.key !== 'Escape') return;
     endDesktopDrag();
@@ -2053,10 +1857,18 @@
       restoreFocus();
       return;
     }
+    const settingsEsc = window.OpenTabSettingsNav && OpenTabSettingsNav.handleEscape();
+    if (settingsEsc === 'search') {
+      event.preventDefault();
+      return;
+    }
+    if (settingsEsc) {
+      event.preventDefault();
+      return;
+    }
     const layers = [
       [elements.iconContextMenu, hideIconContextMenu],
       [elements.addIconModal, closeAddIconModal],
-      [elements.settingsPanel, closeSettingsPanel],
       [elements.timezoneSelector, () => toggleTimezoneSelector(false)],
       [elements.calendarPopover, () => toggleCalendar(false)]
     ];
@@ -2073,38 +1885,6 @@
       closeTodoPanel();
       restoreFocus();
     }
-  }
-
-  // ===== 主题事件处理函数 =====
-
-  function handleThemeModeChange(mode) {
-    state.themeMode = mode;
-    applyThemeMode();
-    saveState();
-  }
-
-  function handleAccentColorChange(hue) {
-    state.accentHue = Number(hue);
-    applyAccentColor();
-    saveState();
-  }
-
-  function handleParticlesChange() {
-    state.particlesEnabled = elements.particlesEnabled.checked;
-    applyParticles();
-    saveState();
-  }
-
-  function handleGradientFlowChange() {
-    state.gradientFlow = elements.gradientFlowEnabled.checked;
-    applyGradientFlow();
-    saveState();
-  }
-
-  function handleMinimalModeChange() {
-    state.minimalMode = elements.minimalModeEnabled.checked;
-    applyMinimalMode();
-    saveState();
   }
 
   function formatLunarKey(date) {
@@ -2248,64 +2028,18 @@
   });
 
   elements.refreshBgBtn.addEventListener('click', fetchRandomBackground);
-  elements.settingsBtn.addEventListener('click', openSettings);
-  elements.closeSettings.addEventListener('click', closeSettingsPanel);
   elements.cancelBtn.addEventListener('click', closeAddIconModal);
   elements.saveBtn.addEventListener('click', handleSaveIcon);
   elements.iconType.addEventListener('change', updateIconModalTypeView);
   elements.iconFile.addEventListener('change', handleIconFileChange);
-  elements.applyBgBtn.addEventListener('click', handleCustomBgApply);
-  elements.applyBgFileBtn.addEventListener('click', handleCustomBgFileApply);
-  elements.backgroundPresets.addEventListener('click', handlePresetClick);
-  elements.imagePresets.addEventListener('click', handlePresetClick);
-  elements.bgTypeTabs.forEach((tab) => tab.addEventListener('click', handleBgTabClick));
-  elements.timeFormat.addEventListener('change', handleTimeFormatChange);
-  elements.showSeconds.addEventListener('change', handleShowSecondsChange);
-  elements.uiOpacity.addEventListener('input', handleUiOpacityChange);
-  elements.uiOpacity.addEventListener('change', handleUiOpacityChange);
-  elements.uiBlur.addEventListener('input', handleUiBlurChange);
-  elements.uiBlur.addEventListener('change', handleUiBlurChange);
-  elements.iconFrameEnabled.addEventListener('change', handleIconFrameChange);
-  if (elements.openInNewTab) {
-    elements.openInNewTab.addEventListener('change', handleOpenInNewTabChange);
-  }
 
-  // 主题相关事件监听
-  elements.themeModeTabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      handleThemeModeChange(tab.dataset.theme);
-    });
-  });
-
-  elements.themeColorPresets.forEach((preset) => {
-    preset.addEventListener('click', () => {
-      handleAccentColorChange(preset.dataset.hue);
-    });
-  });
-
-  elements.particlesEnabled.addEventListener('change', handleParticlesChange);
-  elements.gradientFlowEnabled.addEventListener('change', handleGradientFlowChange);
-  elements.minimalModeEnabled.addEventListener('change', handleMinimalModeChange);
-
-  // 双击时钟切换极简模式
   const clockWidget = document.getElementById('clock-widget');
   if (clockWidget) {
     clockWidget.addEventListener('dblclick', () => {
       state.minimalMode = !state.minimalMode;
       applyMinimalMode();
       saveState();
-      if (elements.minimalModeEnabled) {
-        elements.minimalModeEnabled.checked = state.minimalMode;
-      }
-    });
-  }
-
-  // 监听系统主题变化（自动模式）
-  if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      if (state.themeMode === 'auto') {
-        applyThemeMode();
-      }
+      if (window.OpenTabSettingsNav) OpenTabSettingsNav.syncFromState();
     });
   }
 
@@ -2371,6 +2105,31 @@
     DEFAULT_GRADIENT,
     isVideoBackground
   });
+  if (window.OpenTabSettingsNav) {
+    OpenTabSettingsNav.init({
+      state,
+      saveState,
+      showToast,
+      rememberFocus,
+      restoreFocus,
+      updateClock,
+      updateBackground,
+      fetchRandomBackground,
+      applyUiOpacitySetting,
+      applyUiBlurSetting,
+      applyIconFrameSetting,
+      applyThemeMode,
+      applyAccentColor,
+      applyParticles,
+      applyGradientFlow,
+      applyMinimalMode,
+      renderIconsForCurrentFolder,
+      normalizeUrl,
+      readFileAsDataUrl,
+      DEFAULT_GRADIENT,
+      DEFAULT_BACKGROUND
+    });
+  }
   if (window.OpenTabFolders) {
     OpenTabFolders.init({
       state,

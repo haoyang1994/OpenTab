@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { formatConsoleError, isAllowedConsoleError } from './console-allow.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, '..');
@@ -158,11 +159,9 @@ async function launchExt() {
   page.on('pageerror', (error) => errors.page.push(String(error)));
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
-    const text = msg.text();
-    const url = msg.location()?.url || '';
-    if (/favicon\.ico/i.test(text) || /favicon\.ico/i.test(url)) return;
-    if (text.includes('Failed to fetch Bing image')) return;
-    errors.console.push(url ? `${text} (${url})` : text);
+    const formatted = formatConsoleError(msg);
+    if (isAllowedConsoleError(formatted)) return;
+    errors.console.push(formatted);
   });
 
   const extensionId = serviceWorker.url().split('/')[2];

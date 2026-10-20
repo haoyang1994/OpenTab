@@ -168,7 +168,12 @@
     'accentHue',
     'particlesEnabled',
     'gradientFlow',
-    'minimalMode'
+    'minimalMode',
+    'layoutIconSize',
+    'layoutColumns',
+    'layoutShowNames',
+    'layoutMaxWidth',
+    'developerToolsEnabled'
   ];
 
   function searchBackupKeys(includeHistory) {

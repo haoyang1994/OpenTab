@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { formatConsoleError, isAllowedConsoleError, unexpectedErrors } from './console-allow.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,19 +51,12 @@ const TINY_PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAA
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-function unexpectedErrors(errors) {
-  return errors.filter((error) => (
-    !error.includes('Failed to fetch Bing image')
-    && !error.includes('example.com')
-  ));
-}
-
 function attachErrorCollectors(target, buckets) {
   const onPageError = (error) => {
     buckets.page.push(String(error?.message || error));
   };
   const onConsole = (msg) => {
-    if (msg.type() === 'error') buckets.console.push(msg.text());
+    if (msg.type() === 'error') buckets.console.push(formatConsoleError(msg));
   };
   target.on('pageerror', onPageError);
   target.on('console', onConsole);
@@ -206,7 +200,7 @@ function resolveHeadless(defaultValue) {
 }
 
 function isExemptConsoleError(text) {
-  return text.includes('Failed to fetch Bing image');
+  return isAllowedConsoleError(text);
 }
 
 function shortcut(id, name, url, folderId = HOME, extra = {}) {
@@ -551,7 +545,7 @@ async function runExtensionE2E() {
     const extensionId = serviceWorker.url().split('/')[2];
     try {
       serviceWorker.on('console', msg => {
-        if (msg.type() === 'error') errorBuckets.sw.push(msg.text());
+        if (msg.type() === 'error') errorBuckets.sw.push(formatConsoleError(msg));
       });
     } catch {
       // Playwright Worker may not expose console events.

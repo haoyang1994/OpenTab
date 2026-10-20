@@ -72,6 +72,14 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 - 可导入 Chrome 书签、常用网站，以及 Infinity / WeTab / iTab 备份（`bookmarks` / `topSites` 为可选权限，点击按钮时才申请）
 - 可选的浏览器同步（只同步快捷方式、分组和设置，不同步壁纸、历史和当前打开的分组）；另一台设备已有数据时会询问「用云端 / 用本机」。设置里显示本地存储用量
 
+### 设置与布局
+
+- 分区导航：外观、壁纸、快捷方式与布局、搜索、天气（给首屏迭代留位）、导入与同步、高级、关于。点击跳转，滚动时高亮跟着变；宽度不到 720px 时改成顶部 tab
+- 面板顶部搜索按标签和说明过滤（中英文、不区分大小写）；没有结果时显示「没有找到」。Esc 先清空搜索框，再按一次关闭面板
+- 布局：图标大小（小/中/大，或 48–96px）、每行个数（自动或 4–12）、显示/隐藏名称、网格最大宽度。改动实时预览，刷新后保持，并走现有同步键
+- 每个分区和底部都有「恢复默认」（页面内确认 + 现有撤销提示），不会改快捷方式数据
+- SSH / JSON / FIX 入口默认隐藏，在「高级」里开启；已经在用这些快捷方式的安装会自动保持开启
+
 ## 截图
 
 画面里的 Google / GitHub 标志仍是各自所有者的商标。见 [NOTICE](NOTICE)。
@@ -135,7 +143,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` 会先跑 `tests/repo-hygiene.test.mjs`，再跑 `tests/import-sync.test.mjs`，再跑 SSH 网关安全测试（`npm run test:ssh-gateway`），最后跑 Playwright E2E（`scripts/run-e2e.sh`）。Linux 无显示器时该脚本会用 `xvfb` 包装有头 Chromium（需安装 `xvfb` 包）。`npm run test:ci` 与 `npm test` 相同。详见 [docs/TESTING.md](docs/TESTING.md)。
+`npm test` 会先跑 `tests/repo-hygiene.test.mjs`，再跑 `tests/import-sync.test.mjs`，再跑 `tests/first-screen-unit.test.mjs`，再跑 `tests/layout.test.mjs`，再跑 SSH 网关安全测试（`npm run test:ssh-gateway`），最后跑 Playwright E2E（`scripts/run-e2e.sh`：`extension`、`search`、`first-run`、`settings-layout`）。Linux 无显示器时该脚本会用 `xvfb` 包装有头 Chromium（需安装 `xvfb` 包）。`npm run test:ci` 与 `npm test` 相同。详见 [docs/TESTING.md](docs/TESTING.md)。
 
 修改扩展文件后，在 `chrome://extensions/` 点击扩展卡片上的「重新加载」。
 
@@ -196,8 +204,13 @@ OpenTab/
 ├── package.json
 ├── background.js              # Service Worker
 ├── home.html / home.css / home.js
-├── search.js / import.js / sync.js
+├── boot.js                    # 首屏启动镜像（主题、时钟、壁纸、布局）
+├── bing-cache.js / lib/bing-daily.js
 ├── search.js                  # 新标签页搜索框（引擎、历史、网址直达）
+├── folders.js                 # 桌面文件夹和分组标签
+├── import.js / sync.js        # 备份导入和 chrome.storage.sync
+├── layout.js / settings-nav.js
+├── specs/                     # 迭代验收标准
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js
 ├── fixparser.html / fixparser.js

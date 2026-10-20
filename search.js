@@ -51,6 +51,8 @@
     getBackupSlice,
     normalizeBackup,
     applyFromStorage: loadFromStorage,
+    replaceSettings,
+    resetToDefaults,
     init,
     resolve,
     listEngines,
@@ -164,6 +166,29 @@
   function persist() {
     if (!global.chrome || !chrome.storage || !chrome.storage.local) return;
     chrome.storage.local.set(getBackupSlice());
+  }
+
+  function replaceSettings(slice, options) {
+    const keepHistory = !options || options.keepHistory !== false;
+    const incoming = slice && typeof slice === 'object' ? slice : {};
+    applySlice({
+      searchEngine: incoming.searchEngine,
+      customSearchEngines: incoming.customSearchEngines,
+      searchOpenInNewTab: incoming.searchOpenInNewTab,
+      searchHistoryEnabled: incoming.searchHistoryEnabled,
+      searchHistory: keepHistory ? searchState.searchHistory : incoming.searchHistory
+    });
+    persist();
+    renderAll();
+  }
+
+  function resetToDefaults(options) {
+    replaceSettings({
+      searchEngine: 'google',
+      customSearchEngines: [],
+      searchOpenInNewTab: false,
+      searchHistoryEnabled: true
+    }, options);
   }
 
   function applySlice(slice) {
