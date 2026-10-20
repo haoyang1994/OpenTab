@@ -244,6 +244,9 @@ async function runSettingsLayoutE2E() {
     await page.fill('#settings-search', 'layout');
     await page.waitForSelector('#settings-section-shortcuts:not(.filtered-out)');
     assert.equal(await page.locator('#settings-section-appearance').evaluate((el) => el.classList.contains('filtered-out')), true);
+    await page.fill('#settings-search', '更换图标');
+    await page.waitForSelector('#settings-section-shortcuts:not(.filtered-out)');
+    assert.equal(await page.locator('#settings-section-appearance').evaluate((el) => el.classList.contains('filtered-out')), true);
     await page.fill('#settings-search', 'seconds');
     await page.waitForSelector('#settings-section-appearance:not(.filtered-out)');
     assert.equal(await page.locator('#settings-section-shortcuts').evaluate((el) => el.classList.contains('filtered-out')), true);
@@ -269,6 +272,22 @@ async function runSettingsLayoutE2E() {
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--layout-icon-size').trim() === '72px');
     await page.click('.layout-size-preset[data-size="80"]');
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--layout-icon-size').trim() === '80px');
+    await page.locator('#icons-container .icon-widget[data-id="keep-a"]').click({ button: 'right' });
+    await page.waitForSelector('#icon-context-menu:not(.hidden)');
+    await page.click('#change-icon-btn');
+    await page.waitForSelector('#change-icon-modal:not(.hidden)', { timeout: 5000 });
+    assert.equal(
+      await page.locator('.change-icon-preview').evaluate((el) => getComputedStyle(el).width),
+      '80px',
+      '更换图标 preview follows layout icon size'
+    );
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#change-icon-modal.hidden');
+    assert.equal(
+      await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden')),
+      false,
+      'Esc on 更换图标 must not close the settings panel'
+    );
     await page.selectOption('#layout-columns', '6');
     await page.waitForSelector('body.layout-fixed-cols');
     await page.uncheck('#layout-show-names');

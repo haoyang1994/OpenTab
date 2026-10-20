@@ -2654,13 +2654,17 @@ body.theme-light .calendar-popover .flatpickr-day.endRange {
 
 .change-icon-preview {
   position: relative;
-  width: 72px;
-  height: 72px;
+  width: var(--layout-icon-size);
+  height: var(--layout-icon-size);
   margin: 0 auto 16px;
   overflow: hidden;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.11);
   border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.change-icon-preview .icon-fallback {
+  font-size: var(--layout-icon-font);
 }
 
 .change-icon-preview img {

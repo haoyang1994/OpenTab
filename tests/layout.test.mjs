@@ -145,6 +145,20 @@ assert.equal(isAllowedConsoleError('Failed to load resource', 'https://www.bing.
 assert.equal(isAllowedConsoleError('Failed to fetch Bing image'), true);
 assert.equal(isAllowedConsoleError('Failed to load resource: net::ERR_FAILED'), false);
 assert.equal(isAllowedConsoleError('Failed to load resource', 'chrome-extension://abc/home.js'), false);
+assert.equal(
+  isAllowedConsoleError('Access to fetch at https://cors-blocked.test/favicon.ico from origin chrome-extension://x has been blocked by CORS policy'),
+  false,
+  'BUG-025: CORS errors are not allowlisted even when the URL mentions favicon.ico'
+);
+assert.equal(isAllowedConsoleError('Failed to load resource', 'https://cors-blocked.test/favicon.ico'), false);
+
+const homeCss = fs.readFileSync(path.join(root, 'home.css'), 'utf8');
+assert.match(homeCss, /\.change-icon-preview\s*\{[^}]*--layout-icon-size/s, '更换图标 preview follows layout icon size');
+assert.match(settingsNavSrc, /'change-icon-modal'/);
+assert.ok(
+  settingsNavSrc.indexOf('change-icon-modal') < settingsNavSrc.indexOf("'settings-panel'"),
+  'change-icon-modal must trap Tab above the settings panel'
+);
 assert.deepEqual(
   unexpectedErrors(['Failed to load resource (https://example.com/x)', 'boom']),
   ['boom']

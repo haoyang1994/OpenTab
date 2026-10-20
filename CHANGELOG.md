@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E2E console allowlist is shared and URL-based (`example.com` / `bing.com`); tests no longer blanket-skip `Failed to load resource` (BUG-031)
 - Global 「恢复默认」 no longer turns off browser sync; only the import/sync section restore does, and its confirm copy says 会关闭浏览器同步 (BUG-032)
 - Auto icon load no longer `fetch()`es third-party favicons (BUG-025); popup/import shortcuts still show a real icon via deferred `<img>` (BUG-026); user `customIconUrl` beats the bundled library (BUG-027); sync strips `iconCacheState` and `chrome-extension:` / `blob:` `customIconUrl` (BUG-028)
+- **更换图标** preview follows `--layout-icon-size`; Esc/Tab treat that modal above the settings panel so layout search and icon size controls stay intact
 
 ### Changed
 
