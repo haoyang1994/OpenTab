@@ -56,7 +56,7 @@
     state.folders.forEach((folder) => {
       const option = document.createElement('option');
       option.value = folder.id;
-      option.textContent = folder.id === HOME_FOLDER_ID ? `${folder.name}（首页）` : folder.name;
+      option.textContent = folder.id === HOME_FOLDER_ID ? `${folder.name}（默认）` : folder.name;
       elements.folderSelect.appendChild(option);
     });
     elements.folderSelect.value = HOME_FOLDER_ID;
@@ -116,6 +116,7 @@
         name,
         url: tabUrl,
         folderId: targetFolderId,
+        parentId: '',
         customIconUrl: '',
         emoji: '',
         uploadedIconDataUrl: '',

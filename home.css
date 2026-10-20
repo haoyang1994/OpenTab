@@ -975,37 +975,6 @@ body.theme-light #icon-drop-indicator {
   box-shadow: 0 0 0 1px hsla(var(--accent-hue), 78%, 32%, 0.28);
 }
 
-#desktop-folder-label {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  z-index: 90;
-  padding: 6px 14px;
-  max-width: 60vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.58);
-  background: rgba(8, 13, 23, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  pointer-events: none;
-  opacity: 0.9;
-}
-
-body.theme-light #desktop-folder-label {
-  color: rgba(17, 33, 56, 0.52);
-  background: rgba(255, 255, 255, 0.5);
-  border-color: rgba(17, 33, 56, 0.07);
-}
-
 /* ==========================================================================
    Floating controls
    ========================================================================== */
@@ -1055,23 +1024,8 @@ body.theme-light #desktop-folder-label {
   to { transform: rotate(360deg); }
 }
 
-#workspace-btn {
-  top: 20px;
-  left: 20px;
-  z-index: 1210;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-}
-
-body:has(#workspace-drawer:not(.hidden)) #workspace-btn {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--accent-1);
-}
-
 #todo-toggle-btn {
-  top: 76px;
+  top: 20px;
   left: 20px;
   width: 44px;
   height: 44px;
@@ -1089,58 +1043,37 @@ body:has(#workspace-drawer:not(.hidden)) #workspace-btn {
 }
 
 /* ==========================================================================
-   Workspace drawer
+   Group tabs + nested folders
    ========================================================================== */
 
-.workspace-drawer {
-  position: fixed;
-  top: 12px;
-  bottom: 12px;
-  left: 12px;
-  z-index: 1200;
-  width: min(372px, calc(100vw - 24px));
-  display: flex;
-  flex-direction: column;
-  padding: 18px;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius-lg);
-  background: var(--panel-bg);
-  backdrop-filter: blur(40px) saturate(160%);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
-  box-shadow: var(--shadow-panel);
-  transition: transform 0.38s var(--spring), opacity 0.3s var(--transition);
-}
-
-.workspace-drawer.hidden {
-  transform: translateX(calc(-100% - 24px));
-  opacity: 0;
-  pointer-events: none;
-}
-
-.workspace-header {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-
-.workspace-actions {
+.group-tabs-bar {
+  position: relative;
+  z-index: 1260;
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
+  width: min(900px, 94vw);
+  margin: clamp(28px, 5vh, 56px) auto 0;
 }
 
-.workspace-folder-tabs {
+#icons-container {
+  margin-top: 16px;
+}
+
+.group-tabs {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
-  margin-top: 10px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--section-border);
 }
 
-.folder-tab {
+.group-tab,
+.group-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 7px 12px;
   border: 1px solid var(--section-border);
   border-radius: 999px;
@@ -1152,80 +1085,182 @@ body:has(#workspace-drawer:not(.hidden)) #workspace-btn {
   transition: background 0.2s var(--transition), border-color 0.2s var(--transition), color 0.2s var(--transition), transform 0.2s var(--spring);
 }
 
-.folder-tab:hover {
+.group-add-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.group-tab:hover,
+.group-add-btn:hover {
   background: var(--control-hover);
   color: var(--text-primary);
 }
 
-.folder-tab.active {
+.group-tab.active {
   background: var(--accent-soft);
   border-color: var(--accent-line);
   color: var(--text-primary);
 }
 
-.folder-tab.drop-target {
+.group-tab.drop-target,
+.icon-widget.folder-merge-target {
   border-color: var(--accent-1);
   box-shadow: 0 0 0 3px var(--accent-soft);
   transform: translateY(-1px);
 }
 
-.workspace-hint {
-  margin-top: 10px;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  opacity: 0.72;
+.group-tab-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+}
+
+.group-inline-input {
+  width: 140px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--control-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.icon-visual.folder-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 3px;
+  padding: 6px;
+}
+
+.folder-preview-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+}
+
+.folder-preview-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.folder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-overlay.hidden {
+  display: none;
+}
+
+.folder-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 18, 0.46);
+}
+
+.folder-panel {
+  position: relative;
+  z-index: 1;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(72vh, 640px);
+  padding: 20px 18px 16px;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  box-shadow: var(--shadow-panel);
+}
+
+.folder-title-input {
+  display: block;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 4px 2px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--section-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+}
+
+.folder-icons-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 10px;
+}
+
+.inline-dialog {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 1450;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px 18px 16px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-panel);
+}
+
+.inline-dialog.hidden {
+  display: none;
+}
+
+.inline-dialog-message {
+  margin: 0 0 16px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
-.workspace-icons-container {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  grid-auto-rows: min-content;
-  align-content: start;
-  align-items: start;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 2px 2px 12px;
-  overflow: auto;
-  scrollbar-width: thin;
+.inline-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.workspace-icons-container .icon-widget {
-  width: 100%;
-  padding: 12px 6px 10px;
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-body.icon-frame-enabled .workspace-icons-container .icon-widget {
-  background: var(--section-bg);
-  border-color: var(--section-border);
-}
-
-.workspace-icons-container .icon-widget.dragging {
-  opacity: 0.5;
-  transform: scale(0.94);
-}
-
-.workspace-icons-container .icon-name {
+.inline-dialog-actions button {
+  padding: 8px 12px;
+  border: 1px solid var(--section-border);
+  border-radius: 999px;
+  background: var(--control-bg);
   color: var(--text-primary);
+  cursor: pointer;
 }
 
-.workspace-empty {
-  margin-top: 20px;
-  padding: 16px;
-  border: 1px dashed var(--field-border);
-  border-radius: var(--radius-md);
-  font-size: 12.5px;
-  color: var(--text-tertiary);
-  text-align: center;
+.inline-dialog-actions button.btn-primary {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
 }
 
-.workspace-empty.hidden {
-  display: none;
+.inline-dialog-actions button.danger {
+  color: #ff8fa3;
 }
 
 /* ==========================================================================
@@ -2412,13 +2447,11 @@ body.minimal-mode #welcome-text,
 body.minimal-mode #date,
 body.minimal-mode #timezone-label,
 body.minimal-mode #timezone-btn,
-body.minimal-mode #desktop-folder-label,
+body.minimal-mode #group-tabs-bar,
 body.minimal-mode #icons-container,
 body.minimal-mode #icons-empty-hint,
-body.minimal-mode #workspace-btn,
 body.minimal-mode #todo-toggle-btn,
 body.minimal-mode #refresh-bg-btn,
-body.minimal-mode #workspace-drawer,
 body.minimal-mode #todo-widget {
   display: none !important;
 }
@@ -2538,17 +2571,9 @@ body.minimal-mode #settings-btn:hover {
     font-size: 11.5px;
   }
 
-  #workspace-btn,
   #todo-toggle-btn {
-    left: 14px;
-  }
-
-  #workspace-btn {
     top: 14px;
-  }
-
-  #todo-toggle-btn {
-    top: 68px;
+    left: 14px;
   }
 
   #refresh-bg-btn {
@@ -2579,13 +2604,6 @@ body.minimal-mode #settings-btn:hover {
     bottom: 8px;
     width: calc(100vw - 16px);
     border-radius: 22px;
-  }
-
-  .workspace-drawer {
-    top: 8px;
-    bottom: 8px;
-    left: 8px;
-    width: calc(100vw - 16px);
   }
 
   .preset-grid {
@@ -2629,7 +2647,8 @@ body.minimal-mode #settings-btn:hover {
   #search-widget,
   .floating-btn,
   .settings-panel,
-  .workspace-drawer,
+  .folder-panel,
+  .inline-dialog,
   #todo-widget,
   .modal-content,
   .timezone-selector,

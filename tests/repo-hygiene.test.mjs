@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,11 +91,17 @@ for (const file of htmlFiles) {
 }
 
 assert.ok(exists('search.js'), 'search.js must exist (iteration 4 search logic)');
+assert.ok(exists('folders.js'), 'folders.js must exist so home.js can stay within the 12KB budget');
 const homeHtml = read('home.html');
 assert.match(homeHtml, /<script src="search\.js"><\/script>/, 'home.html must load search.js');
+assert.match(homeHtml, /<script src="folders\.js"><\/script>/, 'home.html must load folders.js');
 assert.ok(
   homeHtml.indexOf('search.js') < homeHtml.indexOf('home.js'),
   'search.js must load before home.js'
+);
+assert.ok(
+  homeHtml.indexOf('folders.js') < homeHtml.indexOf('home.js'),
+  'folders.js must load before home.js'
 );
 
 assert.equal(manifest.permissions.includes('tabs'), false, 'BUG-005/AC7: tabs permission must be removed');
@@ -140,5 +147,46 @@ assert.equal(
   false,
   'Baidu/DuckDuckGo searches are navigations, not connect-src'
 );
+
+const homeJs = read('home.js');
+const nativeDialogs = [...homeJs.matchAll(/\b(prompt|confirm|alert)\s*\(/g)].map((match) => match[0]);
+assert.ok(
+  nativeDialogs.every((call) => call.startsWith('alert')),
+  `home.js native dialogs must only be the SSH alert, got: ${nativeDialogs.join(', ') || '(none)'}`
+);
+assert.ok(nativeDialogs.length <= 1, `home.js should have at most one native dialog, got ${nativeDialogs.length}`);
+if (nativeDialogs.length === 1) {
+  assert.match(homeJs, /alert\('请输入有效的 SSH 配置/);
+}
+
+function gitShow(ref, file) {
+  try {
+    return execSync(`git show ${ref}:${file}`, {
+      cwd: root,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 10 * 1024 * 1024
+    });
+  } catch {
+    return null;
+  }
+}
+
+const homeJsRefs = [
+  process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : null,
+  'origin/master',
+  'master'
+].filter(Boolean);
+let masterHome = null;
+for (const ref of homeJsRefs) {
+  masterHome = gitShow(ref, 'home.js');
+  if (masterHome) break;
+}
+if (masterHome) {
+  const currentHome = fs.readFileSync(path.join(root, 'home.js'));
+  assert.ok(
+    currentHome.length <= masterHome.length,
+    `home.js is ${currentHome.length} bytes; baseline is ${masterHome.length}. The 12KB budget is exhausted — move grid/folder code to folders.js instead of growing home.js.`
+  );
+}
 
 console.log('repo-hygiene passed');

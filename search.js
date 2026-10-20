@@ -22,7 +22,8 @@
     '#add-icon-modal:not(.hidden)',
     '#timezone-selector:not(.hidden)',
     '#calendar-popover:not(.hidden)',
-    '#workspace-drawer:not(.hidden)',
+    '#folder-overlay:not(.hidden)',
+    '#inline-dialog:not(.hidden)',
     '#icon-context-menu:not(.hidden)'
   ];
 
