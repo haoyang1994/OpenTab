@@ -916,6 +916,7 @@
     openOverlay,
     overlayOpen,
     handleEscape,
+    showDialog,
     syncContextMenu,
     moveIconToGroup,
     init

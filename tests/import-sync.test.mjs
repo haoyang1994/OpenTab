@@ -437,6 +437,8 @@ async function run() {
   assert.equal(syncPayload.bingIndex, undefined);
   assert.equal(syncPayload.settings.clockFormat, '24h');
   assert.equal(syncPayload.settings.currentFolderId, undefined);
+  assert.ok(OpenTabSync.SYNC_SETTING_KEYS.includes('layoutIconSize'));
+  assert.ok(OpenTabSync.SYNC_SETTING_KEYS.includes('developerToolsEnabled'));
   assert.equal(syncPayload.icons[0].uploadedIconDataUrl, '');
 
   const modest = OpenTabSync.buildSyncPayload({

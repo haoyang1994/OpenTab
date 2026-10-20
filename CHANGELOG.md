@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Settings panel section nav (appearance, wallpaper, shortcuts and layout, search, weather placeholder, import/sync, advanced, about): click a section to jump, scroll-spy highlight, and a top tab row below 720px
+- Settings search (Chinese/English, case-insensitive) with a 「没有找到」 empty state; Esc clears the query before it closes the panel
+- Layout settings: icon size (small/medium/large or 48–96px), columns (auto or 4–12), show/hide names, and grid max width; live CSS-variable preview, persisted, and included in browser sync keys (shards still count stored JSON bytes, BUG-022)
+- Per-section and global 「恢复默认」 with the existing in-page confirm and undo toast (shortcuts are left untouched)
+- Advanced toggle for SSH / JSON / FIX entries (off by default; existing SSH/tool shortcuts keep it on)
+- `layout.js` / `settings-nav.js` plus `specs/iter-7.md`; weather nav/slot reserved for the parallel first-screen iteration
 - Import Chrome bookmarks (optional `bookmarks` permission, requested on click) into a new folder/group
 - Import the first 12 Chrome most-visited sites (optional `topSites` permission)
 - Import Infinity / WeTab / iTab backup files, with an automatic snapshot and one-click undo
@@ -50,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Startup migrates leftover plaintext SSH secrets into the encrypted vault
 - Importing or restoring a backup no longer deletes SSH secrets that were only absent from the file (BUG-020)
 - Clock no longer flashes the host timezone or 12-hour time over the boot mirror before storage loads (BUG-024)
+- Custom layout no longer flashes the 56px default on first grid paint: layout keys are written into the boot mirror, `layout.js` applies them at parse, and `loadState` applies storage before `refreshIconViews` (BUG-030)
+- E2E console allowlist is shared and URL-based (`example.com` / `bing.com`); tests no longer blanket-skip `Failed to load resource` (BUG-031)
+- Global 「恢复默认」 no longer turns off browser sync; only the import/sync section restore does, and its confirm copy says 会关闭浏览器同步 (BUG-032)
 
 ### Changed
 
@@ -62,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README documents + add, drag reorder, folders, group tabs, middle-click, undo delete, and Esc
 - Replaced the application icon and three bundled default backgrounds with project-owned assets (Apache-2.0; stills and icon composition Created with Grok Imagine; SVG/PNGs hand-traced and rasterized). Saved Pexels preset paths migrate to the matching new images (or fall back to the Bing default) so existing installs do not 404.
 - Search logic lives in `search.js`; OpenTab backup import/export lives in `import.js`; `home.js` only wires icons into name matching
+- Settings panel logic lives in `settings-nav.js` and grid layout in `layout.js`; `home.js` only wires them so it can shrink instead of growing past the size budget
 
 ### Security
 

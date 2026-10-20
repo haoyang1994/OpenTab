@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { formatConsoleError, unexpectedErrors } from './console-allow.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,13 +21,6 @@ function resolveHeadless(defaultValue) {
   if (process.env.HEADLESS === 'false') return false;
   if (process.env.HEADLESS === 'true') return true;
   return defaultValue;
-}
-
-function unexpectedErrors(errors) {
-  return errors.filter((error) => (
-    !error.includes('Failed to fetch Bing image')
-    && !error.includes('example.com')
-  ));
 }
 
 async function waitForSearch(page) {
@@ -99,7 +93,7 @@ async function runSearchE2E() {
 
     const page = await context.newPage();
     page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
+      if (msg.type() === 'error') consoleErrors.push(formatConsoleError(msg));
     });
     page.on('pageerror', (error) => consoleErrors.push(error.message));
 

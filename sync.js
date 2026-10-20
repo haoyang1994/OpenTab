@@ -38,7 +38,12 @@
     'accentHue',
     'particlesEnabled',
     'gradientFlow',
-    'minimalMode'
+    'minimalMode',
+    'layoutIconSize',
+    'layoutColumns',
+    'layoutShowNames',
+    'layoutMaxWidth',
+    'developerToolsEnabled'
   ];
   const SYNC_TRIGGERS = new Set(['icons', 'folders'].concat(SYNC_SETTING_KEYS));
   const wrappedAreas = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
@@ -913,6 +918,7 @@
 
   return {
     SECRET_FIELDS,
+    SYNC_SETTING_KEYS,
     VAULT_STORE,
     CRYPTO_KEY,
     ENABLED_KEY,

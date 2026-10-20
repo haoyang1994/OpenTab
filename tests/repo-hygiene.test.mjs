@@ -98,11 +98,16 @@ assert.ok(exists('boot.js'), 'boot.js must exist for first-paint (R1)');
 assert.ok(exists('bing-cache.js'), 'bing-cache.js must exist for Bing cache (R2)');
 assert.ok(exists('lib/bing-daily.js'), 'lib/bing-daily.js must exist for Bing daily policy (R2)');
 assert.ok(exists('assets/default_background/default.webp'), 'default.webp is the first-install wallpaper');
+assert.ok(exists('layout.js'), 'layout.js must exist (iteration 7 layout settings)');
+assert.ok(exists('settings-nav.js'), 'settings-nav.js must exist (iteration 7 settings panel)');
+assert.ok(exists('specs/iter-7.md'), 'specs/iter-7.md must record iteration 7 acceptance criteria');
 const homeHtml = read('home.html');
 assert.match(homeHtml, /<script src="search\.js"><\/script>/, 'home.html must load search.js');
 assert.match(homeHtml, /<script src="folders\.js"><\/script>/, 'home.html must load folders.js');
 assert.match(homeHtml, /<script src="import\.js"><\/script>/, 'home.html must load import.js');
 assert.match(homeHtml, /<script src="sync\.js"><\/script>/, 'home.html must load sync.js');
+assert.match(homeHtml, /<script src="layout\.js"><\/script>/, 'home.html must load layout.js');
+assert.match(homeHtml, /<script src="settings-nav\.js"><\/script>/, 'home.html must load settings-nav.js');
 assert.match(homeHtml, /<script src="lib\/bing-daily\.js"><\/script>/, 'home.html must load lib/bing-daily.js');
 assert.match(homeHtml, /<script src="bing-cache\.js"><\/script>/, 'home.html must load bing-cache.js');
 assert.match(homeHtml, /<script src="boot\.js"><\/script>/, 'home.html must load boot.js');
@@ -119,8 +124,16 @@ assert.ok(
   'import.js must load before sync.js'
 );
 assert.ok(
-  homeHtml.indexOf('sync.js') < homeHtml.indexOf('lib/bing-daily.js'),
-  'sync.js must load before lib/bing-daily.js'
+  homeHtml.indexOf('sync.js') < homeHtml.indexOf('layout.js'),
+  'sync.js must load before layout.js'
+);
+assert.ok(
+  homeHtml.indexOf('layout.js') < homeHtml.indexOf('settings-nav.js'),
+  'layout.js must load before settings-nav.js'
+);
+assert.ok(
+  homeHtml.indexOf('settings-nav.js') < homeHtml.indexOf('lib/bing-daily.js'),
+  'settings-nav.js must load before lib/bing-daily.js'
 );
 assert.ok(
   homeHtml.indexOf('lib/bing-daily.js') < homeHtml.indexOf('bing-cache.js'),
@@ -134,6 +147,8 @@ assert.ok(
   homeHtml.indexOf('folders.js') < homeHtml.indexOf('home.js'),
   'folders.js must load before home.js'
 );
+assert.match(homeHtml, /data-settings-section="weather"/, 'weather section placeholder must exist for iter-3');
+assert.match(homeHtml, /id="weather-settings-slot"/, 'iter-3 weather slot must stay in the weather section');
 
 assert.equal(manifest.permissions.includes('tabs'), false, 'BUG-005/AC7: tabs permission must be removed');
 assert.ok(manifest.permissions.includes('activeTab'), 'popup uses activeTab');
@@ -180,9 +195,33 @@ assert.equal(
   'Baidu/DuckDuckGo searches are navigations, not connect-src'
 );
 
+assert.ok(exists('tests/console-allow.mjs'), 'BUG-031 shared console allowlist must exist');
+assert.equal(
+  read('tests/settings-layout.test.mjs').includes("'Failed to load resource'"),
+  false,
+  'BUG-031 must not blanket-exempt Failed to load resource'
+);
+assert.match(
+  read('tests/settings-layout.test.mjs'),
+  /__layoutAtGridReady/,
+  'BUG-030 E2E must snapshot layout at opentab:grid-ready'
+);
+assert.match(
+  read('layout.js'),
+  /applyFromMirror\(\);\s*readAndApply\(\);/,
+  'layout.js must apply the boot mirror at parse, not wait for DOMContentLoaded'
+);
+assert.match(
+  read('settings-nav.js'),
+  /section\.id !== 'about' && section\.id !== 'sync'/,
+  'BUG-032 global restore must skip the sync section'
+);
+
 const homeJs = read('home.js');
 assert.match(homeJs, /function applyBootMirror/, 'home.js must apply the boot mirror before loadState');
 assert.match(homeJs, /showSeconds: state\.showSeconds/, 'boot mirror must include showSeconds');
+assert.match(homeJs, /OpenTabLayout\.bootMirrorSlice\(\)/, 'boot mirror must include layout keys');
+assert.match(homeJs, /OpenTabLayout\.loadFromStorage\(result\)/, 'BUG-030 loadState must apply layout before the grid');
 const nativeDialogs = [...homeJs.matchAll(/\b(prompt|confirm|alert)\s*\(/g)].map((match) => match[0]);
 assert.ok(
   nativeDialogs.every((call) => call.startsWith('alert')),
@@ -219,7 +258,7 @@ if (masterHome) {
   const currentHome = fs.readFileSync(path.join(root, 'home.js'));
   assert.ok(
     currentHome.length <= masterHome.length,
-    `home.js is ${currentHome.length} bytes; baseline is ${masterHome.length}. The 12KB budget is exhausted — move grid/folder code to folders.js instead of growing home.js.`
+    `home.js is ${currentHome.length} bytes; baseline is ${masterHome.length}. The 12KB budget is exhausted — move settings/layout code to settings-nav.js and layout.js instead of growing home.js.`
   );
 }
 

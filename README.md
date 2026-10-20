@@ -72,6 +72,14 @@ First paint applies the saved theme, clock, and wallpaper from a local boot mirr
 - Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
 - Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks 用云端 / 用本机. Settings shows local storage usage
 
+### Settings and layout
+
+- Section nav: appearance, wallpaper, shortcuts and layout, search, weather (placeholder for the first-screen iteration), import/sync, advanced, about. Click a section to jump; the highlight follows scroll. Below 720px the nav becomes a top tab row
+- Search box at the top of the panel filters by labels and help text (Chinese or English, case-insensitive). Empty state: 「没有找到」. Esc clears the query, then closes the panel
+- Layout: icon size (small/medium/large, or 48–96px), columns (auto or 4–12), show/hide names, grid max width. Changes preview live, survive reload, and join the existing sync keys
+- Each section and the footer have 「恢复默认」 (in-page confirm + the same undo toast). Shortcuts are not reset
+- SSH / JSON / FIX add-icon entries stay hidden until Advanced is on. Installs that already have SSH or tool shortcuts keep the toggle on
+
 ## Screenshots
 
 The frames contain Google / GitHub marks, which remain trademarks of their owners. See [NOTICE](NOTICE).
@@ -135,7 +143,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` runs `tests/repo-hygiene.test.mjs`, then `tests/import-sync.test.mjs`, then SSH gateway security tests (`npm run test:ssh-gateway`), then the Playwright E2E suite (`scripts/run-e2e.sh`). On Linux without a display, that script wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. Details: [docs/TESTING.md](docs/TESTING.md).
+`npm test` runs `tests/repo-hygiene.test.mjs`, then `tests/import-sync.test.mjs`, then `tests/first-screen-unit.test.mjs`, then `tests/layout.test.mjs`, then SSH gateway security tests (`npm run test:ssh-gateway`), then the Playwright E2E suite (`scripts/run-e2e.sh`: `extension`, `search`, `first-run`, and `settings-layout`). On Linux without a display, that script wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. Details: [docs/TESTING.md](docs/TESTING.md).
 
 After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
 
@@ -196,8 +204,13 @@ OpenTab/
 ├── package.json
 ├── background.js              # service worker
 ├── home.html / home.css / home.js
-├── search.js / import.js / sync.js
+├── boot.js                    # first-paint boot mirror (theme, clock, wallpaper, layout)
+├── bing-cache.js / lib/bing-daily.js
 ├── search.js                  # new-tab search box (engines, history, URL jump)
+├── folders.js                 # desktop folders and group tabs
+├── import.js / sync.js        # backup import and chrome.storage.sync
+├── layout.js / settings-nav.js
+├── specs/                     # iteration acceptance criteria
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js
 ├── fixparser.html / fixparser.js
