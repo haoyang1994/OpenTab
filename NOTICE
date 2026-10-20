@@ -1,0 +1,263 @@
+OpenTab
+
+This product includes software and other materials developed by third parties.
+The Apache License 2.0 applies to OpenTab original code as described in LICENSE.
+Items marked “不在 Apache-2.0 授权范围内” are distributed under their own terms and
+are not re-licensed as Apache-2.0. Items marked “需确认” still need owner confirmation.
+
+Upstream versions below match package-lock.json after `npm ci` (2026-10-20) unless noted.
+
+================================================================================
+1. Runtime npm packages loaded by extension pages
+================================================================================
+
+Name:        flatpickr
+Version:     4.6.13
+Used by:     home.html (vendor/flatpickr/flatpickr.min.css,
+             vendor/flatpickr/flatpickr.min.js,
+             vendor/flatpickr/l10n/zh.js)
+License:     MIT
+License file: vendor/flatpickr/LICENSE.md (Copyright (c) 2017 Gregory Petrosyan)
+Upstream:    https://github.com/flatpickr/flatpickr
+Status:      Compatible with Apache-2.0
+
+Name:        xterm
+Version:     5.3.0
+Used by:     ssh_terminal.html (vendor/xterm/xterm.css,
+             vendor/xterm/xterm.js)
+License:     MIT
+License file: vendor/xterm/LICENSE
+Upstream:    https://github.com/xtermjs/xterm.js
+Status:      Compatible with Apache-2.0
+
+Name:        xterm-addon-fit
+Version:     0.8.0
+Used by:     ssh_terminal.html (vendor/xterm-addon-fit/xterm-addon-fit.js)
+License:     MIT
+License file: vendor/xterm-addon-fit/LICENSE
+Upstream:    https://github.com/xtermjs/xterm.js (addons)
+Status:      Compatible with Apache-2.0
+
+================================================================================
+2. SSH gateway (ssh-gateway.mjs) Node dependencies
+================================================================================
+
+These packages are used by the local WebSocket SSH gateway. They are not loaded
+by Chrome extension pages.
+
+Name:        ssh2
+Version:     1.17.0
+License:     MIT (verified 2026-10-20: opened node_modules/ssh2/LICENSE after `npm ci`;
+             text is the MIT license, “Copyright Brian White. All rights reserved.”
+             package.json licenses[].type is MIT. package-lock.json has no license field.)
+Upstream:    https://github.com/mscdex/ssh2
+Status:      Compatible with Apache-2.0 (lockfile field missing; LICENSE file verified)
+
+Name:        ws
+Version:     8.20.0
+License:     MIT
+Upstream:    https://github.com/websockets/ws
+Status:      Compatible with Apache-2.0
+
+Name:        socks
+Version:     2.8.7
+License:     MIT
+Upstream:    https://github.com/JoshGlazebrook/socks
+Status:      Compatible with Apache-2.0
+
+Name:        ip-address
+Version:     10.1.0
+License:     MIT
+Upstream:    https://github.com/beaugunderson/ip-address
+Status:      Compatible with Apache-2.0
+
+Name:        smart-buffer
+Version:     4.2.0
+License:     MIT
+Upstream:    https://github.com/JoshGlazebrook/smart-buffer
+Status:      Compatible with Apache-2.0
+
+Name:        asn1
+Version:     0.2.6
+License:     MIT
+Upstream:    https://github.com/joyent/node-asn1
+Status:      Compatible with Apache-2.0
+
+Name:        safer-buffer
+Version:     2.1.2
+License:     MIT
+Upstream:    https://github.com/ChALkeR/safer-buffer
+Status:      Compatible with Apache-2.0
+
+Name:        bcrypt-pbkdf
+Version:     1.0.2
+License:     BSD-3-Clause
+Copyright:   Blowfish for OpenBSD: Copyright 1997 Niels Provos
+             bcrypt_pbkdf: Copyright (c) 2013 Ted Unangst
+             JavaScript performance work: Copyright 2016, Joyent Inc, Alex Wilson
+             (retain these notices; see node_modules/bcrypt-pbkdf/LICENSE)
+Upstream:    https://github.com/joyent/node-bcrypt-pbkdf
+Status:      Compatible with Apache-2.0 (copyright notices retained)
+
+Name:        tweetnacl
+Version:     0.14.5
+License:     Unlicense
+Upstream:    https://github.com/dchest/tweetnacl-js
+Status:      Compatible with Apache-2.0
+
+Name:        cpu-features (optional dependency of ssh2)
+Version:     0.0.10
+License:     MIT (verified 2026-10-20: opened node_modules/cpu-features/LICENSE after
+             `npm ci`; MIT text, “Copyright Brian White. All rights reserved.”
+             package.json licenses[].type is MIT. package-lock.json has no license field.)
+Upstream:    https://github.com/mscdex/cpu-features
+Status:      Compatible with Apache-2.0 (lockfile field missing; LICENSE file verified)
+
+Name:        buildcheck (optional dependency of cpu-features)
+Version:     0.0.7
+License:     MIT (verified 2026-10-20: opened node_modules/buildcheck/LICENSE after
+             `npm ci`; MIT text, “Copyright Brian White. All rights reserved.”
+             package.json licenses[].type is MIT. package-lock.json has no license field.)
+Upstream:    https://github.com/mscdex/buildcheck
+Status:      Compatible with Apache-2.0 (lockfile field missing; LICENSE file verified)
+
+Name:        nan (optional)
+Version:     2.26.2
+License:     MIT
+Upstream:    https://github.com/nodejs/nan
+Status:      Compatible with Apache-2.0
+
+================================================================================
+3. Development / test only (not shipped with the unpacked extension UI)
+================================================================================
+
+Name:        playwright
+Version:     1.58.2
+License:     Apache-2.0
+Upstream:    https://github.com/microsoft/playwright
+Status:      Compatible
+
+Name:        playwright-core
+Version:     1.58.2
+License:     Apache-2.0
+Upstream:    https://github.com/microsoft/playwright
+Status:      Compatible
+
+Name:        crx
+Version:     5.0.1
+License:     MIT
+Upstream:    https://github.com/oncletom/crx
+Used for:    optional local CRX packaging (devDependency)
+Status:      Compatible with Apache-2.0
+
+crx transitive dependencies (from package-lock.json; none are copyleft):
+
+- MIT: archiver 3.1.1, archiver-utils 2.1.0, async 2.6.4, balanced-match 1.0.2,
+  base64-js 1.5.1, bl 4.1.0, brace-expansion 1.1.15, buffer 5.7.1,
+  buffer-crc32 0.2.13, commander 2.20.3, compress-commons 2.1.1, concat-map 0.0.1,
+  core-util-is 1.0.3, crc 3.8.0, crc32-stream 3.0.1, end-of-stream 1.4.5,
+  fs-constants 1.0.0, fsevents 2.3.2 (optional, Darwin), isarray 1.0.0,
+  lazystream 1.0.1, lodash 4.18.1, lodash.defaults 4.2.0, lodash.difference 4.5.0,
+  lodash.flatten 4.4.0, lodash.isplainobject 4.0.6, lodash.union 4.6.0,
+  node-rsa 1.1.1, normalize-path 3.0.0, path-is-absolute 1.0.1,
+  process-nextick-args 2.0.1, protocol-buffers-schema 3.6.1, readable-stream
+  (2.3.8 / 3.6.2), resolve-protobuf-schema 2.1.0, safe-buffer (5.1.2 / 5.2.1),
+  string_decoder (1.1.1 / 1.3.0), tar-stream 2.2.0, util-deprecate 1.0.2,
+  zip-stream 2.1.3
+- ISC: fs.realpath 1.0.0, glob 7.2.3, graceful-fs 4.2.11, inflight 1.0.6,
+  inherits 2.0.4, minimatch 3.1.5, once 1.4.0, wrappy 1.0.2
+- BSD-3-Clause: ieee754 1.2.1, pbf 3.3.0
+
+Conclusion: all npm dependencies observed in the lockfile are Apache-2.0,
+MIT, ISC, BSD-3-Clause, or Unlicense. No GPL / AGPL / LGPL packages.
+
+================================================================================
+4. Repository assets
+================================================================================
+
+Name:        assets/default_background/pexels-pixabay-40896.jpg
+Size:        791,436 bytes
+Used by:     home.html preset background
+Source:      Pexels photo 40896, photographer Pixabay
+Original:    https://www.pexels.com/photo/green-tree-plant-leaves-40896/
+             (canonical image: https://images.pexels.com/photos/40896/larch-conifer-cone-branch-tree-40896.jpeg)
+License:     Pexels License (https://www.pexels.com/license/)
+Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+
+Name:        assets/default_background/pexels-elina-sazonova-4275497.jpg
+Size:        2,369,574 bytes
+Used by:     home.html preset background
+Source:      Pexels photo 4275497, photographer Elina Sazonova
+Original:    https://www.pexels.com/photo/scenic-view-of-rocky-mountains-4275497/
+License:     Pexels License (https://www.pexels.com/license/)
+Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+
+Name:        assets/default_background/pexels-souvenirpixels-417074.jpg
+Size:        1,275,751 bytes
+Used by:     home.html preset background
+Source:      Pexels photo 417074, photographer James Wheeler
+             (Pexels username souvenirpixels, https://www.pexels.com/@souvenirpixels/)
+Original:    https://www.pexels.com/photo/lake-and-mountain-417074/
+License:     Pexels License (https://www.pexels.com/license/)
+Status:      不在 Apache-2.0 授权范围内. Bundled for display only; not re-licensed.
+
+Name:        screenshots/preview-dark.png, screenshots/preview-light.png,
+             screenshots/settings-panel.png
+Used by:     README.md / README.zh-CN.md
+License:     Screenshots of OpenTab. Background pixels follow the Pexels License
+             of the photos above. Google and GitHub marks that appear in the
+             frames are trademarks of their owners (see below).
+Status:      不在 Apache-2.0 授权范围内 for the photograph and trademark portions.
+
+Name:        icons/icon16.png, icons/icon48.png, icons/icon128.png
+Used by:     manifest.json icons
+Source:      No attribution in-tree; presumed original artwork
+Status:      需确认 (owner must confirm originality before treating as Apache-2.0)
+
+Name:        icons/opentab-icon.svg
+Used by:     not referenced by extension pages (source for the PNG icons)
+Source:      Hand-written geometric SVG; presumed original
+Status:      需确认 (owner must confirm originality; file is kept)
+
+Name:        Inline Google / Bing / GitHub SVG marks in home.html (search engine switch)
+License:     Third-party trademarks
+Status:      不在 Apache-2.0 授权范围内.
+             Google, Bing, and GitHub logos are trademarks of their respective
+             owners. They are used only as identification of search engines.
+             No affiliation or endorsement is implied. Replacing them with
+             generic icons is out of scope for this release.
+
+Name:        FIX tag / value dictionary embedded in fixparser.js
+             (FIX_TAGS, FIX_VALUES)
+Used by:     fixparser.html
+Source:      QuickFIX/J data dictionary (https://www.quickfixj.org/,
+             repository https://github.com/quickfix-j/quickfixj). Confirmed by
+             the repository owner.
+License:     The QuickFIX Software License, Version 1.0
+             (https://github.com/quickfix-j/quickfixj/blob/master/LICENSE)
+Copyright:   Copyright (c) 2001-2005 quickfixengine.org  All rights reserved.
+Required acknowledgement (license section 3, quoted from that LICENSE):
+             This product includes software developed by
+             quickfixengine.org (http://www.quickfixengine.org/).
+Notes:       BSD-style terms. The names "QuickFIX" and "quickfixengine.org"
+             are not used to endorse OpenTab. This product is named OpenTab,
+             not QuickFIX (license sections 4–5).
+Status:      Compatible with Apache-2.0 (retain copyright, conditions, and
+             the acknowledgement above). Not re-licensed as Apache-2.0.
+
+Fonts:       CSS system font stacks only (-apple-system, SF Pro, Segoe UI,
+             Consolas, Menlo, etc.). No font files are shipped.
+Emoji:       Rendered by the OS. No emoji font is packaged.
+
+================================================================================
+5. External services accessed at runtime (not distributed in this repository)
+================================================================================
+
+- Bing daily wallpaper API (https://www.bing.com/HPImageArchive.aspx):
+  used only to display a wallpaper. Image copyright remains with the original
+  authors / Microsoft Bing.
+- wttr.in (https://wttr.in): weather text for the weather pill.
+- Favicons of websites the user adds as shortcuts: requested directly from
+  those sites.
+
+See README.md / README.zh-CN.md privacy sections.

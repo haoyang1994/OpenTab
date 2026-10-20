@@ -32,6 +32,8 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 - 未设置 `SSH_PRIVATE_KEY_PATH` 时不会加载 `~/.ssh/id_rsa`
 - 无需真实 SSH 主机
 
+仓库规范：`tests/repo-hygiene.test.mjs`（LICENSE / NOTICE / 社区文件 / 删除清单 / 根目录 html 本地引用）
+
 ### 2.2 当前未覆盖（需要手工/后续自动化）
 
 - 右键新增图标完整流程（emoji/name/url 输入校验）
@@ -49,7 +51,7 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 npm test
 ```
 
-用途：确认主流程未损坏，适合 agent 与本地频繁执行。
+用途：确认仓库规范、SSH 网关安全测试与主流程均未损坏。`npm test` 顺序：`tests/repo-hygiene.test.mjs` → `test:ssh-gateway` → Playwright E2E。
 
 ### 3.2 CI 一致性执行
 
@@ -57,13 +59,14 @@ npm test
 npm test
 ```
 
-说明：CI 与本地使用同一条命令。`npm test` 会先跑 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
+说明：CI 与本地使用同一条命令。`npm test` 先跑 repo-hygiene 和 `test:ssh-gateway`，再走 `scripts/run-e2e.sh`：有显示器时直接有头运行；Linux 无 `DISPLAY` 或 `CI=true` 时用 `xvfb-run` 包装有头 Chromium（MV3 扩展需要 headed 才能稳定加载）。`npm run test:ci` 与 `npm test` 相同。
 
 ### 3.3 本地调试模式
 
 ```bash
 npm run test:e2e:headed
 npm run test:e2e:headless
+npm run test:ssh-gateway
 ```
 
 `test:e2e:headless` 不推荐：Playwright 无头使用 `chrome-headless-shell`，MV3 `--load-extension` 可能失败。需要看浏览器窗口时用 `test:e2e:headed`；无显示器环境请用 `npm test`（自动 xvfb）。
@@ -114,14 +117,14 @@ npm run test:e2e:headless
 
 ## 7. CI 规范
 
-工作流：`.github/workflows/e2e.yml`
+工作流：`.github/workflows/ci.yml`
 
-- 触发：`push`、`pull_request`
+- 触发：`push` 到 `master`、所有 `pull_request`
 - Node 版本：20
 - 强制步骤：
 1. `npm ci`
-2. `npx playwright install chromium`
-3. `npm test`
+2. `npx playwright install --with-deps chromium`
+3. `npm test`（repo-hygiene、SSH 网关安全测试、E2E；E2E 在无显示器时由 `scripts/run-e2e.sh` 套 xvfb）
 
 ## 8. 失败分级与处理
 

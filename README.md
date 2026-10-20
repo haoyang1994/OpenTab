@@ -1,264 +1,204 @@
 <div align="center">
 
-# 🌅 OpenTab
+# OpenTab
 
-**一个精致的 Chrome 新标签页扩展，iPad 风格毛玻璃设计，让你的新标签页既好看又好用。**
+A Chrome Manifest V3 new tab page with an iPad-style glass UI. Open source and auditable.
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+**English** | [简体中文](README.zh-CN.md)
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/haoyang1994/OpenTab/actions/workflows/ci.yml/badge.svg)](https://github.com/haoyang1994/OpenTab/actions/workflows/ci.yml)
 [![Chrome](https://img.shields.io/badge/Chrome-MV3-brightgreen.svg)](manifest.json)
-[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.1.0-orange.svg)](manifest.json)
 
 </div>
 
 ---
 
-## ✨ 功能特性
+## Introduction
 
-### 🕐 时钟与日历
-- **iPad 风格时钟**：优雅的毛玻璃卡片设计，支持 12h/24h 切换
-- **多时区支持**：内置 23 个常用时区，一键切换
-- **秒数显示**：可开关的秒数显示
-- **日历组件**：带节假日和节气标记的日历
+OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, shortcuts, search, weather, and a few developer tools. Settings stay on your machine.
 
-### 🎨 个性化主题
-- **深色/浅色主题**：支持深色、浅色、自动跟随系统三种模式
-- **主题色自定义**：6 种精选主题色（极光蓝、梦幻紫、日落橙、薄荷绿、樱花粉、星空蓝）
-- **动态粒子背景**：科技感粒子效果，颜色跟随主题色
-- **渐变流动动画**：背景渐变缓慢流动
-- **极简模式**：双击时钟进入沉浸模式，只显示时间
+## Features
 
-### 🖼️ 背景系统
-- **Bing 每日壁纸**：每天自动更新必应美图
-- **预设渐变**：精选多款渐变背景
-- **自定义背景**：支持自定义图片/视频 URL
+### Clock and calendar
 
-### 🔗 快捷方式
-- **快捷链接**：一键添加常用网站
-- **SSH 终端**：内置终端，通过 WebSocket 网关连接 SSH
-- **开发者工具**：JSON 格式化、FIX 协议解析器
-- **文件夹分类**：工作区抽屉，支持拖拽排序
+- Glass clock card with 12-hour / 24-hour formats
+- 23 common time zones
+- Optional seconds
+- Calendar popover with holidays and Chinese solar terms
 
-### 🔍 搜索栏
-- **多引擎切换**：Google、Bing、GitHub 一键切换
-- **毛玻璃设计**：与整体风格统一
+### Theme
 
-### ☁️ 天气小组件
-- **自动定位**：基于地理位置获取天气
-- **wttr.in 数据源**：简洁美观的天气展示
+- Dark, light, or follow the system
+- Six accent presets (aurora blue, dream purple, sunset orange, mint, sakura, starry blue)
+- Optional particle overlay and slow gradient motion
+- Minimal mode (double-click the clock)
+- Adjustable panel opacity, blur, and shortcut frames
 
-### ✅ 待办事项
-- **侧边抽屉式**：不占主界面空间
-- **进度条显示**：直观展示完成进度
-- **本地存储**：数据持久化保存
+### Backgrounds
 
-### 💾 备份与恢复
-- **JSON 导出/导入**：轻松备份和迁移配置
-- **快照功能**：快速保存和恢复配置状态
+- Bing daily wallpaper (and recent history via the refresh button)
+- Preset gradients
+- Three bundled still photos (Pexels; see [NOTICE](NOTICE))
+- Custom image or video URL, or a local file upload
 
----
+### Shortcuts
 
-## 📸 预览
+- Website shortcuts
+- Built-in SSH terminal (needs the local gateway described below)
+- Local JSON formatter and FIX parser
+- Folders (drawers) with drag-and-drop
+- Toolbar popup to save the current tab as a shortcut
 
-### 深色主题
-![深色主题预览](screenshots/preview-dark.png)
+### Search, weather, todos, backup
 
-### 浅色主题
-![浅色主题预览](screenshots/preview-light.png)
+- Search engines: Google, Bing, GitHub
+- Weather pill via geolocation and [wttr.in](https://wttr.in)
+- Side-drawer todos with a progress bar
+- JSON backup export/import and a local snapshot
 
-### 设置面板
-![设置面板](screenshots/settings-panel.png)
+## Screenshots
 
----
+Background photos in these screenshots come from [Pexels](https://www.pexels.com/license/) and are **not** Apache-2.0. Attribution is in [NOTICE](NOTICE). The frames also contain Google / GitHub marks, which remain trademarks of their owners.
 
-## 🚀 快速开始
+### Dark theme
 
-### 安装方式
+![Dark theme preview](screenshots/preview-dark.png)
 
-#### 方式一：开发者模式加载（推荐自己用）
+### Light theme
 
-克隆后即可直接加载，**不需要 `npm install`**。新标签页日历（flatpickr）和 SSH 终端（xterm）所需的浏览器运行时文件已放在仓库的 [`vendor/`](vendor/README.md) 目录，不会依赖被 `.gitignore` 忽略的 `node_modules/`。
+![Light theme preview](screenshots/preview-light.png)
 
-1. 下载或克隆本项目
-2. 打开 Chrome，访问 `chrome://extensions/`
-3. 开启右上角的「开发者模式」
-4. 点击「加载已解压的扩展程序」
-5. 选择项目根目录
-6. 打开新标签页，享受 OpenTab！
+### Settings panel
 
-`npm install` 只在本地跑自动化测试，或启动 SSH WebSocket 网关时需要。
+![Settings panel](screenshots/settings-panel.png)
 
-#### 方式二：Chrome 网上应用店（待发布）
+## Privacy
 
-> 即将上架 Chrome Web Store，敬请期待
+- Preferences, shortcuts, todos, and snapshots are stored in `chrome.storage.local` on this browser profile.
+- OpenTab does not include analytics, ads, or account login.
+- OpenTab does not rewrite or intercept links you open.
+- The extension does request a small set of hosts for optional features:
 
----
+| Service | Purpose | Data |
+| --- | --- | --- |
+| Bing homepage image API (`www.bing.com`) | Daily wallpaper | Image URL/metadata. Photo copyright stays with the original authors; OpenTab only displays the image. |
+| [wttr.in](https://wttr.in) | Weather pill | Approximate location from the browser geolocation permission. |
+| Favicons of sites you add | Shortcut icons | Direct request to that site for its icon. |
 
-## 📖 使用说明
+SSH connections go through a **local** WebSocket gateway you start yourself (`ssh-gateway.mjs`). They are not proxied by an OpenTab cloud service.
 
-### 基础操作
-- **打开设置**：点击右下角齿轮图标
-- **切换主题**：设置 → 主题 → 选择深色/浅色/自动
-- **更换主题色**：设置 → 主题 → 点击颜色预设
-- **极简模式**：双击时钟卡片进入/退出
-- **添加快捷方式**：点击左侧 + 号按钮
-- **打开待办**：点击左侧清单图标
+## Install
 
-### 背景设置
-- **Bing 每日壁纸**：每天自动更新，点击刷新按钮可切换历史壁纸
-- **渐变背景**：多款精选渐变可选
-- **自定义背景**：填入图片或视频 URL 即可
+### Load an unpacked extension (current supported method)
 
-### SSH 终端
-SSH 功能需要在本机运行 WebSocket 网关。网关**只接受本扩展页面**（`chrome-extension://<扩展ID>`）的连接，并要求访问令牌；**不会**默认读取 `~/.ssh/id_rsa`。
+Clone the repository and load it. **`npm install` is not required** to use the new tab page. Calendar (flatpickr) and the SSH terminal (xterm) load from [`vendor/`](vendor/README.md), which is committed with each library's LICENSE file.
 
-1. 打开 `chrome://extensions`，开启开发者模式，复制 OpenTab 的扩展 ID。
-2. 启动网关：
+1. Clone this repository.
+2. Open Chrome and go to `chrome://extensions/`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and select the repository root.
+5. Open a new tab.
+
+`npm install` / `npm ci` is only needed to run automated tests or to start the local SSH WebSocket gateway.
+
+### Chrome Web Store
+
+Not published yet.
+
+## Development
 
 ```bash
-# 安装依赖
+npm ci
+npm run pw:install
+npm test
+npm run test:ssh-gateway
+npm run test:e2e:headed
+npm run test:e2e:headless
+npm run test:ci
+```
+
+`npm test` runs `tests/repo-hygiene.test.mjs`, then SSH gateway security tests (`npm run test:ssh-gateway`), then the Playwright E2E suite (`scripts/run-e2e.sh`). On Linux without a display, that script wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. Details: [docs/TESTING.md](docs/TESTING.md).
+
+After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
+
+## SSH gateway
+
+SSH needs a local WebSocket gateway. The gateway **only accepts this extension** (`chrome-extension://<extension-id>`) and requires an access token. It does **not** load `~/.ssh/id_rsa` unless you set `SSH_PRIVATE_KEY_PATH`.
+
+1. Open `chrome://extensions`, enable Developer mode, and copy the OpenTab extension ID.
+2. Start the gateway:
+
+```bash
 npm install
 
-# 必填：Origin 白名单钉到本扩展，否则网关拒绝启动
-export SSH_GATEWAY_EXTENSION_ID='你的扩展ID'
+# Required: pin the Origin allowlist to this extension, or the gateway will refuse to start
+export SSH_GATEWAY_EXTENSION_ID='your-extension-id'
 
-# 可选：显式指定私钥。不设置则只用 SSH 图标里填写的密码登录。
+# Optional: explicit private key. If unset, only the password on the SSH shortcut is used.
 # export SSH_PRIVATE_KEY_PATH="$HOME/.ssh/id_ed25519"
-# export SSH_PRIVATE_KEY_PASSPHRASE='如有口令'
+# export SSH_PRIVATE_KEY_PASSPHRASE='if any'
 
 npm run ssh:gateway
 ```
 
-3. 首次启动会打印 **access token**（之后只显示 token 文件路径）。把它填进 OpenTab SSH 图标的「网关访问令牌」。
-4. 网关地址填 `ws://127.0.0.1:8787/ssh`。
+3. The first start prints an **access token** (later starts only print the token file path). Put it in the OpenTab SSH shortcut field “网关访问令牌”.
+4. Use gateway URL `ws://127.0.0.1:8787/ssh`.
 
-未设置扩展 ID 时网关不会启动。任意网页（以及缺少 Origin 头的客户端）无法连接；缺少或错误令牌时握手会被拒绝。
+The gateway will not start without an extension ID. Arbitrary websites (and clients without an Origin header) cannot connect. A missing or wrong token is rejected at handshake.
 
-**环境变量配置：**
-- `SSH_GATEWAY_HOST` - 网关主机（默认 `127.0.0.1`）
-- `SSH_GATEWAY_PORT` - 网关端口（默认 `8787`）
-- `SSH_GATEWAY_PATH` - WebSocket 路径（默认 `/ssh`）
-- `SSH_GATEWAY_EXTENSION_ID` - 本扩展 ID（**必填**；Origin 白名单。未设置则拒绝启动）
-- `SSH_GATEWAY_ALLOWED_ORIGINS` - 可选，逗号分隔的 `chrome-extension://...`
-- `SSH_GATEWAY_TOKEN` - 固定访问令牌；不设则生成并写入 `~/.config/opentab/ssh-gateway.token`
-- `SSH_GATEWAY_TOKEN_FILE` - 令牌文件路径
-- `SSH_PRIVATE_KEY_PATH` - **显式**私钥路径；省略时不会使用 `~/.ssh/id_rsa`
-- `SSH_PRIVATE_KEY_PASSPHRASE` - 私钥口令（如有）
+Environment variables:
 
-支持 SOCKS5 代理连接。
+- `SSH_GATEWAY_HOST` — bind host (default `127.0.0.1`)
+- `SSH_GATEWAY_PORT` — bind port (default `8787`)
+- `SSH_GATEWAY_PATH` — WebSocket path (default `/ssh`)
+- `SSH_GATEWAY_EXTENSION_ID` — this extension ID (**required**; Origin allowlist; refuses to start if unset)
+- `SSH_GATEWAY_ALLOWED_ORIGINS` — optional comma-separated `chrome-extension://...` list
+- `SSH_GATEWAY_TOKEN` — fixed access token; if unset, one is generated and written to `~/.config/opentab/ssh-gateway.token`
+- `SSH_GATEWAY_TOKEN_FILE` — token file path
+- `SSH_PRIVATE_KEY_PATH` — **explicit** private-key path; omitting it does **not** fall back to `~/.ssh/id_rsa`
+- `SSH_PRIVATE_KEY_PASSPHRASE` — key passphrase, if any
 
-**升级说明（已有 SSH 图标）：**
-- 每个旧 SSH 图标都要补填「网关访问令牌」，否则连不上新网关。
-- 网关不再默认使用 `~/.ssh/id_rsa`。如果仍要用私钥登录，启动前设置 `SSH_PRIVATE_KEY_PATH`。
-- 必须设置 `SSH_GATEWAY_EXTENSION_ID`（`chrome://extensions` 里 OpenTab 的 ID）。
+SOCKS5 proxies are supported from the shortcut editor. SSH passwords are currently stored in `chrome.storage.local` as plaintext; treat that as a known limitation.
 
----
+Upgrading existing SSH shortcuts:
 
-## 🛠️ 开发指南
+- Each old SSH shortcut needs a gateway access token, or it cannot connect to the new gateway.
+- The gateway no longer defaults to `~/.ssh/id_rsa`. Set `SSH_PRIVATE_KEY_PATH` if you still log in with a key.
+- You must set `SSH_GATEWAY_EXTENSION_ID` (OpenTab’s ID on `chrome://extensions`).
 
-### 项目结构
+## Project structure
 
 ```
-open-tab/
-├── manifest.json          # MV3 扩展配置
-├── background.js          # Service Worker
-├── home.html              # 新标签页主页面
-├── home.css               # 主页面样式
-├── home.js                # 主页面逻辑
-├── popup.html             # 工具栏弹窗
-├── popup.css              # 弹窗样式
-├── popup.js               # 弹窗逻辑
-├── tool.html              # 开发者工具页面
-├── tool.css               # 工具页面样式
-├── tool.js                # 工具页面逻辑
-├── ssh_terminal.html      # SSH 终端页面
-├── ssh_terminal.css       # 终端样式
-├── ssh_terminal.js        # 终端逻辑
-├── ssh-gateway.mjs        # SSH WebSocket 网关
-├── icons/                 # 扩展图标
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-├── assets/                # 静态资源
-├── vendor/                # 浏览器运行时第三方库（flatpickr / xterm，已注明版本与许可证）
-├── tests/                 # E2E 测试
-├── docs/                  # 文档
-└── .github/workflows/     # CI 配置
+OpenTab/
+├── LICENSE / NOTICE / CHANGELOG.md
+├── README.md / README.zh-CN.md
+├── CONTRIBUTING.md / CODE_OF_CONDUCT.md / SECURITY.md
+├── manifest.json
+├── package.json
+├── background.js              # service worker
+├── home.html / home.css / home.js
+├── popup.html / popup.css / popup.js
+├── tool.html / tool.css / tool.js
+├── fixparser.html / fixparser.js
+├── ssh_terminal.html / ssh_terminal.css / ssh_terminal.js
+├── ssh-gateway.mjs            # local SSH WebSocket gateway
+├── vendor/                    # vendored flatpickr / xterm (with LICENSE files)
+├── icons/                     # PNG icons + SVG source
+├── assets/default_background/ # bundled Pexels stills
+├── screenshots/
+├── tests/
+├── docs/                      # SPEC (historical), testing, releases
+└── .github/                   # issue/PR templates and CI
 ```
 
-### 本地开发
+## Contributing
 
-加载扩展本身不需要安装 Node 依赖。若要跑测试或 SSH 网关：
+See [CONTRIBUTING.md](CONTRIBUTING.md). By submitting a change you agree it is licensed under Apache-2.0 (inbound = outbound). There is no CLA.
 
-```bash
-# 安装依赖（测试、SSH 网关；不是加载扩展的前置步骤）
-npm install
+## License
 
-# 安装 Playwright 浏览器（用于测试）
-npm run pw:install
-```
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 
-在 Chrome 中加载扩展后，修改代码后点击扩展卡片上的刷新按钮即可生效。
-
-### 自动化测试
-
-```bash
-# 运行所有测试（CI 与本地同一条命令；Linux 无显示器时自动走 xvfb）
-npm test
-
-# 仅 SSH 网关安全测试（无需真实 SSH 主机）
-npm run test:ssh-gateway
-
-# 强制有头模式（需要显示器，便于本地调试）
-npm run test:e2e:headed
-
-# 无头模式（不推荐，MV3 扩展在 headless Chromium 下可能失败）
-npm run test:e2e:headless
-```
-
-详细测试说明见 [docs/TESTING.md](docs/TESTING.md)
-
-### CI/CD
-
-项目已配置 GitHub Actions 自动测试：
-- 触发条件：`push` / `pull_request`
-- 运行环境：Ubuntu + Node 20
-- 测试流程：安装依赖 → 安装 Playwright → 执行 E2E 测试
-
----
-
-## 📝 技术栈
-
-- **原生 HTML/CSS/JavaScript** - 无框架依赖，轻量高效
-- **Manifest V3** - 最新 Chrome 扩展标准
-- **flatpickr 4.6.13** - 日历组件（vendored，`vendor/flatpickr/`，MIT）
-- **xterm.js 5.3.0 + addon-fit 0.8.0** - 终端组件（vendored，`vendor/xterm*/`，MIT）
-- **ssh2 + ws + socks** - SSH 网关（Node，需 `npm install`）
-- **Playwright** - E2E 自动化测试
-
----
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 本项目
-2. 创建你的特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交你的改动 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启一个 Pull Request
-
----
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
----
-
-<div align="center">
-
-**如果觉得好用，别忘了给个 ⭐ Star 支持一下！**
-
-Made with ❤️ by OpenTab Team
-
-</div>
+Third-party software, photos, trademarks, and other materials are listed in [NOTICE](NOTICE). Some of those items are **not** licensed under Apache-2.0.

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/haoyang1994/OpenTab/blob/master/SECURITY.md
+    about: Do not file public issues for security problems. Follow SECURITY.md to report privately.

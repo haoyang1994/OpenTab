@@ -1,15 +1,26 @@
 {
-  "name": "my-chrome-homepage",
+  "name": "opentab",
+  "version": "1.1.0",
   "private": true,
+  "license": "Apache-2.0",
+  "description": "OpenTab is a Chrome Manifest V3 new tab page with clock, customizable backgrounds, shortcuts, and local developer tools.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haoyang1994/OpenTab.git"
+  },
+  "homepage": "https://github.com/haoyang1994/OpenTab#readme",
+  "bugs": {
+    "url": "https://github.com/haoyang1994/OpenTab/issues"
+  },
   "scripts": {
     "pw:install": "playwright install chromium",
     "ssh:gateway": "node ssh-gateway.mjs",
-    "test": "npm run test:ssh-gateway && bash scripts/run-e2e.sh",
+    "test": "node tests/repo-hygiene.test.mjs && npm run test:ssh-gateway && npm run test:e2e",
     "test:ssh-gateway": "node tests/ssh-gateway.test.mjs",
     "test:e2e": "bash scripts/run-e2e.sh",
     "test:e2e:headed": "HEADLESS=false node tests/extension.test.mjs",
     "test:e2e:headless": "HEADLESS=true node tests/extension.test.mjs",
-    "test:ci": "npm run test:ssh-gateway && bash scripts/run-e2e.sh"
+    "test:ci": "node tests/repo-hygiene.test.mjs && npm run test:ssh-gateway && npm run test:e2e"
   },
   "devDependencies": {
     "crx": "^5.0.1",

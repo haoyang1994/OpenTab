@@ -21,7 +21,7 @@
 
 1. `manifest.json` 版本号与权限配置正确
 2. `host_permissions` 包含 `https://www.bing.com/*`
-3. CI 工作流 `.github/workflows/e2e.yml` 为绿色
+3. CI 工作流 `.github/workflows/ci.yml` 为绿色
 
 ## 发布阻断条件
 
