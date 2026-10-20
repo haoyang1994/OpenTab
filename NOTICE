@@ -2,7 +2,7 @@ OpenTab
 
 This product includes software and other materials developed by third parties.
 The Apache License 2.0 applies to OpenTab original code as described in LICENSE.
-Items marked “不在 Apache-2.0 授权范围内” are distributed under their own terms and
+Items marked “not in scope for Apache-2.0” are distributed under their own terms and
 are not re-licensed as Apache-2.0.
 
 Upstream versions below match package-lock.json after `npm ci` (2026-10-20) unless noted.
@@ -314,9 +314,11 @@ Emoji:       Rendered by the OS. No emoji font is packaged.
   used only to display a wallpaper. Image copyright remains with the original
   authors / Microsoft Bing.
 - wttr.in (https://wttr.in): weather text for the weather pill.
-- Favicons / apple-touch-icon / web app manifest icons of websites the user
-  adds as shortcuts: fetched only when adding, refreshing, or migrating an
-  icon (CORS-limited; no extra host_permissions). The result is stored as a
-  local data URL. Opening a new tab does not re-request third-party icons.
+- Favicons / apple-touch-icon of websites the user adds as shortcuts: first
+  paint uses a bundled tile, a cached data URL, or a letter placeholder
+  (zero third-party requests). After the grid is ready the page may load the
+  remote icon with a normal <img> (no fetch, no crossorigin). fetch() to an
+  arbitrary https site happens only when the user clicks 重新抓取, which is
+  why connect-src includes https: without extra host_permissions.
 
 See README.md / README.zh-CN.md privacy sections.

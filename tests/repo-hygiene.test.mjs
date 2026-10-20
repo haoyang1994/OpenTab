@@ -180,7 +180,7 @@ assert.equal(connectSrc.includes('ws:'), false, 'AC7: connect-src must not allow
 assert.equal(connectSrc.includes('wss:'), false, 'AC7: connect-src must not allow blanket wss:');
 assert.ok(
   connectSrc.includes('https:'),
-  'iter-8: connect-src includes https: so apple-touch-icon / favicon / manifest fetches can run (CORS still applies; no new host_permissions)'
+  'iter-8: connect-src includes https: so 重新抓取 can fetch a site icon (no new host_permissions)'
 );
 assert.ok(
   connectSrc.some((src) => src.startsWith('ws://127.0.0.1')),
@@ -283,5 +283,35 @@ assert.ok(exists('icons/library/SIMPLE-ICONS-LICENSE.md'), 'Simple Icons CC0 lic
 const notice = read('NOTICE');
 assert.match(notice, /simple-icons/i, 'NOTICE must credit Simple Icons');
 assert.match(notice, /CC0-1\.0/, 'NOTICE must record the CC0-1.0 license for Simple Icons');
+assert.match(notice, /not in scope for Apache-2\.0/, 'NOTICE English intro must not mix in a Chinese status phrase');
+
+function walkJs(dir, acc) {
+  fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
+    if (entry.name === 'node_modules' || entry.name === 'vendor' || entry.name === 'tests' || entry.name === '.git' || entry.name === 'scripts') {
+      return;
+    }
+    const abs = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkJs(abs, acc);
+      return;
+    }
+    if (entry.name.endsWith('.js')) acc.push(path.relative(root, abs).split(path.sep).join('/'));
+  });
+}
+const projectJs = [];
+walkJs(root, projectJs);
+const fetchAllow = {
+  'icons.js': () => true,
+  'home.js': (src) => /wttr\.in/.test(src),
+  'background.js': (src) => /bing\.com/.test(src)
+};
+projectJs.forEach((rel) => {
+  const src = read(rel);
+  if (!/\bfetch\s*\(/.test(src)) return;
+  const allow = fetchAllow[rel];
+  assert.ok(allow, `${rel} must not call fetch; only icons.js may fetch arbitrary https sites`);
+  assert.ok(allow(src), `${rel} fetch is not limited to the allowlisted hosts`);
+});
+assert.ok(projectJs.includes('icons.js'), 'icons.js should be scanned for fetch');
 
 console.log('repo-hygiene passed');

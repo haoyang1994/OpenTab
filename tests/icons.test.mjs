@@ -89,6 +89,129 @@ assert.deepEqual(sanitized.iconCandidates, ['https://a.example/favicon.ico']);
 assert.equal(sanitized.librarySlug, 'github');
 assert.equal(sanitized.placeholderColor, '#123456');
 
+const popupShaped = {
+  id: 'popup-1',
+  name: 'Popup Site',
+  url: 'https://popup-icon.example/',
+  folderId: 'folder-home',
+  parentId: '',
+  customIconUrl: '',
+  emoji: '',
+  uploadedIconDataUrl: '',
+  resolvedIconUrl: '',
+  iconCandidates: OpenTabIcons.faviconCandidates('https://popup-icon.example/')
+};
+OpenTabIcons.prepareRecord(popupShaped);
+assert.equal(popupShaped.iconSource, 'placeholder');
+assert.equal(popupShaped.iconCacheState || '', '', 'BUG-026: default placeholder does not set iconCacheState=local');
+assert.equal(
+  OpenTabIcons.needsIdleWork(popupShaped),
+  false,
+  'BUG-025: auto path does not fetch unknown hosts'
+);
+assert.deepEqual(
+  OpenTabIcons.remoteSrcList(popupShaped),
+  OpenTabIcons.faviconCandidates('https://popup-icon.example/'),
+  'BUG-026: popup-shaped records still expose deferred img candidates'
+);
+
+const userPlaceholder = { id: 'user-ph', name: 'Chosen', url: 'https://popup-icon.example/', type: 'shortcut' };
+OpenTabIcons.applyPlaceholder(userPlaceholder, 'P', '#2266aa');
+assert.equal(userPlaceholder.iconCacheState, 'local');
+assert.equal(OpenTabIcons.needsIdleWork(userPlaceholder), false);
+assert.deepEqual(OpenTabIcons.remoteSrcList(userPlaceholder), []);
+
+const ghCustomData = {
+  id: 'gh-custom-data',
+  name: 'GitHub',
+  url: 'https://github.com',
+  type: 'shortcut',
+  customIconUrl: 'data:image/png;base64,AAAA',
+  uploadedIconDataUrl: ''
+};
+OpenTabIcons.prepareRecord(ghCustomData);
+assert.equal(OpenTabIcons.paintSrc(ghCustomData), 'data:image/png;base64,AAAA', 'BUG-027: in-library custom data URL beats library');
+assert.equal(ghCustomData.librarySlug || '', '');
+assert.deepEqual(OpenTabIcons.remoteSrcList(ghCustomData), []);
+
+const ghCustomRemote = {
+  id: 'gh-custom-remote',
+  name: 'GitHub',
+  url: 'https://github.com',
+  type: 'shortcut',
+  customIconUrl: 'https://cdn.example.com/my.png'
+};
+OpenTabIcons.prepareRecord(ghCustomRemote);
+const ghCustomPainted = OpenTabIcons.paintSrc(ghCustomRemote);
+assert.equal(/^https?:/i.test(ghCustomPainted), false, 'BUG-027: custom https is not first-paint src');
+assert.equal(ghCustomPainted.includes('icons/library/github'), false, 'BUG-027: custom beats library');
+assert.deepEqual(OpenTabIcons.remoteSrcList(ghCustomRemote), ['https://cdn.example.com/my.png']);
+
+const exCustomData = {
+  id: 'ex-custom-data',
+  name: 'Example',
+  url: 'https://example.com',
+  type: 'shortcut',
+  customIconUrl: 'data:image/png;base64,BBBB'
+};
+OpenTabIcons.prepareRecord(exCustomData);
+assert.equal(OpenTabIcons.paintSrc(exCustomData), 'data:image/png;base64,BBBB', 'BUG-027: out-of-library custom data URL');
+
+const strippedExt = OpenTabIcons.sanitizeIconForSync({
+  id: 'ext',
+  customIconUrl: 'chrome-extension://abcdef/icons/x.png',
+  resolvedIconUrl: 'chrome-extension://abcdef/icons/x.png',
+  iconCacheState: 'local',
+  iconSource: 'remote'
+});
+assert.equal(strippedExt.customIconUrl, '', 'BUG-028: strip chrome-extension: customIconUrl');
+assert.equal(strippedExt.resolvedIconUrl, '');
+assert.equal('iconCacheState' in strippedExt, false, 'BUG-028: strip iconCacheState');
+
+const strippedBlob = OpenTabIcons.sanitizeIconForSync({
+  customIconUrl: 'blob:https://example.com/uuid',
+  iconCacheState: 'failed'
+});
+assert.equal(strippedBlob.customIconUrl, '', 'BUG-028: strip blob: customIconUrl');
+
+const deviceB = OpenTabSync.mergeRemoteIcons(
+  [{
+    id: 'synced',
+    name: 'Synced',
+    url: 'https://example.com/',
+    type: 'shortcut',
+    iconCacheState: 'local',
+    iconSource: 'remote',
+    resolvedIconUrl: '',
+    uploadedIconDataUrl: '',
+    customIconUrl: ''
+  }],
+  []
+);
+assert.ok(!deviceB[0].iconCacheState, 'BUG-028: merged remote must not keep iconCacheState=local');
+OpenTabIcons.prepareRecord(deviceB[0]);
+assert.ok(OpenTabIcons.remoteSrcList(deviceB[0]).length > 0, 'BUG-028: device B can still deferred-load favicon');
+
+const ghPending = { id: 'gh-idle', name: 'GitHub', url: 'https://github.com', type: 'shortcut' };
+assert.equal(OpenTabIcons.needsIdleWork(ghPending), true, 'idle assigns bundled library tiles');
+let fetchCalls = 0;
+const prevFetch = globalThis.fetch;
+globalThis.fetch = async () => {
+  fetchCalls += 1;
+  throw new TypeError('Failed to fetch');
+};
+try {
+  await OpenTabIcons.migrateIdleIcon(ghPending);
+  assert.equal(ghPending.librarySlug, 'github');
+  assert.equal(fetchCalls, 0, 'BUG-025: idle migration must not fetch');
+  const noForce = { id: 'n1', name: 'Ex', url: 'https://example.com', type: 'shortcut', customIconUrl: 'https://cdn.example.com/x.png' };
+  const changed = await OpenTabIcons.resolveIcon(noForce, { fetchRemote: true });
+  assert.equal(changed, false);
+  assert.equal(fetchCalls, 0, 'BUG-025: resolveIcon without force must not fetch');
+} finally {
+  globalThis.fetch = prevFetch;
+}
+
 const syncPayload = OpenTabSync.buildSyncPayload({
   icons: [{
     id: 'a',

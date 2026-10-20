@@ -44,6 +44,8 @@ Out of scope:
 - Bing wallpaper images or wttr.in content
 - Issues that only apply after the user has already granted extra OS/browser permissions unrelated to OpenTab
 
+`connect-src` on extension pages includes `https:` so **更换图标 → 重新抓取** can `fetch()` a site icon when the user asks. Auto load / idle migration do not call `fetch` for those URLs; they either use the bundled library or a deferred `<img>` without `crossorigin`. There are no extra `host_permissions`. Weather still uses `https://wttr.in` and Bing wallpaper still uses `https://www.bing.com`.
+
 Known limitations that are tracked as product work rather than vulnerability reports:
 
 - SSH / SOCKS secrets are encrypted at rest with AES-GCM. The wrapping key is a non-extractable `CryptoKey` (`generateKey` / `importKey` with `extractable: false`) stored in IndexedDB, not as raw key bytes in `chrome.storage.local` next to the ciphertext. Secrets are never written to JSON backups or `chrome.storage.sync`.

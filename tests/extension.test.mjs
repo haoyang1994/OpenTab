@@ -541,15 +541,26 @@ async function runExtensionE2E() {
         url.startsWith('chrome-extension://')
         || url.startsWith('data:')
         || url.includes('bing.com')
-        || url.includes('wttr.in')
       ) {
         return route.continue();
       }
+      if (url.includes('wttr.in')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            current_condition: [{ temp_C: '20', weatherCode: '113', weatherDesc: [{ value: 'Clear' }] }],
+            nearest_area: [{ areaName: [{ value: 'Test' }], region: [{ value: '' }] }]
+          })
+        });
+      }
+      const noCors = /cors-blocked\.test/i.test(url);
+      const corsHeaders = noCors ? {} : { 'Access-Control-Allow-Origin': '*' };
       if (/manifest\.webmanifest|site\.webmanifest|\/manifest\.json(\?|$)/i.test(url)) {
         return route.fulfill({
           status: 404,
           contentType: 'application/json',
-          headers: { 'Access-Control-Allow-Origin': '*' },
+          headers: corsHeaders,
           body: '{}'
         });
       }
@@ -557,7 +568,7 @@ async function runExtensionE2E() {
         return route.fulfill({
           status: 200,
           contentType: 'image/gif',
-          headers: { 'Access-Control-Allow-Origin': '*' },
+          headers: corsHeaders,
           body: Buffer.from(PIXEL.split(',')[1], 'base64')
         });
       }
@@ -1631,8 +1642,8 @@ async function runExtensionE2E() {
       }, {
         bookmarksGranted: granted.bookmarks !== false,
         topSitesGranted: granted.topSites !== false,
-        tree: bookmarkTree,
-        sites: topSites
+        tree: granted.tree || bookmarkTree,
+        sites: granted.sites || topSites
       });
     }
 
@@ -2008,40 +2019,65 @@ async function runExtensionE2E() {
           uploadedIconDataUrl: '',
           resolvedIconUrl: 'https://example.com/favicon.ico',
           iconCandidates: ['https://example.com/apple-touch-icon.png', 'https://example.com/favicon.ico']
+        },
+        {
+          id: 'nocors-remote',
+          name: 'NoCORS',
+          url: 'https://cors-blocked.test',
+          folderId: HOME,
+          type: 'shortcut',
+          parentId: '',
+          customIconUrl: '',
+          emoji: '',
+          uploadedIconDataUrl: '',
+          resolvedIconUrl: 'https://cors-blocked.test/favicon.ico',
+          iconCandidates: ['https://cors-blocked.test/favicon.ico']
         }
       ]
     };
     const homeUrl = page.url();
     await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 15000 });
     await writeHomeStorage(page, remoteSeed, true);
-    const firstScreenIconReqs = [];
-    const onFirstScreenReq = (req) => {
-      if (isThirdPartyIconRequest(req.url(), req.resourceType())) firstScreenIconReqs.push(req.url());
-    };
-    page.on('request', onFirstScreenReq);
     await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
     await page.waitForSelector('#time', { timeout: 10000 });
     await waitForGrid(page);
-    page.off('request', onFirstScreenReq);
+    const firstScreenIconReqs = await page.evaluate(() => {
+      const mark = performance.getEntriesByName('opentab:grid-ready')[0];
+      const cutoff = mark ? mark.startTime : 0;
+      return performance.getEntriesByType('resource')
+        .filter((entry) => entry.startTime < cutoff)
+        .map((entry) => ({ name: entry.name, initiatorType: entry.initiatorType }));
+    });
+    const earlyThirdParty = firstScreenIconReqs
+      .filter((entry) => isThirdPartyIconRequest(entry.name, entry.initiatorType || 'image'))
+      .map((entry) => entry.name);
     assert.equal(
-      firstScreenIconReqs.length,
+      earlyThirdParty.length,
       0,
-      `AC5: first-screen third-party icon requests: ${firstScreenIconReqs.join(' | ')}`
+      `AC5: first-screen third-party icon requests: ${earlyThirdParty.join(' | ')}`
     );
-    const ghSrc = await page.locator('#icons-container .icon-widget[data-id="gh-remote"] img.icon-image').getAttribute('src');
+    const ghSrc = await page.locator('#icons-container .icon-widget[data-id="gh-remote"] img.icon-image').getAttribute('data-paint-src')
+      || await page.locator('#icons-container .icon-widget[data-id="gh-remote"] img.icon-image').getAttribute('src');
     assert.ok(
       ghSrc && !/^https?:/i.test(ghSrc) && (ghSrc.includes('icons/library/github') || ghSrc.startsWith('data:')),
       `AC1/AC2: GitHub should paint a bundled tile, got ${ghSrc}`
     );
-    const exSrc = await page.locator('#icons-container .icon-widget[data-id="ex-remote"] img.icon-image').getAttribute('src');
-    assert.ok(exSrc && !/^https?:/i.test(exSrc), `AC1: example.com must not paint http(s), got ${exSrc}`);
+    const exSrc = await page.locator('#icons-container .icon-widget[data-id="ex-remote"] img.icon-image').getAttribute('data-paint-src');
+    assert.ok(exSrc && !/^https?:/i.test(exSrc), `AC5: example.com first paint must not be http(s), got ${exSrc}`);
+    const nocorsFirst = await page.locator('#icons-container .icon-widget[data-id="nocors-remote"] img.icon-image').getAttribute('data-paint-src');
+    assert.ok(nocorsFirst && !/^https?:/i.test(nocorsFirst), `AC5: no-CORS host first paint must not be http(s), got ${nocorsFirst}`);
     await page.screenshot({ path: path.join(ARTIFACTS, 'grid-after-icons.png') });
-    await page.waitForFunction(async () => {
-      const result = await chrome.storage.local.get(['icons']);
-      const icon = (result.icons || []).find((item) => item.id === 'ex-remote');
-      return icon && typeof icon.resolvedIconUrl === 'string' && icon.resolvedIconUrl.startsWith('data:');
+    await page.waitForFunction(() => {
+      const ex = document.querySelector('#icons-container .icon-widget[data-id="ex-remote"] img.icon-image');
+      const blocked = document.querySelector('#icons-container .icon-widget[data-id="nocors-remote"] img.icon-image');
+      return ex && /^https:\/\//i.test(ex.getAttribute('src') || '')
+        && blocked && /^https:\/\//i.test(blocked.getAttribute('src') || '');
     }, null, { timeout: 8000 });
-    console.log('AC1/AC2/AC3/AC5 icon first-screen + idle cache passed');
+    const leftoverAfterDeferred = errorBuckets.page.filter((error) => !isExemptConsoleError(error));
+    const leftoverConsoleAfterDeferred = errorBuckets.console.filter((error) => !isExemptConsoleError(error));
+    assert.equal(leftoverAfterDeferred.length, 0, `BUG-025: pageerror after deferred img: ${leftoverAfterDeferred.join(' | ')}`);
+    assert.equal(leftoverConsoleAfterDeferred.length, 0, `BUG-025: console after deferred img: ${leftoverConsoleAfterDeferred.join(' | ')}`);
+    console.log('AC1/AC2/AC3/AC5 icon first-screen + deferred img passed');
 
     await page.locator('#icons-container .icon-widget[data-id="ex-remote"]').click({ button: 'right' });
     await page.waitForSelector('#icon-context-menu:not(.hidden)');
@@ -2078,6 +2114,140 @@ async function runExtensionE2E() {
       `AC1: new GitHub shortcut must paint locally, got ${addedSrc}`
     );
     console.log('AC1 add-shortcut library hit passed');
+
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.fill('#icon-name', 'NoCORS Add');
+    await page.fill('#icon-url', 'https://cors-blocked.test/added');
+    await page.click('#save-btn');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForFunction(() => {
+      const img = document.querySelector('#icons-container .icon-widget[data-id] img.icon-image');
+      return img && /^https:\/\//i.test(img.getAttribute('src') || '');
+    }, null, { timeout: 8000 });
+    console.log('BUG-025 add-shortcut deferred img without CORS fetch passed');
+
+    await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await writeHomeStorage(page, {
+      folders: folders(),
+      currentFolderId: HOME,
+      icons: [{
+        id: 'popup-added',
+        name: 'Popup Site',
+        url: 'https://popup-icon.example/',
+        folderId: HOME,
+        parentId: '',
+        customIconUrl: '',
+        emoji: '',
+        uploadedIconDataUrl: '',
+        resolvedIconUrl: '',
+        iconCandidates: []
+      }]
+    }, true);
+    await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForSelector('#time', { timeout: 10000 });
+    await waitForGrid(page);
+    const popupFirst = await page.locator('#icons-container .icon-widget[data-id="popup-added"] img.icon-image').getAttribute('data-paint-src')
+      || await page.locator('#icons-container .icon-widget[data-id="popup-added"] img.icon-image').getAttribute('src');
+    assert.ok(popupFirst && !/^https?:/i.test(popupFirst), `BUG-026: popup record first paint local, got ${popupFirst}`);
+    await page.click('#settings-btn');
+    await page.waitForSelector('#settings-panel:not(.hidden)');
+    await mockOptionalApis({
+      bookmarks: true,
+      tree: [{
+        id: '1',
+        title: '书签栏',
+        children: [{
+          id: 'idle-bm',
+          title: 'IdleImport',
+          children: [{ id: 'idle-1', title: 'Imported Idle', url: 'https://import-idle.example/' }]
+        }]
+      }]
+    });
+    await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
+    await page.click('#import-bookmarks-btn');
+    await page.waitForSelector('#bookmark-folder-row:not(.hidden)', { timeout: 5000 });
+    await page.waitForFunction(
+      () => document.querySelectorAll('#bookmark-folder-select option').length > 0,
+      null,
+      { timeout: 5000 }
+    );
+    await page.selectOption('#bookmark-folder-select', 'idle-bm');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+      page.click('#import-bookmarks-confirm-btn')
+    ]);
+    await waitForGrid(page);
+    await page.waitForFunction(() => {
+      const img = document.querySelector('#icons-container .icon-widget[data-id="popup-added"] img.icon-image');
+      return img && /^https:\/\//i.test(img.getAttribute('src') || '');
+    }, null, { timeout: 8000 });
+    const importedMeta = await page.evaluate(async () => {
+      const result = await chrome.storage.local.get(['icons']);
+      const icon = (result.icons || []).find((item) => /import-idle\.example/.test(item.url || ''));
+      return icon ? { id: icon.id, folderId: icon.folderId } : null;
+    });
+    assert.ok(importedMeta && importedMeta.id, 'BUG-026: import created a shortcut');
+    await page.click(groupSelector(importedMeta.folderId));
+    await page.waitForFunction((id) => {
+      const img = document.querySelector(`#icons-container .icon-widget[data-id="${id}"] img.icon-image`);
+      return img && /^https:\/\//i.test(img.getAttribute('src') || '');
+    }, importedMeta.id, { timeout: 8000 });
+    console.log('BUG-026 popup + import deferred img passed');
+
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.fill('#icon-name', 'Custom GH');
+    await page.fill('#icon-url', 'https://github.com');
+    await page.fill('#icon-custom-url', 'https://cdn.custom-gh.test/logo.png');
+    await page.click('#save-btn');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForFunction(() => {
+      const img = document.querySelector('#icons-container .icon-widget[data-id] img.icon-image');
+      const src = img && img.getAttribute('src');
+      return src && src.includes('cdn.custom-gh.test');
+    }, null, { timeout: 8000 });
+    const customGhSrc = await page.locator('#icons-container .icon-widget[data-id] img.icon-image').getAttribute('src');
+    assert.equal(customGhSrc.includes('icons/library/github'), false, 'BUG-027: in-library custom URL beats library');
+    console.log('BUG-027 in-library custom URL passed');
+
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.fill('#icon-name', 'Custom Ex');
+    await page.fill('#icon-url', 'https://example.com/custom');
+    await page.fill('#icon-custom-url', 'https://cdn.custom-ex.test/logo.png');
+    await page.click('#save-btn');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForFunction(() => {
+      const img = document.querySelector('#icons-container .icon-widget[data-id] img.icon-image');
+      const src = img && img.getAttribute('src');
+      return src && src.includes('cdn.custom-ex.test');
+    }, null, { timeout: 8000 });
+    console.log('BUG-027 out-of-library custom URL passed');
+
+    await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
+    await page.click('#add-shortcut-tile');
+    await page.waitForSelector('#add-icon-modal:not(.hidden)');
+    await page.fill('#icon-name', 'Upload Dot');
+    await page.fill('#icon-url', 'https://example.com/upload');
+    const pngBytes = Buffer.from(TINY_PNG_DATA_URL.split(',')[1], 'base64');
+    await page.locator('#icon-file').setInputFiles({
+      name: 'dot.png',
+      mimeType: 'image/png',
+      buffer: pngBytes
+    });
+    await page.waitForFunction(() => {
+      const status = document.getElementById('icon-upload-status');
+      return status && /已选择/.test(status.textContent || '');
+    }, null, { timeout: 5000 });
+    await page.click('#save-btn');
+    await page.waitForSelector('#add-icon-modal.hidden');
+    const uploadSrc = await page.locator('#icons-container .icon-widget[data-id] img.icon-image').getAttribute('src');
+    assert.ok(uploadSrc && uploadSrc.startsWith('data:'), `AC4 upload must paint a data URL, got ${uploadSrc}`);
+    console.log('AC4 upload local image passed');
 
     const leftoverPageErrors = errorBuckets.page.filter(error => !isExemptConsoleError(error));
     const leftoverConsole = errorBuckets.console.filter(error => !isExemptConsoleError(error));

@@ -10,6 +10,7 @@
   const LIBRARY_DIR = 'icons/library/';
   const DATA_PREFIX = 'data:';
   const LOCAL_ONLY_FIELDS = ['uploadedIconDataUrl', 'resolvedIconUrl'];
+  const MSG_REFETCH_BLOCKED = '该站点不允许读取，已保留远程图标';
 
   const LIBRARY = [
     { slug: 'baidu', hex: '2932E1', region: 'cn', hosts: ['baidu.com'] },
@@ -143,6 +144,26 @@
     return typeof value === 'string' && /^https?:\/\//i.test(value);
   }
 
+  function hasExplicitCustomIcon(icon) {
+    return Boolean(
+      icon
+      && icon.customIconUrl
+      && (isHttpsUrl(icon.customIconUrl) || isPaintSafe(icon.customIconUrl))
+    );
+  }
+
+  function uniqueHttps(urls) {
+    const out = [];
+    (urls || []).forEach((url) => {
+      if (isHttpsUrl(url) && out.indexOf(url) === -1) out.push(url);
+    });
+    return out;
+  }
+
+  function userChosePlaceholder(icon) {
+    return Boolean(icon && icon.iconCacheState === 'local' && icon.iconSource === 'placeholder');
+  }
+
   function byteLen(text) {
     if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(text).length;
     return String(text || '').length;
@@ -190,20 +211,41 @@
     return type === 'folder' || type === 'ssh';
   }
 
+  function letterPlaceholder(icon) {
+    return placeholderDataUrl(
+      (icon && icon.placeholderLetter) || letterFrom(icon),
+      (icon && icon.placeholderColor) || colorFromHost(hostnameOf(icon && icon.url))
+    );
+  }
+
   function paintSrc(icon) {
     if (!icon || skipAutoIcon(icon) || emojiOnly(icon)) return '';
     if (isPaintSafe(icon.uploadedIconDataUrl)) return icon.uploadedIconDataUrl;
+    if (isPaintSafe(icon.customIconUrl)) return icon.customIconUrl;
+    if (isDataUrl(icon.resolvedIconUrl)) return icon.resolvedIconUrl;
+    if (hasExplicitCustomIcon(icon)) return letterPlaceholder(icon);
     if (isPaintSafe(icon.resolvedIconUrl)) return icon.resolvedIconUrl;
     if (icon.librarySlug) return libraryRel(icon.librarySlug);
     const hit = lookupLibrary(icon.url);
     if (hit) return libraryRel(hit.slug);
-    if (icon.customIconUrl && isPaintSafe(icon.customIconUrl)) return icon.customIconUrl;
-    return placeholderDataUrl(icon.placeholderLetter || letterFrom(icon), icon.placeholderColor || colorFromHost(hostnameOf(icon.url)));
+    return letterPlaceholder(icon);
+  }
+
+  function remoteSrcList(icon) {
+    if (!icon || skipAutoIcon(icon) || emojiOnly(icon) || userChosePlaceholder(icon)) return [];
+    if (isPaintSafe(icon.uploadedIconDataUrl) || isPaintSafe(icon.customIconUrl) || isDataUrl(icon.resolvedIconUrl)) {
+      return [];
+    }
+    if (hasExplicitCustomIcon(icon) && isHttpsUrl(icon.customIconUrl)) return [icon.customIconUrl];
+    if (icon.librarySlug || lookupLibrary(icon.url)) return [];
+    return uniqueHttps([
+      icon.resolvedIconUrl
+    ].concat(Array.isArray(icon.iconCandidates) ? icon.iconCandidates : []).concat(faviconCandidates(icon.url)));
   }
 
   function faviconCandidates(pageUrl) {
     const origin = originOf(pageUrl);
-    if (!origin) return [];
+    if (!origin || origin.indexOf('https:') !== 0) return [];
     return [
       origin + '/apple-touch-icon.png',
       origin + '/apple-touch-icon-precomposed.png',
@@ -252,10 +294,25 @@
       if (!isPaintSafe(icon.resolvedIconUrl)) icon.resolvedIconUrl = icon.uploadedIconDataUrl;
       return icon;
     }
-    if (icon.iconSource === 'placeholder' && icon.placeholderColor) {
-      if (!isPaintSafe(icon.resolvedIconUrl)) {
-        icon.resolvedIconUrl = '';
+    if (hasExplicitCustomIcon(icon)) {
+      icon.librarySlug = '';
+      if (!icon.placeholderColor) icon.placeholderColor = colorFromHost(hostnameOf(icon.url));
+      if (!icon.placeholderLetter) icon.placeholderLetter = letterFrom(icon);
+      if (isPaintSafe(icon.customIconUrl)) {
+        icon.resolvedIconUrl = icon.customIconUrl;
+        icon.iconSource = 'remote';
+        return icon;
       }
+      if (!isDataUrl(icon.resolvedIconUrl)) {
+        if (!isRemoteIconUrl(icon.resolvedIconUrl)) icon.resolvedIconUrl = '';
+      }
+      if (icon.iconSource === 'library' || icon.iconSource === 'placeholder' || !icon.iconSource) {
+        icon.iconSource = 'custom';
+      }
+      return icon;
+    }
+    if (userChosePlaceholder(icon)) {
+      if (!isPaintSafe(icon.resolvedIconUrl)) icon.resolvedIconUrl = '';
       return icon;
     }
     const hit = lookupLibrary(icon.url);
@@ -270,11 +327,7 @@
     if (!icon.placeholderColor) icon.placeholderColor = colorFromHost(hostnameOf(icon.url));
     if (!icon.placeholderLetter) icon.placeholderLetter = letterFrom(icon);
     if (!icon.iconSource) icon.iconSource = 'placeholder';
-    if (isRemoteIconUrl(icon.resolvedIconUrl)) {
-      // Keep the original remote URL in storage for idle retry (AC3), but first
-      // paint uses paintSrc() which never returns http(s).
-      return icon;
-    }
+    if (isRemoteIconUrl(icon.resolvedIconUrl)) return icon;
     if (!isPaintSafe(icon.resolvedIconUrl)) icon.resolvedIconUrl = '';
     return icon;
   }
@@ -286,23 +339,45 @@
     fallback.textContent = typeof host.getIconLabel === 'function' ? host.getIconLabel(icon) : letterFrom(icon);
     iconVisual.appendChild(fallback);
 
-    const src = paintSrc(icon);
-    if (!src) return;
+    const localSrc = paintSrc(icon);
+    const remotes = remoteSrcList(icon);
     const img = document.createElement('img');
     img.className = 'icon-image';
     img.alt = '';
     img.draggable = false;
     img.loading = 'eager';
     img.referrerPolicy = 'no-referrer';
+    let remoteIndex = 0;
+    const showPlaceholder = () => {
+      const fallbackSrc = letterPlaceholder(icon);
+      img.src = fallbackSrc;
+      iconVisual.classList.remove('has-image', 'icon-fill');
+    };
     img.addEventListener('load', () => {
       iconVisual.classList.add('has-image', 'icon-fill');
     });
     img.addEventListener('error', () => {
-      iconVisual.classList.remove('has-image', 'icon-fill');
-      img.removeAttribute('src');
+      if (remoteIndex < remotes.length) {
+        img.src = remotes[remoteIndex];
+        remoteIndex += 1;
+        return;
+      }
+      showPlaceholder();
     });
-    img.src = src;
+    if (localSrc) {
+      img.dataset.paintSrc = localSrc;
+      img.src = localSrc;
+    }
     iconVisual.appendChild(img);
+    if (!remotes.length) return;
+    whenGridReady(() => {
+      setTimeout(() => {
+        if (!iconVisual.isConnected || !img.isConnected) return;
+        if (userChosePlaceholder(icon)) return;
+        img.src = remotes[remoteIndex];
+        remoteIndex += 1;
+      }, 16);
+    });
   }
 
   function decodeImage(src) {
@@ -389,17 +464,21 @@
   async function fetchCandidate(url) {
     if (!isHttpsUrl(url) || !gridIsReady()) return '';
     if (typeof fetch !== 'function') return '';
-    const res = await fetch(url, {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit',
-      referrerPolicy: 'no-referrer',
-      cache: 'no-store'
-    });
-    if (!res.ok) return '';
-    const blob = await res.blob();
-    if (!blob || blob.size < 16 || blob.size > 512 * 1024) return '';
-    return blobToLocalDataUrl(blob);
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        cache: 'no-store'
+      });
+      if (!res.ok) return '';
+      const blob = await res.blob();
+      if (!blob || blob.size < 16 || blob.size > 512 * 1024) return '';
+      return blobToLocalDataUrl(blob);
+    } catch (error) {
+      return '';
+    }
   }
 
   function parseIconSize(sizes) {
@@ -438,83 +517,99 @@
     return '';
   }
 
+  function oversizedData(value) {
+    return isDataUrl(value) && byteLen(value) > MAX_ICON_BYTES;
+  }
+
   function needsIdleWork(icon) {
-    if (!icon || skipAutoIcon(icon) || emojiOnly(icon)) return false;
-    if (icon.iconCacheState === 'failed' || icon.iconCacheState === 'local') return false;
-    if (isPaintSafe(icon.uploadedIconDataUrl)) return false;
-    if (icon.librarySlug) return false;
-    if (lookupLibrary(icon.url)) return false;
-    if (icon.iconSource === 'placeholder' && icon.placeholderColor && !isRemoteIconUrl(icon.resolvedIconUrl) && !isRemoteIconUrl(icon.customIconUrl)) {
-      return false;
+    if (!icon || skipAutoIcon(icon) || emojiOnly(icon) || userChosePlaceholder(icon)) return false;
+    if (hasExplicitCustomIcon(icon)) {
+      return oversizedData(icon.customIconUrl) || oversizedData(icon.resolvedIconUrl);
     }
-    return isRemoteIconUrl(icon.resolvedIconUrl) || isRemoteIconUrl(icon.customIconUrl) || isRemoteIconUrl(icon.url);
+    if (isPaintSafe(icon.uploadedIconDataUrl)) return oversizedData(icon.uploadedIconDataUrl);
+    if (!icon.librarySlug && lookupLibrary(icon.url)) return true;
+    return oversizedData(icon.resolvedIconUrl) || oversizedData(icon.customIconUrl);
+  }
+
+  async function migrateIdleIcon(icon) {
+    if (!icon) return false;
+    if (!hasExplicitCustomIcon(icon) && !isPaintSafe(icon.uploadedIconDataUrl)) {
+      const hit = lookupLibrary(icon.url);
+      if (hit && icon.librarySlug !== hit.slug) {
+        icon.librarySlug = hit.slug;
+        icon.iconSource = 'library';
+        icon.resolvedIconUrl = libraryRel(hit.slug);
+        return true;
+      }
+    }
+    const fields = ['uploadedIconDataUrl', 'customIconUrl', 'resolvedIconUrl'];
+    for (let i = 0; i < fields.length; i += 1) {
+      const field = fields[i];
+      if (!oversizedData(icon[field])) continue;
+      try {
+        const next = await rasterize(icon[field]);
+        if (next && byteLen(next) < byteLen(icon[field])) {
+          icon[field] = next;
+          if (field !== 'customIconUrl') icon.resolvedIconUrl = next;
+          return true;
+        }
+      } catch (error) {
+        // keep original
+      }
+    }
+    return false;
   }
 
   async function resolveIcon(icon, options) {
     const opts = options || {};
     if (!icon || skipAutoIcon(icon) || emojiOnly(icon)) return false;
-    if (!opts.force && isPaintSafe(icon.uploadedIconDataUrl)) return false;
-    prepareRecord(icon);
-    if (!opts.force && icon.librarySlug) return false;
-    if (!opts.force && icon.iconSource === 'placeholder' && !isRemoteIconUrl(icon.resolvedIconUrl) && !isRemoteIconUrl(icon.customIconUrl) && !opts.fetchRemote) {
-      return false;
-    }
+    if (!opts.force) return false;
     if (!gridIsReady()) return false;
 
-    const previousRemote = isRemoteIconUrl(icon.resolvedIconUrl) ? icon.resolvedIconUrl : '';
+    const snapshot = {
+      resolvedIconUrl: icon.resolvedIconUrl,
+      iconSource: icon.iconSource,
+      iconCacheState: icon.iconCacheState,
+      librarySlug: icon.librarySlug
+    };
     const tries = [];
     if (isHttpsUrl(icon.customIconUrl)) tries.push(icon.customIconUrl);
-    faviconCandidates(icon.url).forEach((url) => tries.push(url));
+    else faviconCandidates(icon.url).forEach((url) => tries.push(url));
 
     for (let i = 0; i < tries.length; i += 1) {
+      const data = await fetchCandidate(tries[i]);
+      if (data) {
+        icon.resolvedIconUrl = data;
+        icon.iconSource = 'remote';
+        icon.iconCacheState = '';
+        icon.iconCandidates = [];
+        if (isHttpsUrl(icon.customIconUrl)) icon.librarySlug = '';
+        return true;
+      }
+    }
+    if (!isHttpsUrl(icon.customIconUrl)) {
       try {
-        const data = await fetchCandidate(tries[i]);
-        if (data) {
-          icon.resolvedIconUrl = data;
+        const manifestIcon = await fetchManifestIcon(icon.url);
+        if (manifestIcon) {
+          icon.resolvedIconUrl = manifestIcon;
           icon.iconSource = 'remote';
-          icon.iconCacheState = 'local';
+          icon.iconCacheState = '';
           icon.iconCandidates = [];
           return true;
         }
       } catch (error) {
-        // try next candidate
+        // keep original
       }
     }
-    try {
-      const manifestIcon = await fetchManifestIcon(icon.url);
-      if (manifestIcon) {
-        icon.resolvedIconUrl = manifestIcon;
-        icon.iconSource = 'remote';
-        icon.iconCacheState = 'local';
-        icon.iconCandidates = [];
-        return true;
-      }
-    } catch (error) {
-      // keep original
-    }
-    if (previousRemote && !isPaintSafe(icon.resolvedIconUrl)) icon.resolvedIconUrl = previousRemote;
-    if (!icon.placeholderColor) icon.placeholderColor = colorFromHost(hostnameOf(icon.url));
-    if (!icon.iconSource || icon.iconSource === 'remote') icon.iconSource = 'placeholder';
-    icon.iconCacheState = 'failed';
+    icon.resolvedIconUrl = snapshot.resolvedIconUrl;
+    icon.iconSource = snapshot.iconSource;
+    icon.iconCacheState = snapshot.iconCacheState;
+    icon.librarySlug = snapshot.librarySlug;
     return false;
   }
 
-  function resolveLater(iconId, options) {
-    resolveChain = resolveChain.then(async () => {
-      const icons = typeof host.getIcons === 'function' ? host.getIcons() : [];
-      const icon = (icons || []).find((item) => item && item.id === iconId);
-      if (!icon) return;
-      whenGridReady(() => {
-        const ric = typeof requestIdleCallback === 'function'
-          ? requestIdleCallback
-          : (fn) => setTimeout(() => fn({ timeRemaining: () => 16 }), 0);
-        ric(async () => {
-          const changed = await resolveIcon(icon, Object.assign({ fetchRemote: true }, options || {}));
-          persist(changed);
-        });
-      });
-    }).catch(() => {});
-    return resolveChain;
+  function resolveLater() {
+    return Promise.resolve();
   }
 
   function scheduleIdleMigration() {
@@ -532,7 +627,7 @@
           ric(step, { timeout: 2500 });
           return;
         }
-        resolveIcon(icon, { fetchRemote: true, reason: 'idle' }).then((changed) => {
+        migrateIdleIcon(icon).then((changed) => {
           persist(changed);
           if ((typeof host.getIcons === 'function' ? host.getIcons() : []).some(needsIdleWork)) {
             ric(step, { timeout: 2500 });
@@ -557,7 +652,8 @@
     LOCAL_ONLY_FIELDS.forEach((field) => {
       clean[field] = stripUnsafe(clean[field]);
     });
-    if (isDataUrl(clean.customIconUrl)) clean.customIconUrl = '';
+    clean.customIconUrl = stripUnsafe(clean.customIconUrl);
+    delete clean.iconCacheState;
     if (Array.isArray(clean.iconCandidates)) {
       clean.iconCandidates = clean.iconCandidates.filter((item) => isHttpsUrl(item));
     }
@@ -587,6 +683,7 @@
       preview: document.getElementById('change-icon-preview-img'),
       fallback: document.getElementById('change-icon-preview-fallback'),
       refetch: document.getElementById('change-icon-refetch'),
+      status: document.getElementById('change-icon-status'),
       file: document.getElementById('change-icon-file'),
       letter: document.getElementById('change-icon-letter'),
       color: document.getElementById('change-icon-color'),
@@ -616,6 +713,11 @@
     const g = Math.round(hue2rgb(p, q, h) * 255);
     const b = Math.round(hue2rgb(p, q, h - 1 / 3) * 255);
     return '#' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('');
+  }
+
+  function setChangerStatus(text) {
+    const ui = changerEls();
+    if (ui.status) ui.status.textContent = text || '';
   }
 
   function refreshChangerPreview(icon) {
@@ -653,6 +755,7 @@
     if (typeof host.hideIconContextMenu === 'function') host.hideIconContextMenu();
     if (typeof host.rememberFocus === 'function') host.rememberFocus(ui.modal);
     refreshChangerPreview(icon);
+    setChangerStatus('');
     ui.modal.classList.remove('hidden');
     if (ui.letter) ui.letter.focus();
   }
@@ -701,21 +804,15 @@
       ui.refetch.addEventListener('click', async () => {
         const icon = findIcon(changerIconId);
         if (!icon) return;
-        icon.uploadedIconDataUrl = '';
-        icon.iconSource = '';
-        icon.iconCacheState = '';
-        icon.librarySlug = '';
-        icon.resolvedIconUrl = '';
-        prepareRecord(icon);
         ui.refetch.disabled = true;
+        setChangerStatus('');
         try {
-          await resolveIcon(icon, { force: true, fetchRemote: true });
-          persist(true);
+          const ok = await resolveIcon(icon, { force: true, fetchRemote: true });
+          persist(ok);
           refreshChangerPreview(icon);
-          if (typeof host.showToast === 'function') host.showToast('已重新抓取图标');
+          setChangerStatus(ok ? '已重新抓取图标' : MSG_REFETCH_BLOCKED);
         } catch (error) {
-          if (typeof host.showToast === 'function') host.showToast('抓取失败，已保留占位');
-          persist(true);
+          setChangerStatus(MSG_REFETCH_BLOCKED);
           refreshChangerPreview(icon);
         } finally {
           ui.refetch.disabled = false;
@@ -772,6 +869,9 @@
     isPaintSafe,
     isDataUrl,
     isRemoteIconUrl,
+    hasExplicitCustomIcon,
+    remoteSrcList,
+    MSG_REFETCH_BLOCKED,
     paintSrc,
     placeholderDataUrl,
     colorFromHost,
@@ -783,6 +883,7 @@
     resolveLater,
     scheduleIdleMigration,
     needsIdleWork,
+    migrateIdleIcon,
     sanitizeIconForSync,
     readAndCompressFile,
     applyPlaceholder,

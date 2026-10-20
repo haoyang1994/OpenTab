@@ -50,7 +50,7 @@ SSH 网关安全测试：`tests/ssh-gateway.test.mjs`（`npm run test:ssh-gatewa
 
 布局与设置面板：`tests/layout.test.mjs`（单元）覆盖 layout normalize/cssVars、boot 镜像切片、设置搜索中英文匹配、天气分区占位、开发者工具迁移、`SYNC_SETTING_KEYS` 含布局键、带布局设置和中文引号名称的 BUG-022 分片，以及 `tests/console-allow.mjs` 的 URL 白名单。E2E：`tests/settings-layout.test.mjs`（由 `npm test` / `scripts/run-e2e.sh` 执行）覆盖 AC1 分区导航与窄屏顶部 tab、AC2 设置搜索（含分区内关键词、不依赖整段 keywords）与 Esc、AC3 布局实时预览与刷新保持（在 `opentab:grid-ready` 当时断言 80px / 6 列 / 隐藏名称，不 `waitForFunction` 等终值）、AC4 分区/全局恢复默认与撤销且不改快捷方式、BUG-032 全局恢复不关闭浏览器同步而同步分区恢复会关闭、AC5 开发者工具默认隐藏与老用户自动开启、AC6 焦点陷阱与 label/aria、AC7 无 console error 且首屏 `grid-ready` / DCL ≤ 500ms。
 
-图标：`tests/icons.test.mjs`（`npm test` 会跑）。覆盖内置库 ≥40 且中英文各半、paintSrc 从不返回 http(s)、占位色由域名决定、sync 剥离 data URL。E2E 另断言首屏对第三方站点的图标请求为 0，以及右键更换图标。
+图标：`tests/icons.test.mjs`（`npm test` 会跑）。覆盖内置库 ≥40 且中英文各半、paintSrc 从不返回 http(s)、自定义 URL 高于内置库、sync 剥离 data URL / `iconCacheState` / `chrome-extension:` / `blob:`。E2E 断言首屏第三方图标请求为 0，网格就绪后用 `<img>` 显示远程图标（含不带 CORS 头的站点、popup/导入、上传本地图片），且无 CORS 控制台豁免。
 
 ### 2.2 当前未覆盖（需要手工/后续自动化）
 

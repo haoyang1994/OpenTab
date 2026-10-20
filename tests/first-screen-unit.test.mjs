@@ -91,7 +91,12 @@ function addDays(date, days) {
       localImg.filter((src) => src !== 'blob:').sort(),
       masterImg.filter((src) => src !== 'blob:').sort()
     );
-    assert.equal(stripImg(localCsp), stripImg(masterCsp));
+    const localConnect = cspSources(localCsp, 'connect-src');
+    assert.ok(localConnect.includes('https:'), 'iter-8: connect-src https: is required for 重新抓取');
+    assert.equal(
+      stripImg(localCsp).replace(/\shttps:(?=\s)/, ''),
+      stripImg(masterCsp)
+    );
   }
   console.log('U4 passed');
 }

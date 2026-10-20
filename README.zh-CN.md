@@ -110,7 +110,7 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 | --- | --- | --- |
 | Bing 每日壁纸 API（`www.bing.com`） | 背景图，**仅在选择 Bing 壁纸时** | 图片 URL / 元数据。图片版权归原作者，OpenTab 只做展示。首次安装使用本地壁纸，不会访问 Bing。 |
 | [wttr.in](https://wttr.in) | 天气胶囊 | 浏览器地理位置权限给出的大致位置。 |
-| 你添加的网站的 favicon | 快捷方式图标 | 仅在添加、更换或升级迁移时请求，然后缓存到本地。打开新标签页不会再向那些网站发请求。 |
+| 你添加的网站的 favicon | 快捷方式图标 | 首屏只用本地资源（内置库、缓存的 data URL 或字母）。网格就绪后可用普通 `<img>` 加载该站图标（不 `fetch`、不走 CORS）。只有点击「重新抓取」才会 `fetch()`。`connect-src` 含 `https:` 就是为这次手动刷新，没有额外 `host_permissions`。 |
 
 SSH 连接经过你自己启动的**本地** WebSocket 网关（`ssh-gateway.mjs`），不经过 OpenTab 云服务。
 

@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `layout.js` / `settings-nav.js` plus `specs/iter-7.md`; weather nav/slot reserved for the parallel first-screen iteration
 - Built-in HD shortcut icon library (44 Simple Icons tiles, 22 Chinese / 22 international) with letter placeholders when a site is not in the library
 - Right-click **更换图标**: re-fetch, upload a local image, or pick a letter placeholder and color
-- Idle migration of existing remote favicon URLs into a local cache (`requestIdleCallback`, does not block first paint)
+- Idle migration assigns bundled library tiles and compresses oversized data URL icons (`requestIdleCallback`, does not fetch, does not block first paint)
+- After `opentab:grid-ready`, unknown-site shortcuts load a remote favicon with a deferred `<img>` (no `fetch`, no `crossorigin`) so first paint stays at 0 third-party icon requests
 - `icons.js` owns icon lookup / fetch / compression; `home.js` only wires it
 - Import Chrome bookmarks (optional `bookmarks` permission, requested on click) into a new folder/group
 - Import the first 12 Chrome most-visited sites (optional `topSites` permission)
@@ -63,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom layout no longer flashes the 56px default on first grid paint: layout keys are written into the boot mirror, `layout.js` applies them at parse, and `loadState` applies storage before `refreshIconViews` (BUG-030)
 - E2E console allowlist is shared and URL-based (`example.com` / `bing.com`); tests no longer blanket-skip `Failed to load resource` (BUG-031)
 - Global 「恢复默认」 no longer turns off browser sync; only the import/sync section restore does, and its confirm copy says 会关闭浏览器同步 (BUG-032)
+- Auto icon load no longer `fetch()`es third-party favicons (BUG-025); popup/import shortcuts still show a real icon via deferred `<img>` (BUG-026); user `customIconUrl` beats the bundled library (BUG-027); sync strips `iconCacheState` and `chrome-extension:` / `blob:` `customIconUrl` (BUG-028)
 
 ### Changed
 
@@ -81,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Removed the `tabs` permission; the toolbar popup reads the current page with `activeTab`
-- AC7: narrowed extension-page `connect-src` (dropped blanket `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). Iter 8 adds `https:` to `connect-src` so apple-touch-icon, `/favicon.ico`, and web-app-manifest fetches can run when the site sends CORS; no new `host_permissions`. `img-src` retains `https:` for custom wallpaper URLs. Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
+- AC7: narrowed extension-page `connect-src` (dropped blanket `ws:` / `wss:`; keep Bing, wttr.in, and loopback WebSocket). Iter 8 adds `https:` so **更换图标 → 重新抓取** can `fetch()` a site icon; auto load uses `<img>` instead. No new `host_permissions`. `img-src` keeps `https:` (wallpaper) and `blob:` (Bing cache). Baidu, DuckDuckGo, and custom engines are navigations, not `connect-src` hosts. Chrome rejects `ws://[::1]:*` as a CSP source, so IPv6 loopback is not listed.
 - SSH / SOCKS passwords and gateway tokens are stripped from backup export and browser sync, and encrypted at rest with a non-extractable IndexedDB `CryptoKey` instead of plaintext in `chrome.storage.local`
 
 ### Breaking

@@ -110,7 +110,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 | --- | --- | --- |
 | Bing homepage image API (`www.bing.com`) | Daily wallpaper, **only if you choose Bing wallpaper** | Image URL/metadata. Photo copyright stays with the original authors; OpenTab only displays the image. First install uses a local wallpaper and does not contact Bing. |
 | [wttr.in](https://wttr.in) | Weather pill | Approximate location from the browser geolocation permission. |
-| Favicons of sites you add | Shortcut icons | Requested only when adding, refreshing, or migrating an icon, then cached locally. A new tab does not contact those sites. |
+| Favicons of sites you add | Shortcut icons | First paint stays local (library tile, cached data URL, or letter). After the grid is ready a normal `<img>` may load that site’s icon (no `fetch`, no CORS). `fetch()` happens only if you click 重新抓取. `connect-src` includes `https:` for that explicit refresh, without extra `host_permissions`. |
 
 SSH connections go through a **local** WebSocket gateway you start yourself (`ssh-gateway.mjs`). They are not proxied by an OpenTab cloud service.
 
