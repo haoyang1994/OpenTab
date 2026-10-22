@@ -27,8 +27,8 @@ const log = path.join(temp, 'suites.log');
 const xvfbLog = path.join(temp, 'xvfb.log');
 fs.mkdirSync(bin);
 
-function executable(name, contents) {
-  fs.writeFileSync(path.join(bin, name), `#!${bash}\n${contents}`, { mode: 0o755 });
+function executable(name, contents, interpreter = bash) {
+  fs.writeFileSync(path.join(bin, name), `#!${interpreter}\n${contents}`, { mode: 0o755 });
 }
 
 // A closed PATH guarantees these checks can never launch real Node/Chromium or
@@ -38,14 +38,16 @@ for (const name of ['bash', 'env', 'sleep']) {
   fs.symlinkSync(actual, path.join(bin, name));
 }
 executable('uname', 'printf "Linux\\n"\n');
+// Match the real xvfb-run's POSIX-shell boundary: /bin/sh can strip exported
+// Bash function definitions, so the runner must not rely on inheriting them.
 executable('xvfb-run', `
-[[ "$1" == "-a" ]] || exit 90
+[ "$1" = "-a" ] || exit 90
 printf 'xvfb\\n' >> "$E2E_XVFB_LOG"
 shift
 "$@"
 status=$?
 exit "\${FAKE_XVFB_EXIT:-$status}"
-`);
+`, '/bin/sh');
 executable('node', `
 suite=$1
 printf '%s|%s|%s\\n' "$suite" "\${HEADLESS:-}" "\${PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS:-}" >> "$E2E_LOG"

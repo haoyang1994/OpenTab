@@ -68,11 +68,14 @@ run_with_xvfb() {
     exit 1
   fi
   echo "$reason"
-  export -f run_headed run_command
-  run_command xvfb-run -a bash -euo pipefail -c run_headed
+  # xvfb-run uses /bin/sh, which may strip exported Bash functions. Re-enter
+  # this script instead, keeping the suite list and signal handling shared.
+  run_command xvfb-run -a bash "${BASH_SOURCE[0]}" --internal-headed
 }
 
-if [[ "${CI:-}" == "true" ]]; then
+if [[ "${1:-}" == "--internal-headed" ]]; then
+  run_headed
+elif [[ "${CI:-}" == "true" ]]; then
   run_with_xvfb "E2E: CI=true, wrapping Chromium with xvfb-run"
 elif [[ "$(uname -s)" == "Linux" && -z "${DISPLAY:-}" ]]; then
   run_with_xvfb "E2E: no DISPLAY, wrapping Chromium with xvfb-run"
