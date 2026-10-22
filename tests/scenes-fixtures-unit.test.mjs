@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { verifySceneRefreshFixture } from './scenes-refresh-fixture.mjs';
 import { verifySceneControlFixture } from './scenes-controls-fixture.mjs';
+import { createSceneDiagnostics, diagnosticProfile, diagnosticStorage, boundedDiagnostic } from './scenes-diagnostics.mjs';
 import { legacyFixture, expectedLegacyFirstLoad, DEFAULT_SCENE, PIXEL, SCHEMA_KEY } from './scenes-fixtures.mjs';
 const require = createRequire(import.meta.url);
 const Schema = require('../scene-schema.js');
@@ -75,3 +76,42 @@ for (const [before, after, error] of [
   assert.throws(() => verifySceneControlFixture(nativeSuite.replace(before, after)), error);
 }
 console.log(`Scenes control preflight: ${controlReport.sections} real sections, ${controlReport.checkedIds} native IDs, control types/options/presets and five invalid-fixture negative controls passed.`);
+
+// Exercise only the diagnostic helper, never substitute production UI in E2E.
+const secret = 'DIAGNOSTIC_SYNTHETIC_SECRET';
+const diagnosticData = { ...legacyFixture(), sceneProfiles: [{ id: DEFAULT_SCENE, ...legacyFixture(), sshPassword: secret },
+  { id: 'uploaded-profile', background: { type: 'image', source: 'local-upload', value: `data:image/png;secret=${secret}` }, custom: { secret } }] };
+const safeDiagnostic = diagnosticStorage(diagnosticData);
+assert.equal(safeDiagnostic.profiles[0].background.value, legacyFixture().background.value);
+assert.equal(safeDiagnostic.profiles[0].layoutIconSize, 56);
+assert.equal(safeDiagnostic.profiles[1].background.value, '[omitted non-gradient background]');
+assert.equal(JSON.stringify(safeDiagnostic).includes(secret), false);
+for (const excluded of ['icons', 'todos', 'customLegacyRecord', 'sshPassword', 'custom']) assert.equal(JSON.stringify(safeDiagnostic).includes(`"${excluded}"`), false);
+assert.equal(diagnosticStorage({ sceneProfiles: Array(20).fill(diagnosticData.sceneProfiles[0]) }).profiles.length, 8);
+assert.equal(diagnosticProfile(null), null);
+assert.deepEqual(await boundedDiagnostic(() => { throw new TypeError(secret); }), { unavailable: 'TypeError' });
+assert.deepEqual(await boundedDiagnostic(() => new Promise(() => {}), 1), { unavailable: 'diagnostic deadline' });
+const diagnosticLogs = [], diagnosticCalls = [];
+const diagnostics = createSceneDiagnostics({ phase: () => 'fixture phase', artifacts: '/synthetic-artifacts', log: message => diagnosticLogs.push(message),
+  storage: async keys => { diagnosticCalls.push({ storage: keys }); return diagnosticData; },
+  page: () => ({ evaluate: async () => ({ view: { sceneId: DEFAULT_SCENE }, layout: { layoutIconSize: 56 } }), locator: selector => selector,
+    screenshot: async options => diagnosticCalls.push({ screenshot: options }) }) });
+let successCalls = 0;
+assert.equal(await diagnostics.wait('success', { themeMode: 'light' }, () => { successCalls += 1; return 42; }, () => assert.fail('successful waits do not collect diagnostics')), 42);
+assert.equal(successCalls, 1); assert.deepEqual(diagnosticLogs, []);
+const originalCause = new Error('original native cause'), originalFailure = Object.freeze(new Error('original native error', { cause: originalCause }));
+await assert.rejects(diagnostics.wait('global themeMode', { themeMode: 'dark' }, () => { throw originalFailure; }, () => ({ themeMode: 'light' })), error => error === originalFailure && error.cause === originalCause);
+assert.match(diagnosticLogs[0], /"name":"global themeMode".*"expected":\{"themeMode":"dark"\}.*"actual":\{"themeMode":"light"\}/);
+await diagnostics.failure();
+assert.equal(diagnosticCalls.length, 2);
+assert.ok(diagnosticCalls.find(call => call.storage).storage.every(key => !['icons', 'todos', 'folders'].includes(key)));
+const screenshotOptions = diagnosticCalls.find(call => call.screenshot).screenshot;
+assert.equal(screenshotOptions.fullPage, false); assert.equal(screenshotOptions.timeout, 1500);
+assert.deepEqual(screenshotOptions.mask, ['input[type="password"]']); assert.match(screenshotOptions.path, /scenes-failure\.png$/);
+assert.equal(diagnosticLogs.some(message => message.includes(secret)), false);
+assert.match(diagnosticLogs[1], /"lastAwait":\{"name":"global themeMode","status":"failed"/);
+let brokenLoggerCalls = 0;
+const brokenLogger = createSceneDiagnostics({ phase: () => 'fixture phase', log() { brokenLoggerCalls += 1; throw new Error('logging unavailable'); } });
+await assert.rejects(brokenLogger.wait('preserve original', null, () => { throw originalFailure; }, () => null), error => error === originalFailure);
+assert.equal(brokenLoggerCalls, 1);
+console.log('Scenes diagnostics: named expected/actual state, secret redaction, bounded reads, one viewport screenshot and original error/cause preservation passed.');

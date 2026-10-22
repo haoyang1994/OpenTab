@@ -24,6 +24,7 @@
     const initialMarks = new Set();
     let controller = null, manager = null, commands = null, initialized = false, disposed = false, blocked = false, applyingValidatedState = false, deferredView = false;
     let loadPending = null, enablePending = null, refreshQueued = false, refreshAfterEnable = false, refreshAfterLoad = false, blockedAdapters = false, committedProfiles = [];
+    let committedSnapshot = {}, committedRevision = 0, notificationRevision = 0, loadedEpoch;
     let entry = null, introduction = null, status = null, retry = null, recovery = null, settingsButton = null, discardButton = null, enable = null, lastError = null, discardPending = false;
     const originalBing = new Map();
     const session = storage('sessionStorage'), preferences = storage('localStorage');
@@ -151,6 +152,8 @@
       if (!raw || !controller) return false;
       try { schema.validate(raw); } catch (_) { return false; }
       committedProfiles = clone(raw.sceneProfiles);
+      committedSnapshot = Object.fromEntries([...relevant].filter(key => Object.hasOwn(raw, key)).map(key => [key, clone(raw[key])]));
+      committedRevision += 1;
       return true;
     }
     function committedProfile() {
@@ -251,6 +254,7 @@
       if (disposed) return;
       blocked = false;
       noteCommitted(raw);
+      loadedEpoch = raw[coordinator.EPOCH_KEY] || 0;
       await applyValidated(projected, raw);
       if (disposed) return;
       initialized = true; ensureManager(); manager?.render(); clearStatus(); setReady(true);
@@ -437,15 +441,61 @@
     root.OpenTabSceneNavigation = navigation;
     root.OpenTabImport?.setReloader?.(reload);
     const relevant = new Set([...(coordinator.KEYS || []), ...LAYOUT_KEYS]);
+    const changedKeys = new Set();
+    function committedViewIsCurrent() {
+      const view = getView(), scene = active(committedSnapshot, view?.sceneId);
+      return !!scene && scene.homeGroupId === view.homeGroupId
+        && (committedSnapshot[coordinator.EPOCH_KEY] || 0) === loadedEpoch
+        && committedSnapshot.folders?.some(group => group.id === view.currentFolderId && group.sceneId === view.sceneId);
+    }
+    function scheduleRefresh() {
+      if (refreshQueued) return;
+      refreshQueued = true;
+      queueMicrotask(verifyNotifications);
+    }
+    async function verifyNotifications() {
+      let observed = notificationRevision;
+      try {
+        while (!disposed) {
+          observed = notificationRevision;
+          if (controller) {
+            // Acknowledgements can arrive after newer local edits. Verify only
+            // against an accepted durable snapshot, never optimistic state.
+            // This read does not adopt/reseed or lock out adjacent UI input.
+            if (!await whenAppearanceIdle()) {
+              observed = notificationRevision;
+              if (!disposed) { setReady(initialized && !blocked); report(fail('SCENE_PENDING_SAVE_FAILED')); }
+              return;
+            }
+            if (disposed) return;
+            const revision = committedRevision, keys = [...changedKeys];
+            const latest = await coordinator.read(keys);
+            if (disposed) return;
+            if (revision !== committedRevision || observed !== notificationRevision) continue;
+            if (committedViewIsCurrent() && keys.every(key => equal(latest[key], committedSnapshot[key]))) return;
+          }
+          // Differences and unknown data still use the original protected
+          // drain/read/adopt boundary, including real scene transitions.
+          if (!disposed) await load();
+          if (observed === notificationRevision) return;
+        }
+      } catch (_) {
+        if (!disposed) await load();
+      } finally {
+        refreshQueued = false;
+        if (!disposed && observed !== notificationRevision) scheduleRefresh();
+        else changedKeys.clear();
+      }
+    }
     function changed(changes, area) {
       if (disposed || area !== 'local' || !Object.keys(changes).some(key => relevant.has(key))) return;
       if (loadPending && !initialized) { refreshAfterLoad = true; return; }
       if (!initialized) return;
       if (enablePending) { refreshAfterEnable = true; return; }
       if (!controller && ![schema.SCHEMA_KEY, 'scenes', 'sceneProfiles'].some(key => Object.hasOwn(changes, key))) return;
-      if (refreshQueued) return;
-      refreshQueued = true;
-      queueMicrotask(() => { refreshQueued = false; if (!disposed) void load(); });
+      Object.keys(changes).filter(key => relevant.has(key)).forEach(key => changedKeys.add(key));
+      notificationRevision += 1;
+      scheduleRefresh();
     }
     root.chrome?.storage?.onChanged?.addListener(changed);
     function dispose() {

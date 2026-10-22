@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import { waitForAsync } from './wait-for-async.mjs';
 import { formatConsoleError } from './console-allow.mjs';
 import { verifySceneControlFixture } from './scenes-controls-fixture.mjs';
+import { createSceneDiagnostics, diagnosticProfile, diagnosticStorage, sceneDiagnosticGlobals } from './scenes-diagnostics.mjs';
 import { legacyFixture, expectedLegacyFirstLoad, SCHEMA_KEY, BACKUP_KEY, EPOCH_KEY, DEFAULT_SCENE, PIXEL, SECOND_GRADIENT, graphKeys } from './scenes-fixtures.mjs';
 
 // Real unpacked MV3 pages, native inputs and the actual storage coordinator.
@@ -69,11 +70,19 @@ const rowAction = (id, name) => `${dialog} [data-scene-id="${id}"] [data-scene-a
 const currentView = p => p.evaluate(() => OpenTabSceneNavigation.getView());
 const stored = keys => worker.evaluate(keys => chrome.storage.local.get(keys), keys ?? null);
 const graph = async () => Object.fromEntries(Object.entries(await stored(graphKeys)));
+let diagnosticPage = page;
+const diagnosticTarget = () => diagnosticPage.isClosed() ? page : diagnosticPage;
+const diagnostics = createSceneDiagnostics({ phase: () => phaseName, page: diagnosticTarget,
+  storage: keys => diagnosticTarget().evaluate(keys => chrome.storage.local.get(keys), keys), artifacts });
 async function phase(name, run) {
-  phaseName = name;
+  phaseName = name; diagnostics.reset();
   console.log(`Scenes: START ${name}`);
   try { await run(); assert.deepEqual(errors, [], `${name}: no console/page errors`); console.log(`Scenes: PASS ${name}`); }
-  catch (error) { console.error(`Scenes: FAIL ${name}: ${error.stack || error}`); throw error; }
+  catch (error) {
+    console.error(`Scenes: FAIL ${name}: ${error.stack || error}`);
+    try { await diagnostics.failure(); } catch (diagnosticError) { console.error(`Scenes: failure diagnostics unavailable: ${diagnosticError.name}`); }
+    throw error;
+  }
 }
 async function seed(data, targetWorker = worker) {
   const readback = await targetWorker.evaluate(data => OpenTabWorkspace.transaction(async ({ write, read }) => {
@@ -83,6 +92,7 @@ async function seed(data, targetWorker = worker) {
   assert.deepEqual(readback, data, 'fixture committed under the installer lock with strict readback');
 }
 async function ready(p, { scenes = true, language = 'en' } = {}) {
+  diagnosticPage = p;
   await p.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0 && globalThis.OpenTabSearch && globalThis.OpenTabI18n);
   await p.evaluate(() => OpenTabI18n.ready);
   await p.waitForFunction(language => document.documentElement.lang === language, language);
@@ -94,6 +104,7 @@ async function ready(p, { scenes = true, language = 'en' } = {}) {
   });
 }
 async function viewIs(p, sceneId, groupId) {
+  diagnosticPage = p;
   await p.waitForFunction(({ sceneId, groupId }) => {
     const view = globalThis.OpenTabSceneNavigation?.getView();
     return view?.sceneId === sceneId && (!groupId || view.currentFolderId === groupId);
@@ -110,6 +121,7 @@ async function targetFailure(p, selector, stage) {
   console.error(`Scenes: native target failed ${JSON.stringify({ phase: phaseName, selector, stage, page: p.url(), ...snapshot })}`);
 }
 async function nativeTarget(p, selector, options) {
+  diagnosticPage = p;
   const target = p.locator(selector);
   try {
     // Unlike a one-shot scroll on an element handle, native locator actionability
@@ -175,10 +187,15 @@ async function retryUnchangedRecovery(p) {
   await p.waitForFunction(() => window.__scenesRetryReported);
 }
 async function assertProfile(sceneId, expected) {
-  await waitForAsync(worker, async ({ sceneId, expected }) => {
+  await diagnostics.wait(`scene profile ${sceneId}: ${Object.keys(expected).join(', ')}`, diagnosticProfile({ id: sceneId, ...expected }), () => waitForAsync(worker, async ({ sceneId, expected }) => {
     const profile = (await chrome.storage.local.get('sceneProfiles')).sceneProfiles.find(item => item.id === sceneId);
     return Object.entries(expected).every(([key, value]) => JSON.stringify(profile?.[key]) === JSON.stringify(value));
-  }, { sceneId, expected });
+  }, { sceneId, expected }), async () => diagnosticProfile((await stored('sceneProfiles')).sceneProfiles?.find(item => item.id === sceneId)));
+}
+async function assertGlobal(key, expected) {
+  assert.ok(sceneDiagnosticGlobals.includes(key), 'global diagnostics only read allowlisted non-sensitive settings');
+  await diagnostics.wait(`global ${key}`, { [key]: expected }, () => waitForAsync(worker, async ({ key, expected }) =>
+    (await chrome.storage.local.get(key))[key] === expected, { key, expected }), async () => diagnosticStorage(await stored(key)));
 }
 async function assertRenderedGradient(p, value) {
   await p.waitForFunction(value => {
@@ -359,15 +376,15 @@ try {
     await page.locator('#layout-show-names').uncheck(); await page.locator('#layout-max-width').focus(); await page.keyboard.press('Home');
     await assertProfile(workScene, { layoutIconSize: 80, layoutColumns: 4, layoutShowNames: false, layoutMaxWidth: 640 });
     await page.locator('#todo-button-visible').uncheck();
-    await waitForAsync(worker, async () => (await chrome.storage.local.get('todoButtonVisible')).todoButtonVisible === false);
+    await assertGlobal('todoButtonVisible', false);
     await click(page, '#settings-nav-wallpaper'); await click(page, '.tab-btn[data-type="gradient"]');
     await click(page, `.preset-item[data-value="${SECOND_GRADIENT}"]`);
     await assertProfile(workScene, { background: { type: 'gradient', value: SECOND_GRADIENT, source: 'gradient' } });
     await assertRenderedGradient(page, SECOND_GRADIENT);
     await click(page, '#settings-nav-appearance'); await click(page, '.theme-mode-tab[data-theme="dark"]');
-    await waitForAsync(worker, async () => (await chrome.storage.local.get('themeMode')).themeMode === 'dark'); await closeSettings();
+    await assertGlobal('themeMode', 'dark'); await closeSettings();
     await page.locator('#search-input').focus(); await page.keyboard.press('Alt+ArrowDown');
-    await waitForAsync(worker, async () => (await chrome.storage.local.get('searchEngine')).searchEngine === 'bing');
+    await assertGlobal('searchEngine', 'bing');
     await switchTo(DEFAULT_SCENE);
     assert.deepEqual((await stored('sceneProfiles')).sceneProfiles.find(item => item.id === DEFAULT_SCENE), originalDefault);
     await assertRenderedGradient(page, originalDefault.background.value);
@@ -378,7 +395,7 @@ try {
     assert.equal(await page.evaluate(() => document.body.classList.contains('hide-todo-entry')), true, 'to-do entry visibility is global, not part of a scene profile');
     assert.ok((await stored('sceneProfiles')).sceneProfiles.every(item => !Object.hasOwn(item, 'todoButtonVisible')));
     await settings('shortcuts'); await page.locator('#todo-button-visible').check();
-    await waitForAsync(worker, async () => (await chrome.storage.local.get('todoButtonVisible')).todoButtonVisible === true); await closeSettings();
+    await assertGlobal('todoButtonVisible', true); await closeSettings();
     await switchTo(workScene); await page.reload(); await ready(page); await viewIs(page, workScene);
     await assertRenderedGradient(page, SECOND_GRADIENT);
     assert.deepEqual(await page.evaluate(() => { const data = OpenTabLayout.get(); return [data.layoutIconSize, data.layoutColumns, data.layoutShowNames, data.layoutMaxWidth]; }), [80, 4, false, 640]);
@@ -460,7 +477,7 @@ try {
       }
       for (const theme of ['light', 'dark']) {
         await settings('appearance'); await click(page, `.theme-mode-tab[data-theme="${theme}"]`);
-        await waitForAsync(worker, async expected => (await chrome.storage.local.get('themeMode')).themeMode === expected, theme);
+        await assertGlobal('themeMode', theme);
         await page.waitForFunction(theme => document.body.classList.contains('theme-light') === (theme === 'light'), theme); await closeSettings();
         await page.setViewportSize({ width: 1280, height: 900 }); await open();
         assert.equal(await page.evaluate(() => document.activeElement.dataset.sceneAction), 'close');
@@ -500,7 +517,7 @@ try {
     await page.waitForFunction(() => document.querySelector('#import-sync-status').textContent.includes('Ignored an older device'));
     assert.deepEqual(await graph(), before, 'old namespace notification is ignored before it can replace the scene graph');
     await settings('sync'); await page.locator('#browser-sync-enabled').uncheck();
-    await waitForAsync(worker, async () => (await chrome.storage.local.get('browserSyncEnabled')).browserSyncEnabled === false);
+    await assertGlobal('browserSyncEnabled', false);
     await closeSettings();
   });
 
@@ -593,6 +610,7 @@ try {
     await click(enabling, '#scene-switcher [data-scene-action="open"]');
     await click(enabling, '.scene-introduction [data-scene-action="enable"]');
     await enabling.waitForSelector(dialog); await viewIs(enabling, DEFAULT_SCENE);
+    diagnosticPage = editing;
     await editing.waitForSelector('#scene-recovery[open] [data-scene-action="discard-draft"]');
     const migrated = await local(); Schema.validate(migrated);
     const originalGraph = Object.fromEntries(graphKeys.map(key => [key, migrated[key]]));

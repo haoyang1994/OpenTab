@@ -65,7 +65,7 @@ function harness(initial = seed()) {
     }
   } } };
   const coordinator = Workspace.forChrome(chrome);
-  function tab({ session = memory(), plainSecretMigration, onDiscardDraft } = {}) {
+  function tab({ session = memory(), plainSecretMigration, onDiscardDraft, onBusy } = {}) {
     const { doc, mount } = documentStub(), loadStatuses = [], state = copy(initial), loads = [], errors = [], mirrors = [], undo = [], bingHost = {}, marks = [];
     let runtime, managerHost, provider, reloader, layoutAdapter, id = 0, dirty = false, invalidations = 0, visibleRenders = 0, opens = 0, reloads = 0, migrations = 0, loadHook;
     const bridge = coordinator.connect({ state, getViewIdentity: () => runtime?.getView(),
@@ -98,7 +98,7 @@ function harness(initial = seed()) {
         g.OpenTabLayout.loadFromStorage(projected); bridge.seed(raw);
         if (loadHook) return loadHook();
       }, showToast(text, options) { errors.push(text); if (options?.onAction) undo.push(options.onAction); },
-      onDiscardDraft, onLoadStatus: value => loadStatuses.push(value), beforeSwitch: () => !dirty, onInvalidate: () => invalidations++, renderVisible: () => visibleRenders++
+      onDiscardDraft, onBusy, onLoadStatus: value => loadStatuses.push(value), beforeSwitch: () => !dirty, onInvalidate: () => invalidations++, renderVisible: () => visibleRenders++
     });
     return { runtime, g, state, session, doc, loadStatuses, mount, bridge, bingHost, loads, errors, mirrors, undo, marks,
       get host() { return managerHost; }, get layoutAdapter() { return layoutAdapter; }, get provider() { return provider; }, get reloader() { return reloader; },
@@ -114,6 +114,184 @@ function harness(initial = seed()) {
   };
 }
 const context = tab => ({ view: tab.runtime.getView() });
+
+// A local settings acknowledgement is not a scene transition. Exercise actual
+// bound inputs and the home capture guard, including a held storage read before
+// the next Home-key input can save. No sleep/durable wait separates those inputs.
+{
+  let busy = false, busyHook;
+  const h = harness(), a = h.tab({ onBusy: value => { busy = value; if (value) busyHook?.(); } });
+  const doc = a.doc, controls = new Map(), captured = {};
+  const classes = () => ({ add() {}, remove() {}, contains() { return false; }, toggle() {} });
+  doc.documentElement = { style: { setProperty() {} } }; doc.body.classList = classes();
+  doc.readyState = 'complete'; doc.getElementById = id => controls.get(id) || null;
+  doc.querySelectorAll = selector => selector === '.layout-size-preset' ? [controls.get('preset')] : [];
+  doc.addEventListener = (name, handler) => { (captured[name] ||= []).push(handler); };
+  for (const id of ['layout-icon-size', 'layout-columns', 'layout-show-names', 'layout-max-width', 'todo-button-visible', 'preset']) {
+    const input = doc.createElement('input'); input.classList = classes(); input.dataset.size = '80'; input.value = ''; input.checked = true;
+    controls.set(id, input);
+  }
+  a.g.document = doc; vm.runInContext(source('layout.js'), a.g); vm.runInContext(source('scene-home.js'), a.g);
+  a.g.OpenTabSceneHome.bindInteractionGate(() => ({ readOnly: false, busy }), doc);
+  await a.runtime.load(); a.setDirty(true);
+  const initialLoads = a.loads.length, initialView = a.runtime.getView();
+  const emit = patch => {
+    h.emit(Object.fromEntries(Object.entries(patch).map(([key, newValue]) => [key, { newValue }])));
+    h.onNextWrite(emit);
+  };
+  h.onNextWrite(emit);
+  controls.get('preset').click(); await a.g.OpenTabLayout.whenIdle();
+  const columns = controls.get('layout-columns'); columns.value = '4'; columns.events.change.forEach(fn => fn());
+  await a.g.OpenTabLayout.whenIdle();
+  const gate = deferred(), started = deferred(); let held;
+  h.onNextWrite(patch => {
+    emit(patch);
+    held = h.coordinator.transaction(async ({ read }) => { await read(null); started.resolve(); await gate.promise; });
+  });
+  const names = controls.get('layout-show-names'); names.checked = false; names.events.change.forEach(fn => fn());
+  await started.promise;
+  const width = controls.get('layout-max-width');
+  function homeKey() {
+    width.focus();
+    const event = { type: 'keydown', key: 'Home', target: width, defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; }, stopImmediatePropagation() {} };
+    captured.keydown.forEach(fn => fn(event));
+    if (!event.defaultPrevented) {
+      width.value = '640'; width.events.input.forEach(fn => fn()); width.events.change.forEach(fn => fn());
+    }
+    return event;
+  }
+  const key = homeKey();
+  gate.resolve(); await held; await a.g.OpenTabLayout.whenIdle(); await flush();
+  assert.equal(key.defaultPrevented, false, 'own write acknowledgement must not swallow the next native range key');
+  assert.deepEqual(a.runtime.getView(), initialView); assert.equal(a.loads.length, initialLoads);
+  const selected = () => h.store.sceneProfiles.find(profile => profile.id === initialView.sceneId);
+  assert.deepEqual([selected().layoutIconSize, selected().layoutColumns, selected().layoutShowNames, selected().layoutMaxWidth], [80, 4, false, 640]);
+  assert.deepEqual(a.errors, []);
+
+  // The first notification may arrive after newer edits have been staged.
+  // Compare with durable readback after draining, not its stale event payload
+  // or the newer optimistic state. The next Home key must still be delivered.
+  const delayed = copy(h.store.sceneProfiles), overlapGate = deferred(), overlapStarted = deferred();
+  const overlapRead = h.coordinator.transaction(async ({ read }) => { await read(null); overlapStarted.resolve(); await overlapGate.promise; });
+  await overlapStarted.promise;
+  columns.value = '6'; columns.events.change.forEach(fn => fn()); await flush();
+  names.checked = true; names.events.change.forEach(fn => fn());
+  width.value = '900'; width.events.input.forEach(fn => fn());
+  h.emit({ sceneProfiles: { newValue: delayed } }); await flush();
+  const nextKey = homeKey();
+  overlapGate.resolve(); await overlapRead; await a.g.OpenTabLayout.whenIdle(); await flush();
+  assert.equal(nextKey.defaultPrevented, false, 'late acknowledgements cannot lock subsequent queued inputs');
+  assert.deepEqual([selected().layoutColumns, selected().layoutShowNames, selected().layoutMaxWidth], [6, true, 640]);
+  assert.equal(a.loads.length, initialLoads); assert.deepEqual(a.errors, []);
+
+  // Differing external data and real navigation still retain the existing gate
+  // and drain. A held read cannot permit a new key/save across adoption.
+  const externalGate = deferred(), externalStarted = deferred(); let externalRead;
+  busyHook = () => {
+    busyHook = null;
+    externalRead = h.coordinator.transaction(async ({ read }) => { await read(null); externalStarted.resolve(); await externalGate.promise; });
+  };
+  selected().layoutMaxWidth = 1200; h.emit({ sceneProfiles: { newValue: copy(h.store.sceneProfiles) } });
+  await externalStarted.promise;
+  const writesBefore = h.writes.length;
+  assert.equal(homeKey().defaultPrevented, true);
+  assert.equal(h.writes.length, writesBefore);
+  externalGate.resolve(); await externalRead; await until(() => !busy);
+  assert.equal(a.g.OpenTabLayout.get().layoutMaxWidth, 1200);
+  a.setDirty(false);
+  const switching = a.host.onSwitch('study', context(a));
+  assert.equal(homeKey().defaultPrevented, true);
+  await switching; assert.equal(a.runtime.getView().sceneId, 'study');
+}
+
+// A matching optimistic value from another writer does not bless a failed local
+// baseline. Preserve the consumed failure boundary, then recover from real data.
+{
+  const h = harness(), a = h.tab(); await a.runtime.load();
+  const gate = deferred(), started = deferred();
+  const held = h.coordinator.transaction(async () => { started.resolve(); await gate.promise; }); await started.promise;
+  a.g.OpenTabLayout.patch({ layoutIconSize: 80 }); await flush();
+  h.store.sceneProfiles = copy(a.state.sceneProfiles);
+  h.emit({ sceneProfiles: { newValue: copy(h.store.sceneProfiles) } });
+  h.onNextRead(() => { throw new Error('forced commit read failure'); });
+  gate.resolve(); await held; await until(() => a.doc.body.find('retry'));
+  assert.equal(a.loads.length, 1, 'notification verification must report, not consume then retry a failed drain');
+  assert.ok(a.errors.some(error => error.message === 'forced commit read failure'));
+  assert.equal(a.layoutAdapter.getProfile().layoutIconSize, 80, 'only recovery readback establishes the external durable value');
+  a.g.OpenTabLayout.patch({ layoutIconSize: 96 }); await a.g.OpenTabLayout.whenIdle();
+  assert.equal(h.store.sceneProfiles[0].layoutIconSize, 96);
+  const conflictGate = deferred(), conflictStarted = deferred();
+  const conflictLock = h.coordinator.transaction(async () => { conflictStarted.resolve(); await conflictGate.promise; }); await conflictStarted.promise;
+  a.g.OpenTabLayout.patch({ layoutColumns: 4 }); await flush();
+  h.store.sceneProfiles[0].layoutIconSize = 88;
+  conflictGate.resolve(); await conflictLock; assert.equal(await a.g.OpenTabLayout.whenIdle(), false);
+  assert.ok(a.errors.some(error => error.code === 'WORKSPACE_CONFLICT'));
+  assert.equal(h.store.sceneProfiles[0].layoutColumns, 0);
+  assert.equal(a.layoutAdapter.getProfile().layoutIconSize, 88);
+}
+
+// A recovery snapshot can be durable but require controller view/epoch adoption.
+for (const replacement of ['epoch', 'group']) {
+  const h = harness(), a = h.tab(); await a.runtime.load();
+  const before = a.runtime.getView();
+  const gate = deferred(), started = deferred();
+  const held = h.coordinator.transaction(async () => { started.resolve(); await gate.promise; }); await started.promise;
+  a.g.OpenTabLayout.patch({ layoutIconSize: 80 }); await flush();
+  if (replacement === 'epoch') h.store[Workspace.EPOCH_KEY] = 1;
+  else {
+    h.store.folders = h.store.folders.filter(group => group.id !== before.currentFolderId);
+    h.store.icons = h.store.icons.filter(icon => icon.folderId !== before.currentFolderId);
+  }
+  const event = replacement === 'epoch' ? { [Workspace.EPOCH_KEY]: { newValue: 1 } } : { folders: { newValue: copy(h.store.folders) }, icons: { newValue: copy(h.store.icons) } };
+  h.emit(event); h.onNextRead(() => { throw new Error('replacement raced failed save'); });
+  gate.resolve(); await held; await until(() => a.doc.body.find('retry'));
+  assert.deepEqual(a.runtime.getView(), before, 'failure boundary must not adopt a replacement');
+  // Actual bridge failure recovery updated the durable cache, but has not
+  // projected/reconciled the controller view. A later event cannot be skipped.
+  h.emit(event);
+  await until(() => a.loads.length > 1);
+  assert.ok(a.runtime.getView().generation > before.generation);
+  if (replacement === 'group') assert.equal(a.runtime.getView().currentFolderId, before.homeGroupId);
+}
+
+// A completion during verification invalidates the captured snapshot, while
+// event coalescing retains every changed key instead of just the first payload.
+{
+  const h = harness(), a = h.tab(); await a.runtime.load();
+  h.onNextRead(() => {
+    h.store.sceneProfiles[0].layoutIconSize = 80;
+    // Simulate the existing synchronous onSaved receipt arriving after get
+    // captured its prior value but before the verifier resumes.
+    a.runtime.noteCommitted(copy(h.store));
+  });
+  h.emit({ sceneProfiles: { newValue: copy(h.store.sceneProfiles) } });
+  for (let n = 0; n < 5; n++) await flush();
+  assert.equal(a.loads.length, 1, 'a stale verification snapshot must not spuriously lock/reseed');
+  assert.ok(h.reads.filter(keys => Array.isArray(keys) && keys.length === 1 && keys[0] === 'sceneProfiles').length >= 2);
+  h.store.sceneProfiles[0].layoutColumns = 4;
+  h.onNextRead(() => { h.store.themeMode = 'light'; h.emit({ themeMode: { newValue: 'light' } }); });
+  h.emit({ sceneProfiles: { newValue: copy(h.store.sceneProfiles) } });
+  await until(() => a.loads.length > 1);
+  assert.equal(a.state.themeMode, 'light'); assert.equal(a.g.OpenTabLayout.get().layoutColumns, 4);
+  assert.ok(h.reads.some(keys => Array.isArray(keys) && keys.includes('sceneProfiles') && keys.includes('themeMode') && keys.length === 2));
+}
+
+// Deletion is not an absent event payload/no-op, and dispose stops a queued
+// verification before it can read or adopt another snapshot.
+{
+  const h = harness(), a = h.tab(); await a.runtime.load();
+  delete h.store.sceneProfiles; h.emit({ sceneProfiles: { oldValue: copy(a.state.sceneProfiles) } });
+  await until(() => a.loadStatuses.at(-1) === false);
+  assert.equal(a.loads.length, 1);
+  const b = harness(), tab = b.tab(); await tab.runtime.load();
+  const gate = deferred(), started = deferred();
+  const held = b.coordinator.transaction(async () => { started.resolve(); await gate.promise; }); await started.promise;
+  b.emit({ sceneProfiles: { newValue: copy(b.store.sceneProfiles) } });
+  tab.runtime.dispose(); const reads = b.reads.length;
+  gate.resolve(); await held; await flush();
+  assert.equal(b.reads.length, reads); assert.equal(tab.loads.length, 1);
+}
 
 // Startup reads exactly the complete graph and all home/layout settings, never
 // unrelated upload/recovery/vault blobs. Those remain available to full migration.
