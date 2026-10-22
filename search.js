@@ -46,6 +46,8 @@
   };
   let historyHighlight = -1;
   let displayedSuggestions = [];
+  let shortcutSession = false;
+  let shortcutOpener = null;
   let editingCustomId = '';
   let hideHistoryTimer = 0;
   let bound = false;
@@ -385,6 +387,7 @@
   }
 
   function navigate(url, forceNewTab) {
+    endSearchShortcut(false);
     const openInNewTab = Boolean(forceNewTab) || searchState.searchOpenInNewTab;
     api.lastNavigation = { url, openInNewTab };
     if (typeof api.navigateHook === 'function') {
@@ -808,6 +811,7 @@
         return;
       }
       if (typeof callbacks.openMatchedIcon === 'function') {
+        endSearchShortcut(false);
         callbacks.openMatchedIcon(result.icon);
       }
       return;
@@ -835,8 +839,60 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  function isMacPlatform() {
+    return /Mac|iPhone|iPad|iPod/i.test(global.navigator?.userAgentData?.platform || global.navigator?.platform || '');
+  }
+
+  function renderShortcutHint() {
+    const mac = isMacPlatform();
+    const hint = $('search-shortcut-hint');
+    if (hint) hint.textContent = mac ? '⌘ K' : 'Ctrl K';
+    const input = inputEl();
+    if (input) input.setAttribute('aria-keyshortcuts', `Alt+ArrowDown Alt+ArrowUp ${mac ? 'Meta' : 'Control'}+K`);
+  }
+
+  function endSearchShortcut(restore) {
+    const opener = shortcutOpener;
+    shortcutSession = false;
+    shortcutOpener = null;
+    document.body.classList.remove('search-shortcut-active');
+    if (!restore) return;
+    const input = inputEl();
+    if (document.activeElement === input) input.blur();
+    if (!opener || opener === document.body || !document.contains(opener) || opener.disabled || opener.getAttribute('aria-disabled') === 'true' ||
+        opener.closest('[hidden], [inert], .hidden') || !opener.getClientRects().length) return;
+    const style = global.getComputedStyle(opener);
+    if (style.visibility !== 'hidden' && style.visibility !== 'collapse') opener.focus();
+  }
+
+  function onSearchShortcut(event) {
+    if (String(event.key).toLowerCase() !== 'k' || event.altKey || event.shiftKey ||
+        event.isComposing || isImeKeydown(event)) return false;
+    const primaryModifier = isMacPlatform() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+    if (!primaryModifier) return false;
+    const input = inputEl();
+    if (!input || isOverlayOpen() ||
+        (isEditable(event.target) && event.target !== input) ||
+        (isEditable(document.activeElement) && document.activeElement !== input)) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    const entering = document.activeElement !== input;
+    if (!shortcutSession) {
+      shortcutOpener = entering ? document.activeElement : null;
+      shortcutSession = true;
+    }
+    document.body.classList.add('search-shortcut-active');
+    input.focus();
+    if (entering) input.select();
+    historyHighlight = -1;
+    updateHint();
+    renderHistory();
+    return true;
+  }
+
   function onGlobalKeydown(event) {
     if (event.defaultPrevented) return;
+    if (onSearchShortcut(event)) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
 
     const input = inputEl();
@@ -884,6 +940,13 @@
       }
       return;
     }
+    if (event.key === 'Escape' && shortcutSession) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideHistory();
+      endSearchShortcut(true);
+      return;
+    }
     if (event.key === 'Escape' && inputEl().getAttribute('aria-expanded') === 'true') {
       event.preventDefault();
       event.stopPropagation();
@@ -928,7 +991,15 @@
       updateHint();
       renderHistory();
     });
-    input.addEventListener('blur', () => {
+    input.addEventListener('blur', (event) => {
+      const hiddenTarget = shortcutSession && document.body.classList.contains('minimal-mode') &&
+        event.relatedTarget?.closest('#search-widget-wrap') ? event.relatedTarget : null;
+      endSearchShortcut(false);
+      // Native Shift+Tab may target an engine button that the temporary
+      // minimal-mode surface just hid. Never leave focus inside hidden UI.
+      if (hiddenTarget) Promise.resolve().then(() => {
+        if (document.activeElement === hiddenTarget && !hiddenTarget.getClientRects().length) hiddenTarget.blur();
+      });
       global.clearTimeout(hideHistoryTimer);
       hideHistoryTimer = global.setTimeout(() => {
         if (document.activeElement !== input) hideHistory();
@@ -936,6 +1007,14 @@
     });
     input.addEventListener('auxclick', onSearchAuxClick);
     input.addEventListener('mousedown', onSearchMouseDown);
+
+    const engineSwitch = $('search-engine-switch');
+    if (engineSwitch) engineSwitch.addEventListener('mousedown', (event) => {
+      // The existing click handler returns focus to search. Keep the temporary
+      // minimal surface alive until that click, as saved-site options do.
+      if (shortcutSession && document.body.classList.contains('minimal-mode') &&
+          event.button === 0 && event.target.closest('.engine-btn')) event.preventDefault();
+    });
 
     document.querySelectorAll('#search-engine-switch > .engine-btn[data-engine]').forEach((btn) => {
       btn.addEventListener('click', () => selectEngine(btn.dataset.engine));
@@ -987,6 +1066,7 @@
   }
 
   function renderAll() {
+    renderShortcutHint();
     renderCustomEngineButtons();
     renderEngineButtons();
     renderDefaultEngineSelect();

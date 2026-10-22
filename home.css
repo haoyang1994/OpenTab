@@ -626,6 +626,21 @@ body.theme-light .engine-btn.active {
   box-shadow: none;
 }
 
+.search-shortcut-hint {
+  flex: none;
+  margin-right: 8px;
+  padding: 3px 5px;
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  background: var(--panel-bg-solid);
+  color: var(--text-hint);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .search-hint {
   margin: 8px 18px 0;
   min-height: 1.2em;
@@ -2838,6 +2853,23 @@ body.minimal-mode #todo-toggle-btn,
 body.minimal-mode #refresh-bg-btn,
 body.minimal-mode #todo-widget {
   display: none !important;
+}
+
+/* The in-page shortcut borrows the existing search UI without changing the
+   saved clock-only preference or revealing other minimal-mode controls. */
+body.minimal-mode.search-shortcut-active #search-widget-wrap {
+  display: block !important;
+  position: fixed;
+  top: clamp(24px, 10vh, 96px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, 90vw);
+  margin-top: 0;
+  z-index: 1300;
+}
+
+body.minimal-mode.search-shortcut-active #search-widget {
+  display: flex !important;
 }
 
 body.minimal-mode #content {

@@ -6,7 +6,7 @@ const source = fs.readFileSync(new URL('../search.js', import.meta.url), 'utf8')
 
 // Small DOM/event harness runs the whole production module, including callbacks,
 // rendering and keyboard/pointer activation, without browser sockets or packages.
-function harness({ icons = [], folders = [], settings = {}, legacy = false, omitFolders = false } = {}) {
+function harness({ icons = [], folders = [], settings = {}, legacy = false, omitFolders = false, platform = 'Linux' } = {}) {
   const handlers = new Map();
   const timers = [];
   const navigations = [];
@@ -54,16 +54,22 @@ function harness({ icons = [], folders = [], settings = {}, legacy = false, omit
     }
     focus() {
       if (document.activeElement === this) return;
+      const previous = document.activeElement;
       document.activeElement = this;
+      previous?.dispatchEvent(event('blur', { relatedTarget: this }));
       this.dispatchEvent(event('focus'));
     }
     blur() { document.activeElement = document.body; this.dispatchEvent(event('blur')); }
     scrollIntoView(options) { assert.equal(options.block, 'nearest'); }
-    closest() { return null; }
+    closest(selector) { if (selector === '.engine-btn') return this.classList.contains('engine-btn') ? this : null; return this.hiddenAncestor || this.hidden || this.inert || this.classList.contains('hidden') ? this : null; }
+    getClientRects() { return this.hidden || this.display === 'none' ? [] : [{}]; }
+    select() { this.setSelectionRange(0, this.value.length); }
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
   }
   const body = new Element('body');
   const input = body.appendChild(new Element('input', 'search-input'));
+  const engineSwitch = body.appendChild(new Element('div', 'search-engine-switch'));
+  const shortcutHint = body.appendChild(new Element('kbd', 'search-shortcut-hint'));
   const list = body.appendChild(new Element('div', 'search-history'));
   list.className = 'search-history hidden';
   body.appendChild(new Element('div', 'search-hint'));
@@ -73,6 +79,7 @@ function harness({ icons = [], folders = [], settings = {}, legacy = false, omit
   document = {
     body, documentElement: body, activeElement: body,
     getElementById: (id) => descendants(body).find((node) => node.id === id) || null,
+    contains: (node) => node === body || descendants(body).includes(node),
     querySelectorAll: () => [], querySelector: () => null,
     createElement: (tag) => new Element(tag),
     addEventListener(name, fn) {
@@ -86,7 +93,9 @@ function harness({ icons = [], folders = [], settings = {}, legacy = false, omit
     set(value) { writes.push(JSON.parse(JSON.stringify(value))); }
   } } };
   Object.assign(context, { chrome, window: {
-    chrome, clearTimeout() {}, setTimeout(fn) { timers.push(fn); return timers.length; },
+    chrome, navigator: { userAgentData: { platform } },
+    getComputedStyle: (node) => ({ visibility: node.visibility || 'visible' }),
+    clearTimeout() {}, setTimeout(fn) { timers.push(fn); return timers.length; },
     open() { assert.fail('navigation must use the hook'); },
     location: { assign() { assert.fail('navigation must use the hook'); } }
   } });
@@ -99,11 +108,18 @@ function harness({ icons = [], folders = [], settings = {}, legacy = false, omit
   api.init(options);
   const type = (value) => { input.focus(); input.value = value; input.dispatchEvent(event('input')); };
   const press = (key, extra = {}) => { const e = event('keydown', { key, ...extra }); input.dispatchEvent(e); return e; };
+  const globalPress = (key, extra = {}) => {
+    const e = event('keydown', { key, target: document.activeElement, ...extra });
+    for (const fn of handlers.get('keydown') || []) fn(e);
+    if (!e.stopped) e.target.dispatchEvent(e);
+    return e;
+  };
+  const addElement = (tag, id) => body.appendChild(new Element(tag, id));
   const sites = () => descendants(list).filter((node) => node.classList.contains('search-site-item'));
   const history = () => descendants(list).filter((node) => node.classList.contains('search-history-item'));
   const click = (node, extra = {}) => { node.dispatchEvent(event('click', extra)); };
   return { state, api, input, list, type, press, sites, history, click, navigations, matched, writes,
-    historyToggle, clearHistory, flushTimers: () => timers.splice(0).forEach((fn) => fn()), document };
+    historyToggle, clearHistory, engineSwitch, shortcutHint, globalPress, addElement, flushTimers: () => timers.splice(0).forEach((fn) => fn()), document };
 }
 
 function event(type, extra = {}) {
@@ -178,10 +194,12 @@ function ids(h) { return h.sites().map((node) => node.dataset.siteId); }
   h.type('mat');
   assert.deepEqual(ids(h), ['safe'], 'only ordinary HTTP(S) shortcuts enter partial matches');
   const payload = '<img src=x onerror=alert(1)>';
-  h.state.icons = [site('xss', payload, 'https://safe.example/')];
+  h.state.icons = [site('xss', `  ${payload}  `, 'https://safe.example/')];
   h.type('<img');
   assert.equal(h.sites()[0].children[0].textContent, payload, 'title remains literal text');
   assert.equal(h.sites()[0].children[0].children.length, 0);
+  assert.equal(h.state.icons[0].name, `  ${payload}  `, 'display trimming never mutates saved titles');
+  assert.equal(h.writes.length, 0);
 }
 
 {
@@ -357,6 +375,104 @@ for (const mutate of [
   assert.deepEqual(ids(h), ['two'], 'legacy callback stays live');
   h.api.init({ getState: () => null }); h.type('doc');
   assert.equal(h.sites().length, 0, 'missing workspace state has a safe empty fallback');
+}
+
+for (const [platform, modifier, hint, aria] of [
+  ['macOS', 'metaKey', '⌘ K', 'Meta+K'],
+  ['Windows', 'ctrlKey', 'Ctrl K', 'Control+K'],
+  ['Linux', 'ctrlKey', 'Ctrl K', 'Control+K']
+]) {
+  const h = harness({ platform, icons: [site('one', 'Docs')] });
+  assert.equal(h.shortcutHint.textContent, hint);
+  assert.match(h.input.getAttribute('aria-keyshortcuts'), new RegExp(aria.replace('+', '\\+')));
+  h.input.value = 'doc';
+  const opener = h.addElement('button', 'opener'); opener.focus();
+  assert.equal(h.globalPress('k', { [modifier]: true }).defaultPrevented, true);
+  assert.equal(h.document.activeElement, h.input);
+  assert.equal(h.input.value, 'doc');
+  assert.equal(h.input.selectionStart, 0); assert.equal(h.input.selectionEnd, 3);
+  assert.equal(h.input.getAttribute('aria-activedescendant'), null);
+  h.input.setSelectionRange(1, 2);
+  h.globalPress('k', { [modifier]: true });
+  h.globalPress('k', { [modifier]: true, repeat: true });
+  assert.equal(h.input.selectionStart, 1); assert.equal(h.input.selectionEnd, 2, 'repeat preserves caret/selection');
+  assert.equal(h.navigations.length, 0, 'shortcut never navigates');
+  const escape = h.globalPress('Escape');
+  assert.equal(escape.defaultPrevented, true); assert.equal(escape.stopped, true);
+  assert.equal(h.document.activeElement, opener, 'one Escape restores the original control');
+  assert.equal(h.input.getAttribute('aria-expanded'), 'false');
+  assert.equal(h.globalPress('Escape').defaultPrevented, false, 'restoration consumes the shortcut session');
+  h.type('doc'); h.input.setSelectionRange(2, 2);
+  h.globalPress('k', { [modifier]: true });
+  assert.equal(h.input.selectionStart, 2, 'shortcut invoked from search retains the current caret');
+  h.globalPress('Escape'); assert.equal(h.document.activeElement, h.document.body);
+  h.globalPress('k', { [modifier]: true }); h.globalPress('Escape');
+  assert.equal(h.document.activeElement, h.document.body, 'body origin dismisses using blur, not body.focus');
+  for (const [key, extra] of [
+    ['k', { altKey: true }], ['k', { shiftKey: true }],
+    ['k', { ctrlKey: true, metaKey: true }], ['k', { defaultPrevented: true }],
+    ['k', { isComposing: true }], ['k', { keyCode: 229 }], ['k', { which: 229 }], ['Process', {}]
+  ]) {
+    opener.focus();
+    const e = h.globalPress(key, { [modifier]: true, ...extra });
+    assert.equal(h.document.activeElement, opener, 'unapproved modifier/composition combinations do not steal focus');
+    assert.equal(e.defaultPrevented, Boolean(extra.defaultPrevented));
+  }
+  opener.focus();
+  assert.equal(h.globalPress('k', { [modifier === 'metaKey' ? 'ctrlKey' : 'metaKey']: true }).defaultPrevented, false);
+  assert.equal(h.document.activeElement, opener, 'only the platform primary modifier is handled');
+  for (const tag of ['input', 'textarea', 'select', 'div']) {
+    const editor = h.addElement(tag, 'draft'); editor.value = 'unsaved draft'; editor.isContentEditable = tag === 'div'; editor.focus();
+    assert.equal(h.globalPress('k', { [modifier]: true }).defaultPrevented, false);
+    assert.equal(h.document.activeElement, editor); assert.equal(editor.value, 'unsaved draft');
+  }
+  opener.focus();
+  h.document.querySelector = () => ({});
+  assert.equal(h.globalPress('k', { [modifier]: true }).defaultPrevented, false, 'an open modal blocks the shortcut even if focus escaped');
+  assert.equal(h.document.activeElement, opener);
+  h.document.querySelector = () => null;
+  for (const unavailable of ['hidden', 'disabled', 'disconnected', 'visibility', 'inert']) {
+    const origin = h.addElement('button', `origin-${unavailable}`); origin.focus();
+    h.globalPress('k', { [modifier]: true });
+    if (unavailable === 'disconnected') h.document.body.children = h.document.body.children.filter(node => node !== origin);
+    else if (unavailable === 'visibility') origin.visibility = 'hidden';
+    else origin[unavailable] = true;
+    h.globalPress('Escape');
+    assert.equal(h.document.activeElement, h.document.body, 'unusable origins fall back to safe body focus');
+  }
+  opener.focus(); h.globalPress('k', { [modifier]: true });
+  const next = h.addElement('button', 'next'); next.focus();
+  h.globalPress('k', { [modifier]: true });
+  h.globalPress('Escape');
+  assert.equal(h.document.activeElement, next, 'immediate reactivation before the blur timer remembers the new origin');
+  opener.focus(); h.globalPress('k', { [modifier]: true }); next.focus(); h.flushTimers();
+  h.globalPress('Escape');
+  assert.equal(h.document.activeElement, next, 'manual focus departure cancels the shortcut restoration session');
+  h.document.body.classList.add('minimal-mode');
+  const beforeWrites = h.writes.length;
+  opener.focus(); h.globalPress('k', { [modifier]: true });
+  assert.equal(h.document.body.classList.contains('search-shortcut-active'), true);
+  assert.equal(h.document.activeElement, h.input);
+  const customEngine = h.addElement('button', 'late-custom-engine'); customEngine.className = 'engine-btn custom-engine';
+  const mouse = event('mousedown', { target: customEngine }); h.engineSwitch.dispatchEvent(mouse);
+  assert.equal(mouse.defaultPrevented, true, 'delegated left mousedown covers dynamically added custom engines');
+  const rightMouse = event('mousedown', { target: customEngine, button: 2 }); h.engineSwitch.dispatchEvent(rightMouse);
+  assert.equal(rightMouse.defaultPrevented, false);
+  h.type('doc'); assert.equal(h.sites().length, 1);
+  h.globalPress('Escape');
+  assert.equal(h.document.activeElement, opener);
+  assert.equal(h.document.body.classList.contains('search-shortcut-active'), false);
+  assert.equal(h.document.body.classList.contains('minimal-mode'), true);
+  h.globalPress('k', { [modifier]: true }); next.focus();
+  assert.equal(h.document.body.classList.contains('search-shortcut-active'), false, 'blur restores clock-only mode synchronously');
+  assert.equal(h.writes.length, beforeWrites, 'temporary minimal search does not persist a preference or index');
+  opener.focus(); h.globalPress('k', { [modifier]: true });
+  const engine = h.addElement('button', 'engine');
+  engine.closest = selector => selector === '#search-widget-wrap' ? {} : null;
+  engine.getClientRects = () => h.document.body.classList.contains('search-shortcut-active') ? [{}] : [];
+  engine.focus();
+  await Promise.resolve();
+  assert.equal(h.document.activeElement, h.document.body, 'hidden native Shift+Tab target is safely blurred after focus settles');
 }
 
 console.log('Saved-site search unit tests passed: ranking, safety, live workspace, navigation, history, ARIA and IME.');

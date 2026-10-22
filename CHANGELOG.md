@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Cmd+K on Mac and Ctrl+K on Windows/Linux focus the existing site search on an active new-tab page, with a platform hint and Escape focus restoration; active drafts and IME input are not intercepted.
+
 - Instant local lookup of saved websites across groups and folders in the existing search box, with ranked title/domain matches, location hints, explicit keyboard or mouse selection, and separate search history. No new permissions, requests or stored search index.
 
 - Offline, reproducible unsigned extension ZIP candidates with a reviewed runtime allowlist, asset/license closure checks, and a real MV3 smoke of the exact extracted archive. CI retains tested ZIP bytes and SHA-256 without publishing a release.

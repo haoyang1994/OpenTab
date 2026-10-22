@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForAsync } from './wait-for-async.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = path.join(root, 'artifacts');
 const site = (id, name, url, folderId = 'folder-home', parentId = '') => ({
   id, name, url, type: 'shortcut', folderId, parentId
 });
-const longTitle = 'Docs Reference <img src=x onerror=alert(1)> ' + 'Long saved title '.repeat(9);
+const longTitle = ('Docs Reference <img src=x onerror=alert(1)> ' + 'Long saved title '.repeat(9)).trimEnd();
 const longGroup = 'Work 设置 ' + 'Long group '.repeat(8);
 const folderName = 'Reference 保存 <svg onload=alert(1)>';
 const fixture = {
@@ -37,8 +38,8 @@ export async function verifySavedSites(page, worker) {
   async function store(payload) {
     await worker.evaluate(data => new Promise(resolve => chrome.storage.local.set(data, resolve)), payload);
   }
-  async function ready() {
-    await page.waitForFunction(() => window.OpenTabSearch && window.OpenTabSearch.resolve('Docs').type === 'shortcut' && performance.getEntriesByName('opentab:grid-ready').length > 0);
+  async function ready(expected = { searchEngine: 'google', searchHistoryEnabled: true }) {
+    await page.waitForFunction(expected => window.OpenTabSearch && window.OpenTabSearch.resolve('Docs').type === 'shortcut' && performance.getEntriesByName('opentab:grid-ready').length > 0 && OpenTabSearch.getState().searchEngine === expected.searchEngine && OpenTabSearch.getState().searchHistoryEnabled === expected.searchHistoryEnabled && OpenTabSearch.getState().searchHistory.some(item => item.q === 'docs query' && item.engine === 'bing'), expected);
     await page.evaluate(async () => { await OpenTabI18n.ready; });
     await page.waitForLoadState('networkidle');
     await page.evaluate(() => {
@@ -161,13 +162,15 @@ export async function verifySavedSites(page, worker) {
   assert.equal(await active(), null);
 
   await store({ ...fixture, searchHistoryEnabled: false });
-  await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+  await page.reload({ waitUntil: 'domcontentloaded' }); await ready({ searchEngine: 'google', searchHistoryEnabled: false });
   await type('docs');
   assert.equal(await page.locator(siteSelector).count(), 5, 'saved-site lookup is independent of history opt-out');
   assert.equal(await page.locator(historySelector).count(), 0);
   await page.locator('#search-input').press('ArrowDown');
   await page.locator('#search-input').press('Enter');
   assert.equal((await log()).at(-1).url, 'https://work.example.com/docs');
+
+  await verifySearchShortcut(page);
 
   // Actual installed-extension screenshots, after locale storage and readiness,
   // cover both long text and duplicate titles at desktop and narrow widths.
@@ -185,14 +188,189 @@ export async function verifySavedSites(page, worker) {
       const bounds = await page.locator('#search-history').evaluate(list => {
         const rect = list.getBoundingClientRect();
         return { left: rect.left, right: rect.right, width: rect.width, contentWidth: list.scrollWidth, clientWidth: list.clientWidth,
+          inputWidth: document.getElementById('search-input').getBoundingClientRect().width,
           rows: [...list.querySelectorAll('[role="option"]')].map(row => ({ width: row.getBoundingClientRect().width, tabIndex: row.tabIndex })) };
       });
       assert.ok(bounds.left >= 0 && bounds.right <= width, 'saved-site dropdown stays inside the viewport');
       assert.ok(bounds.contentWidth <= bounds.clientWidth + 1, 'long metadata is ellipsized, not horizontally scrollable');
       assert.ok(bounds.rows.every(row => row.width <= bounds.width && row.tabIndex === -1));
+      assert.ok(bounds.inputWidth >= 64, 'platform key hint leaves usable input width on narrow screens');
       await page.screenshot({ path: path.join(artifacts, `search-saved-sites-${preference}-${width}.png`), animations: 'disabled' });
     }
   }
   await page.setViewportSize({ width: 1280, height: 800 });
   console.log('Saved-site E2E: local-only lookup, safe explicit navigation, live stale rejection, history/ARIA/IME/Tab and bilingual responsive screenshots passed.');
+}
+
+// Exercise real DOM/native keyboard events for each platform binding. Only OS
+// detection is simulated; this is an in-page shortcut, not a browser command.
+async function verifySearchShortcut(page) {
+  fs.mkdirSync(artifacts, { recursive: true });
+  const originalViewport = page.viewportSize();
+  await page.evaluate(() => OpenTabSearch.replaceSettings({
+    ...OpenTabSearch.getBackupSlice(),
+    customSearchEngines: [{ id: 'cse-shortcut-test', name: 'Example', template: 'https://example.com/?q=%s' }]
+  }));
+  await waitForAsync(page, async () => (await chrome.storage.local.get('customSearchEngines')).customSearchEngines?.some(engine => engine.id === 'cse-shortcut-test'));
+  await page.evaluate(() => {
+    window.__shortcutNavigatorDescriptors = {
+      platform: Object.getOwnPropertyDescriptor(navigator, 'platform'),
+      userAgentData: Object.getOwnPropertyDescriptor(navigator, 'userAgentData')
+    };
+    Object.defineProperty(navigator, 'userAgentData', { configurable: true, value: undefined });
+    Object.defineProperty(navigator, 'platform', { configurable: true, get: () => window.__shortcutTestPlatform });
+  });
+  const currentFocus = () => page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName);
+  const selection = () => page.locator('#search-input').evaluate(input => [input.selectionStart, input.selectionEnd]);
+  const navCount = () => page.evaluate(() => window.__navLog.length);
+  try {
+    for (const [platform, modifier, hint] of [['MacIntel', 'Meta', '⌘ K'], ['Win32', 'Control', 'Ctrl K'], ['Linux x86_64', 'Control', 'Ctrl K']]) {
+      await page.evaluate(platform => { window.__shortcutTestPlatform = platform; OpenTabSearch.applyFromStorage(); }, platform);
+      await page.waitForFunction(hint => document.getElementById('search-shortcut-hint').textContent === hint, hint);
+      assert.match(await page.getAttribute('#search-input', 'aria-keyshortcuts'), new RegExp(`${modifier}\\+K`));
+      const count = await navCount();
+      await page.fill('#search-input', 'doc');
+      await page.locator('#search-input').evaluate(input => input.blur());
+      assert.equal(await currentFocus(), 'BODY');
+      await page.keyboard.press(`${modifier}+k`);
+      assert.equal(await currentFocus(), 'search-input');
+      assert.equal(await page.inputValue('#search-input'), 'doc');
+      assert.deepEqual(await selection(), [0, 3]);
+      assert.equal(await page.getAttribute('#search-input', 'aria-activedescendant'), null);
+      await page.locator('#search-input').evaluate(input => input.setSelectionRange(1, 2));
+      await page.keyboard.press(`${modifier}+k`);
+      await page.keyboard.press(`${modifier}+k`);
+      assert.deepEqual(await selection(), [1, 2], 'repeated shortcut preserves the user selection');
+      await page.keyboard.press('Escape');
+      assert.equal(await currentFocus(), 'BODY');
+      assert.equal(await page.getAttribute('#search-input', 'aria-expanded'), 'false');
+      assert.equal(await page.inputValue('#search-input'), 'doc');
+
+      await page.locator('#search-input').focus();
+      await page.locator('#search-input').evaluate(input => input.setSelectionRange(2, 2));
+      await page.keyboard.press(`${modifier}+k`);
+      assert.deepEqual(await selection(), [2, 2], 'invocation from search never rewrites its caret');
+      await page.keyboard.press('Escape');
+      assert.equal(await currentFocus(), 'BODY');
+
+      await page.locator('#settings-btn').focus();
+      await page.keyboard.press(`${modifier}+k`);
+      await page.keyboard.press(`${modifier}+k`);
+      await page.keyboard.press('Escape');
+      assert.equal(await currentFocus(), 'settings-btn', 'Escape restores the original connected control once');
+
+      await page.keyboard.press(`${modifier}+k`);
+      await page.keyboard.press('Tab');
+      const nextOrigin = await page.evaluate(() => {
+        window.__nextShortcutOrigin = document.activeElement;
+        return { tag: document.activeElement.tagName, id: document.activeElement.id };
+      });
+      assert.notEqual(nextOrigin.id, 'search-input');
+      assert.ok(!['INPUT', 'TEXTAREA', 'SELECT'].includes(nextOrigin.tag), 'native next focus is a nonediting control');
+      // No blur-timer wait: immediate reactivation must remember the new origin.
+      await page.keyboard.press(`${modifier}+k`);
+      assert.equal(await currentFocus(), 'search-input');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.evaluate(() => document.activeElement === window.__nextShortcutOrigin), true);
+
+      await page.click('#todo-toggle-btn');
+      await page.waitForSelector('#todo-widget:not(.hidden)');
+      await page.fill('#todo-input', 'Unsaved todo draft');
+      await page.keyboard.press(`${modifier}+k`);
+      assert.equal(await currentFocus(), 'todo-input', 'unrelated textbox keeps focus and its draft');
+      assert.equal(await page.inputValue('#todo-input'), 'Unsaved todo draft');
+      await page.click('#todo-collapse-btn');
+
+      await page.click('#settings-btn');
+      await page.waitForSelector('#settings-panel:not(.hidden)');
+      await page.fill('#settings-search', 'Unsaved settings filter');
+      await page.keyboard.press(`${modifier}+k`);
+      assert.equal(await currentFocus(), 'settings-search');
+      assert.equal(await page.inputValue('#settings-search'), 'Unsaved settings filter');
+      // An open modal still wins when its focus is on a nonediting control.
+      await page.locator('#close-settings').focus();
+      await page.keyboard.press(`${modifier}+k`);
+      assert.equal(await currentFocus(), 'close-settings');
+      await page.click('#close-settings');
+      await page.waitForSelector('#settings-panel.hidden', { state: 'attached' });
+
+      await page.click('#add-shortcut-tile');
+      await page.waitForSelector('#add-icon-modal:not(.hidden)');
+      await page.fill('#icon-name', 'Draft shortcut, do not save');
+      await page.keyboard.press(`${modifier}+k`);
+      assert.equal(await currentFocus(), 'icon-name');
+      assert.equal(await page.inputValue('#icon-name'), 'Draft shortcut, do not save');
+      await page.click('#cancel-btn');
+      await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
+
+      await page.evaluate(() => {
+        const button = document.createElement('button'); button.id = 'temporary-shortcut-origin';
+        button.textContent = 'Temporary focus'; document.body.appendChild(button); button.focus();
+      });
+      await page.keyboard.press(`${modifier}+k`);
+      await page.evaluate(() => document.getElementById('temporary-shortcut-origin').remove());
+      await page.keyboard.press('Escape');
+      assert.equal(await currentFocus(), 'BODY', 'removed opener safely falls back to blur');
+
+      await page.locator('#clock-widget').dblclick();
+      await page.waitForFunction(() => document.body.classList.contains('minimal-mode'));
+      await waitForAsync(page, async () => (await chrome.storage.local.get('minimalMode')).minimalMode === true);
+      const minimalBefore = await page.evaluate(() => chrome.storage.local.get(['minimalMode', 'icons', 'folders']));
+      assert.equal(await page.locator('#search-widget-wrap').isVisible(), false);
+      await page.setViewportSize({ width: 360, height: 900 });
+      await page.locator('#settings-btn').focus();
+      await page.keyboard.press(`${modifier}+k`);
+      assert.equal(await page.locator('#search-input').isVisible(), true, 'shortcut temporarily reveals search in clock-only mode');
+      assert.equal(await currentFocus(), 'search-input');
+      await page.fill('#search-input', 'doc');
+      assert.ok(await page.locator(siteSelector).count() > 0);
+      await page.locator('#search-engine-switch > .engine-btn[data-engine="bing"]').click();
+      await page.waitForFunction(() => OpenTabSearch.getState().searchEngine === 'bing');
+      assert.equal(await currentFocus(), 'search-input', 'minimal-mode engine click keeps the borrowed search surface active');
+      assert.equal(await page.locator('#search-input').isVisible(), true);
+      await page.locator('#search-custom-engines .engine-btn[data-engine="cse-shortcut-test"]').click();
+      await page.waitForFunction(() => OpenTabSearch.getState().searchEngine === 'cse-shortcut-test');
+      assert.equal(await currentFocus(), 'search-input', 'dynamically created custom engines use the same delegated focus protection');
+      await page.keyboard.press('Alt+ArrowUp');
+      assert.equal(await page.evaluate(() => OpenTabSearch.getState().searchEngine), 'github', 'Alt arrows still switch engines in minimal mode');
+      await page.keyboard.press('ArrowDown');
+      const minimalBounds = await page.locator('#search-history').evaluate(list => {
+        const rect = list.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: innerWidth, height: innerHeight };
+      });
+      assert.ok(minimalBounds.left >= 0 && minimalBounds.right <= minimalBounds.width);
+      assert.ok(minimalBounds.top >= 0 && minimalBounds.bottom <= minimalBounds.height, 'minimal-mode results stay inside narrow viewport');
+      await page.screenshot({ path: path.join(artifacts, `search-shortcut-minimal-${platform.replace(/[^a-z0-9]/gi, '-')}-360.png`), animations: 'disabled' });
+      await page.keyboard.press('Escape');
+      assert.equal(await currentFocus(), 'settings-btn');
+      assert.equal(await page.locator('#search-widget-wrap').isVisible(), false);
+      assert.equal(await page.locator('body').evaluate(body => body.classList.contains('minimal-mode')), true);
+      await page.keyboard.press(`${modifier}+k`);
+      await page.keyboard.press('Tab');
+      assert.equal(await page.locator('#search-widget-wrap').isVisible(), false, 'Tab ends temporary minimal search immediately');
+      assert.notEqual(await currentFocus(), 'search-input');
+      await page.locator('#settings-btn').focus();
+      await page.keyboard.press(`${modifier}+k`);
+      await page.keyboard.press('Shift+Tab');
+      assert.equal(await page.locator('#search-widget-wrap').isVisible(), false, 'Shift+Tab also ends temporary search without trapping focus');
+      assert.equal(await page.evaluate(() => document.activeElement === document.body || document.activeElement.getClientRects().length > 0), true, 'Shift+Tab must not leave focus on a hidden engine button');
+      assert.deepEqual(await page.evaluate(() => chrome.storage.local.get(['minimalMode', 'icons', 'folders'])), minimalBefore, 'temporary search never rewrites the minimal-mode preference or workspace');
+      await page.locator('#clock-widget').dblclick();
+      await page.waitForFunction(() => !document.body.classList.contains('minimal-mode'));
+      await waitForAsync(page, async () => (await chrome.storage.local.get('minimalMode')).minimalMode === false);
+      await page.setViewportSize(originalViewport);
+      assert.equal(await navCount(), count, 'focus, repeat, dismissal and protected drafts never navigate');
+    }
+  } finally {
+    await page.evaluate(() => {
+      for (const key of ['platform', 'userAgentData']) {
+        const descriptor = window.__shortcutNavigatorDescriptors[key];
+        if (descriptor) Object.defineProperty(navigator, key, descriptor); else delete navigator[key];
+      }
+      delete window.__shortcutNavigatorDescriptors;
+      delete window.__shortcutTestPlatform;
+      delete window.__nextShortcutOrigin;
+      OpenTabSearch.applyFromStorage();
+    });
+  }
 }
