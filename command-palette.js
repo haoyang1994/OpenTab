@@ -53,11 +53,21 @@
       Boolean(node.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]'));
   }
 
+  function selectionControl(node) {
+    const selection = global.OpenTabSiteSelection;
+    if (!selection?.isActive?.() || !selection.containsTarget?.(node)) return false;
+    return !editable(node) || (node?.tagName === 'INPUT'
+      && (node.type || node.getAttribute?.('type')) === 'checkbox'
+      && node.classList.contains('site-selection-checkbox'));
+  }
+
   function blocked(target) {
-    if (global.OpenTabSiteList?.isBusy?.()) return true;
+    if (global.OpenTabSiteList?.isBusy?.() || global.OpenTabSiteSelection?.isPending?.()
+      || $('site-selection-dialog')?.open) return true;
     if (OVERLAYS.some((id) => { const node = $(id); return node && !node.classList.contains('hidden') && !node.hidden; })) return true;
     const main = $('search-input');
-    return (editable(target) && target !== main) || (editable(document.activeElement) && document.activeElement !== main);
+    return (editable(target) && target !== main && !selectionControl(target))
+      || (editable(document.activeElement) && document.activeElement !== main && !selectionControl(document.activeElement));
   }
 
   function focusBody() {
@@ -305,6 +315,9 @@
       return true;
     }
     if (!root() || !input() || !$('command-palette-results') || !search() || blocked(target)) return false;
+    if (global.OpenTabSiteSelection?.isActive?.()) {
+      try { global.OpenTabSiteSelection.cancel(); } catch (_) { return false; }
+    }
     opener = document.activeElement;
     openerSelection = typeof opener?.selectionStart === 'number' ? {
       start: opener.selectionStart, end: opener.selectionEnd, direction: opener.selectionDirection || 'none'

@@ -100,6 +100,7 @@
 
   function onTabTrap(event) {
     if (event.key !== 'Tab') return;
+    if (document.getElementById('site-selection-dialog')?.open) return;
     const dialog = topDialog();
     if (!dialog) return;
     const nodes = focusables(dialog);

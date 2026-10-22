@@ -1,5 +1,17 @@
 /* Static shell strings. Keys are the original UI phrases, never user content. */
 OpenTabI18n.register({
+  "选择网站": "Select sites",
+  "移动": "Move",
+  "选择网站：{name}": "Select site: {name}",
+  "已选择 {count} 个网站": "{count} sites selected",
+  "全选当前视图": "Select all in this view",
+  "清除选择": "Clear selection",
+  "移动到…": "Move to…",
+  "移动选中的网站": "Move selected sites",
+  "选择已有分组或文件夹": "Choose an existing group or folder",
+  "正在移动…": "Moving…",
+  "网站或目标已变化。请取消并重新选择。": "The sites or destination changed. Cancel and select again.",
+  "未能保存移动，网站未移动。请重试。": "Could not save the move. Sites were not moved. Please try again.",
   "批量添加网站": "Batch add websites",
   "粘贴网址，批量添加": "Paste URLs to add websites",
   "网址列表": "URL list",

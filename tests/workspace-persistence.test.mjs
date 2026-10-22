@@ -23,6 +23,60 @@ function memory(initial = base()) {
   } } };
   return { store, writes, chrome, api: Workspace.forChrome(chrome), failNext() { fail = true; } };
 }
+// Optional move preconditions run after lock acquisition, including records
+// that this operation does not modify. Rejection uses normal recovery, never
+// an optimistic success or a partial write.
+{
+  const h = memory(), state = base(), errors = [];
+  const c = h.api.connect({ state, onError: error => errors.push(error) }); c.seed(h.store);
+  let release, entered = false, guardCalls = 0, onOkCalls = 0;
+  const prior = h.api.transaction(async ({ read, write }) => {
+    entered = true;
+    await new Promise(resolve => { release = resolve; });
+    const latest = await read(); latest.icons[1].name = 'Changed destination';
+    await write({ icons: latest.icons });
+  });
+  await until(() => entered);
+  state.icons[0].name = 'Proposed move';
+  const pending = c.save(undefined, () => onOkCalls++, latest => {
+    guardCalls++;
+    return latest.icons.find(item => item.id === 'y').name === 'Y';
+  });
+  await Promise.resolve(); assert.equal(guardCalls, 0, 'guard cannot approve before waiting writer finishes');
+  release(); await prior;
+  assert.equal(await pending, false); assert.equal(guardCalls, 1);
+  assert.equal(onOkCalls, 0); assert.equal(errors[0].code, 'WORKSPACE_CONFLICT');
+  assert.equal(h.writes.length, 1, 'only the prior writer persisted');
+  assert.equal(state.icons[0].name, 'X', 'failed optimistic move is recovered');
+  assert.equal(state.icons[1].name, 'Changed destination', 'latest remote change is preserved');
+  state.clockFormat = '12h'; assert.equal(await c.save(), true, 'normal saves still work after guarded failure recovery');
+}
+{
+  const h = memory(), state = base(), c = h.api.connect({ state }); c.seed(h.store);
+  state.icons[0].name = 'Moved';
+  assert.equal(await c.save(undefined, undefined, latest => {
+    latest.icons[1].name = 'Guard must not mutate storage';
+    return true;
+  }), true);
+  assert.equal(h.writes.length, 1); assert.equal(h.store.icons[0].name, 'Moved');
+  assert.equal(h.store.icons[1].name, 'Y', 'guard receives an isolated snapshot');
+}
+for (const outcome of [false, undefined, 1, Promise.resolve(true)]) {
+  const h = memory(), chosen = base(); chosen.clockFormat = '12h';
+  await assert.rejects(h.api.commit(base(), chosen, () => outcome), error => error.code === 'WORKSPACE_CONFLICT');
+  assert.equal(h.writes.length, 0, 'only strict synchronous true accepts a precondition');
+}
+{
+  const h = memory(), chosen = base(); chosen.clockFormat = '12h';
+  await assert.rejects(h.api.commit(base(), chosen, () => { throw new Error('guard failed'); }), /guard failed/);
+  assert.equal(h.writes.length, 0, 'a throwing precondition cannot write');
+}
+{
+  const h = memory(), chosen = base(); chosen.clockFormat = '12h';
+  await assert.rejects(h.api.commit(base(), chosen, () => Promise.reject(new Error('async guard failed'))), error => error.code === 'WORKSPACE_CONFLICT');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.writes.length, 0, 'a rejected async guard cannot write or escape as an unhandled rejection');
+}
 // The extension installer and E2E fixture seeding share one durable-write
 // boundary. Run the actual background listener with the actual coordinator,
 // pausing storage only after its first read has captured the empty snapshot.

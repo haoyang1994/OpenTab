@@ -148,26 +148,25 @@
     state().currentFolderId = before.currentFolderId;
   }
 
-  async function persistUndo(before, text) {
+  async function persistUndo(before, text, options = {}) {
     const after = snapshot(), intent = host.captureIntent();
-    const saved = await host.saveState(() => {
-      restore(before);
-      closeOverlay(true);
-      host.refreshIconViews();
-    });
-    if (!saved || !host.isIntentCurrent(intent)) return;
+    // Workspace owns failure recovery and rehydrates the latest durable state.
+    const saved = await host.saveState(undefined, undefined, options.guard);
+    if (!saved || !host.isIntentCurrent(intent)) return false;
     host.showToast(text, {
       intent, actionLabel: t('撤销'),
       onAction: async () => {
+        if (!host.isIntentCurrent(intent)) return false;
         try { restore(OpenTabWorkspace.merge(after, before, snapshot())); }
         catch (_) { host.showToast(t('内容已变化，无法撤销。')); return; }
         closeOverlay(true);
-        const saved = host.saveState();
+        const saved = host.saveState(undefined, undefined, options.undoGuard);
         host.refreshIconViews();
         if (await saved) host.showToast(t('已恢复'), { duration: 1500 });
       },
       duration: 6000
     });
+    return true;
   }
 
   function ensureFolders(folders) {
@@ -642,6 +641,118 @@
     host.refreshIconViews(true);
   }
 
+  // Tokens retain the original view, rather than accepting refreshed objects at Confirm.
+  const bulkSelections = new WeakMap();
+  const bulkDestinations = new WeakMap();
+  let bulkMovePending = false;
+  const copyBulk = (value) => JSON.parse(JSON.stringify(value));
+  const bulkStable = (value) => Array.isArray(value) ? value.map(bulkStable)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => [key, bulkStable(value[key])])) : value;
+  const bulkEqual = (a, b) => JSON.stringify(bulkStable(a)) === JSON.stringify(bulkStable(b));
+
+  // Match the editable intent fields, not hydration defaults or derived favicon caches.
+  function bulkIconRecord(icon) {
+    if (!icon) return null;
+    const fields = ['id', 'name', 'url', 'type', 'folderId', 'parentId', 'customIconUrl', 'emoji', 'uploadedIconDataUrl', 'toolSubtype', 'sshGatewayUrl', 'sshHost', 'sshPort', 'sshUsername', 'sshSocksHost', 'sshSocksPort', 'sshSocksUsername'];
+    return Object.fromEntries(fields.filter((key) => icon[key] !== undefined && icon[key] !== '' && icon[key] !== false
+      && !(key === 'type' && icon[key] === 'shortcut') && !(key === 'folderId' && icon[key] === HOME_GROUP_ID)
+      && !(key === 'sshPort' && icon[key] === 22) && !(key === 'sshSocksPort' && icon[key] === 1080)).map((key) => [key, icon[key]]));
+  }
+
+  function isBulkWebsite(icon) {
+    if (!icon || (icon.type && icon.type !== 'shortcut')) return false;
+    try { return ['http:', 'https:'].includes(new URL(icon.url).protocol); }
+    catch (_) { return false; }
+  }
+
+  function bulkMoveContext() {
+    const groupId = state().currentFolderId, parentId = openFolderId || '';
+    return {
+      scope: { groupId, parentId },
+      sites: state().icons.filter((icon) => icon.folderId === groupId && (icon.parentId || '') === parentId && isBulkWebsite(icon)).map(copyBulk),
+      destinations: [
+        ...state().folders.map((group) => ({ kind: 'group', id: group.id, name: group.name, groupId: group.id })),
+        ...state().icons.filter(isFolder).map((folder) => ({ kind: 'folder', id: folder.id, name: folder.name, groupId: folder.folderId, groupName: state().folders.find(group => group.id === folder.folderId)?.name }))
+      ]
+    };
+  }
+
+  function captureBulkSelection() {
+    const context = bulkMoveContext(), token = {};
+    const icons = context.sites.map((icon) => icon.id);
+    if (context.scope.parentId) icons.push(context.scope.parentId, ...getChildren(context.scope.parentId).map((icon) => icon.id));
+    bulkSelections.set(token, { ...context, before: snapshot(), intent: host.captureIntent({ icons, folders: [context.scope.groupId] }) });
+    return token;
+  }
+
+  function captureBulkDestination(destination) {
+    if (!destination || !['group', 'folder'].includes(destination.kind)) return null;
+    const record = destination.kind === 'group'
+      ? state().folders.find((group) => group.id === destination.id) : find(destination.id);
+    if (!record || (destination.kind === 'folder' && !isFolder(record))) return null;
+    const token = {}, groupId = destination.kind === 'group' ? record.id : record.folderId;
+    if (destination.name !== undefined && destination.name !== record.name
+      || destination.groupId !== undefined && destination.groupId !== groupId) return null;
+    const group = state().folders.find((item) => item.id === groupId);
+    if (!group || destination.groupName !== undefined && destination.groupName !== group.name) return null;
+    bulkDestinations.set(token, { kind: destination.kind, id: record.id, groupId, record: copyBulk(record),
+      group: copyBulk(group),
+      intent: host.captureIntent({ icons: destination.kind === 'folder' ? [record.id] : [], folders: [groupId] }) });
+    return token;
+  }
+
+  // Runs again on the latest durable state under the workspace lock. In particular,
+  // unchanged destination records and source membership are read dependencies.
+  function bulkGuard(before, ids, sourceParent, destination, epoch) {
+    const watched = new Set(ids);
+    if (sourceParent) {
+      watched.add(sourceParent);
+      before.icons.filter((icon) => icon.parentId === sourceParent).forEach((icon) => watched.add(icon.id));
+    }
+    return (latest) => {
+      if ((latest['opentab.workspaceEpoch'] || 0) !== epoch) return false;
+      const currentIcons = latest.icons || [];
+      // Legacy workspaces omit folders entirely; hydration supplies the Home group.
+      // A present array remains authoritative, including an explicitly deleted Home.
+      const currentGroups = Array.isArray(latest.folders) ? latest.folders : ensureGroups([]);
+      if (![...watched].every((id) => bulkEqual(bulkIconRecord(before.icons.find((icon) => icon.id === id)), bulkIconRecord(currentIcons.find((icon) => icon.id === id))))) return false;
+      if (sourceParent && !bulkEqual(before.icons.filter((icon) => icon.parentId === sourceParent).map((icon) => icon.id), currentIcons.filter((icon) => icon.parentId === sourceParent).map((icon) => icon.id))) return false;
+      if (!bulkEqual(destination.group, currentGroups.find((group) => group.id === destination.groupId))) return false;
+      return destination.kind !== 'folder' || bulkEqual(bulkIconRecord(destination.record), bulkIconRecord(currentIcons.find((icon) => icon.id === destination.id)));
+    };
+  }
+
+  async function moveSites(selectionToken, selectedIds, destinationToken) {
+    if (bulkMovePending) return { ok: false, reason: 'busy' };
+    const selection = bulkSelections.get(selectionToken), destination = bulkDestinations.get(destinationToken);
+    if (!selection || !destination || !Array.isArray(selectedIds) || !selectedIds.length
+      || selectedIds.length > selection.sites.length || new Set(selectedIds).size !== selectedIds.length
+      || !selectedIds.every((id) => selection.sites.some((icon) => icon.id === id))) return { ok: false, reason: 'invalid' };
+    if (!host.isIntentCurrent(selection.intent) || !host.isIntentCurrent(destination.intent)
+      || !bulkEqual(selection.scope, bulkMoveContext().scope)) return { ok: false, reason: 'stale' };
+    const before = snapshot(), parentId = destination.kind === 'folder' ? destination.id : '';
+    const ids = new Set(selectedIds), moving = state().icons.filter((icon) => ids.has(icon.id));
+    if (moving.length !== ids.size || !moving.every(isBulkWebsite)) return { ok: false, reason: 'stale' };
+    if (moving.every((icon) => icon.folderId === destination.groupId && (icon.parentId || '') === parentId)) return { ok: true, moved: 0 };
+    const guard = bulkGuard(selection.before, selectedIds, selection.scope.parentId, destination, selection.intent.epoch);
+    if (!guard({ ...before, 'opentab.workspaceEpoch': selection.intent.epoch })) return { ok: false, reason: 'stale' };
+    bulkMovePending = true;
+    try {
+      moving.forEach((icon) => { icon.folderId = destination.groupId; icon.parentId = parentId; });
+      if (selection.scope.parentId && selection.scope.parentId !== parentId) dissolveIfNeeded(selection.scope.parentId);
+      const after = snapshot();
+      const affectedIds = selectedIds.concat(before.icons.filter((icon) => icon.parentId === selection.scope.parentId && selection.scope.parentId).map((icon) => icon.id));
+      const undoGuard = bulkGuard(after, affectedIds, selection.scope.parentId, destination, selection.intent.epoch);
+      let stale = false;
+      const checkedGuard = latest => { const accepted = guard(latest); if (!accepted) stale = true; return accepted; };
+      const saving = persistUndo(before, t('已移动 {count} 个网站', { count: moving.length }), { guard: checkedGuard, undoGuard });
+      host.refreshIconViews();
+      const saved = await saving;
+      host.refreshIconViews();
+      return saved ? { ok: true, moved: moving.length } : { ok: false, reason: stale ? 'stale' : 'save-failed' };
+    } finally { bulkMovePending = false; }
+  }
+
   function selectGroup(folderId, animated) {
     if (!state().folders.some((folder) => folder.id === folderId)) return false;
     const already = state().currentFolderId === folderId;
@@ -907,6 +1018,7 @@
   function init(nextHost) {
     host = nextHost;
     bindUi();
+    global.OpenTabSiteSelection?.init(nextHost);
   }
 
   // Groups are the old drawers: storage still uses folders[] / folderId / currentFolderId.
@@ -949,6 +1061,10 @@
     showDialog,
     syncContextMenu,
     moveIconToGroup,
+    bulkMoveContext,
+    captureBulkSelection,
+    captureBulkDestination,
+    moveSites,
     selectGroup,
     init
   };

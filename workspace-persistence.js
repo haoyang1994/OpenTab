@@ -141,8 +141,18 @@
       }).finally(() => clearTimeout(timer));
     }
     const read = (keys = KEYS) => transaction((tx) => tx.read(keys));
-    const commit = (base, next) => transaction(async (tx) => {
-      const latest = await tx.read([...new Set(KEYS.concat(Object.keys(base), Object.keys(next)))]), merged = merge(base, next, latest);
+    const commit = (base, next, guard) => transaction(async (tx) => {
+      const latest = await tx.read([...new Set(KEYS.concat(Object.keys(base), Object.keys(next)))]);
+      // Optional operation preconditions also cover unchanged dependencies such
+      // as a move destination. Validate against the locked latest snapshot, not
+      // an earlier rendered view; asynchronous/truthy results are not approval.
+      if (guard) {
+        const accepted = guard(clone(latest));
+        // Unsupported async guards must not leak an unhandled rejection.
+        if (accepted && typeof accepted.then === 'function') Promise.resolve(accepted).catch(() => {});
+        if (accepted !== true) throw conflict();
+      }
+      const merged = merge(base, next, latest);
       const patch = Object.fromEntries(Object.keys(merged).filter((key) => !equal(latest[key], merged[key])).map((key) => [key, merged[key]]));
       if (Object.keys(patch).length) await tx.write(patch);
       return { ...merged };
@@ -158,7 +168,7 @@
       let expected = clone(initial), view = clone(initialView), queue = Promise.resolve(), serial = 0, broken = false;
       return {
         rebase(persisted, currentView = persisted) { expected = clone(persisted); view = clone(currentView); },
-        save(snapshot) {
+        save(snapshot, guard) {
           const selected = clone(snapshot), base = clone(expected), next = clone(expected), ticket = ++serial;
           for (const key of Object.keys(selected)) {
             if (key !== EPOCH_KEY && !equal(view[key], selected[key])) {
@@ -170,7 +180,7 @@
           const result = queue.then(async () => {
             if (broken) throw conflict();
             try {
-              const saved = await commit(base, next);
+              const saved = await commit(base, next, guard);
               return { state: saved, current: ticket === serial };
             } catch (error) { broken = true; throw error; }
           });
@@ -192,7 +202,7 @@
         if (changed && onChange) onChange();
       }
       function seed(stored, viewOverrides = {}) { epoch = stored[EPOCH_KEY] || 0; committed = { ...pick(state), [EPOCH_KEY]: epoch }; session = createSession(pick(stored), { ...committed, ...viewOverrides }); }
-      function save(_rollback, onOk) {
+      function save(_rollback, onOk, guard) {
         if (!session) {
           if (committed) apply(committed);
           if (onError) onError(new Error(t('保存暂不可用，请重新打开标签页。')));
@@ -200,7 +210,7 @@
         }
         const active = session;
         let operation;
-        try { operation = active.save(pick(state)); } catch (error) { operation = Promise.reject(error); }
+        try { operation = active.save(pick(state), guard); } catch (error) { operation = Promise.reject(error); }
         return operation.then((result) => {
           if (active !== session) return false;
           committed = { ...committed, ...pick(result.state) };
