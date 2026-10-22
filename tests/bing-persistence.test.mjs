@@ -11,7 +11,7 @@ function harness() {
   const chrome = { runtime: { lastError: null, sendMessage(message, cb) { callbacks.push({ message, cb }); } }, storage: {
     onChanged: { addListener(fn) { listeners.push(fn); } },
     local: {
-      get(keys, cb) { const result = Object.fromEntries(keys.filter((key) => stored[key] !== undefined).map((key) => [key, clone(stored[key])])); cb?.(result); return Promise.resolve(result); },
+      get(keys, cb) { const result = Object.fromEntries((keys || Object.keys(stored)).filter((key) => stored[key] !== undefined).map((key) => [key, clone(stored[key])])); cb?.(result); return Promise.resolve(result); },
       set(payload, cb) {
         if (failWrite) { failWrite = false; chrome.runtime.lastError = { message: 'test write failure' }; cb?.(); chrome.runtime.lastError = null; return; }
         const copy = clone(payload); writes.push(copy);
@@ -21,13 +21,13 @@ function harness() {
     }
   } };
   const element = () => ({ style: {}, classList: { add() {}, remove() {} }, pause() {}, removeAttribute() {} });
-  const g = { state, chrome, console, setTimeout, clearTimeout, queueMicrotask, Date, URL, showToast() {},
+  const g = { state, chrome, console, setTimeout, clearTimeout, queueMicrotask, Date, URL, AbortController, navigator: { locks: { request: async (_name, _options, task) => task() } }, showToast() {},
     document: { readyState: 'loading', addEventListener() {}, documentElement: {} }, matchMedia: () => ({ matches: true }),
     Image: class { set src(_) { queueMicrotask(() => this.onerror?.()); } },
     OpenTabBoot: { DEFAULT_BG: 'assets/default.jpg', isLocalAsset: () => true },
     OpenTabBing: { shouldCheck: () => true, ymd: () => '20261022' }
   };
-  vm.createContext(g); vm.runInContext(read('bing-cache.js'), g); vm.runInContext(read('import.js'), g);
+  vm.createContext(g); vm.runInContext(read('workspace-persistence.js'), g); vm.runInContext(read('bing-cache.js'), g); vm.runInContext(read('import.js'), g);
   g.OpenTabBingCache.init({ state, elements: { backgroundLayer: element(), backgroundVideo: element(), refreshBgBtn: element() }, writeBootMirror() {}, isVideoBackground: () => false });
   g.OpenTabImport.setReloader(() => {});
   const respond = (index, extra = {}) => callbacks[index].cb({ success: true, url: 'assets/new.jpg', startdate: '20261022', nextIndex: 1, ...extra });

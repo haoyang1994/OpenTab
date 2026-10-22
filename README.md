@@ -71,6 +71,7 @@ First paint applies the saved theme, clock, and wallpaper from a local boot mirr
 - Side-drawer todos with a progress bar
 - JSON backup export/import and a local snapshot
 - Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
+- Multi-tab workspace saves preserve unrelated item changes and reject conflicting edits; see [persistence and undo rules](docs/PERSISTENCE.md).
 - Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks 用云端 / 用本机. Settings shows local storage usage
 
 ### Settings and layout
@@ -144,7 +145,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` runs `tests/repo-hygiene.test.mjs`, then `tests/import-sync.test.mjs`, then `tests/first-screen-unit.test.mjs`, then `tests/layout.test.mjs`, then SSH gateway security tests (`npm run test:ssh-gateway`), then the Playwright E2E suite (`scripts/run-e2e.sh`: `extension`, `search`, `first-run`, and `settings-layout`). On Linux without a display, that script wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. Details: [docs/TESTING.md](docs/TESTING.md).
+`npm test` runs the Node unit/security suites and the Playwright extension suites (extension, search, first-run, settings-layout, weather, and multi-tab workspace persistence). On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [docs/TESTING.md](docs/TESTING.md).
 
 After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
 

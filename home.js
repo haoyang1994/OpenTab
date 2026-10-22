@@ -659,12 +659,17 @@
   function setTodoPanelOpen(open) {
     if (open) rememberFocus(elements.todoToggleBtn);
     state.todoPanelOpen = open;
+    renderTodoPanel();
+    saveState();
+  }
+
+  function renderTodoPanel() {
+    const open = state.todoPanelOpen;
     elements.todoWidget.classList.toggle('hidden', !open);
     elements.todoToggleBtn.classList.toggle('active', open);
     elements.todoCollapseBtn.textContent = '×';
     elements.todoCollapseBtn.title = '关闭待办';
     elements.todoCollapseBtn.setAttribute('aria-label', '关闭待办');
-    saveState();
   }
 
   function toggleTodoPanel() {
@@ -1297,41 +1302,41 @@
     });
   }
 
-  function saveState(rollback, onOk) {
-    chrome.storage.local.set({
-      icons: state.icons,
-      folders: state.folders,
-      currentFolderId: state.currentFolderId,
-      todos: state.todos,
-      todoPanelOpen: state.todoPanelOpen,
-      background: state.background,
-      clockFormat: state.clockFormat,
-      showSeconds: state.showSeconds,
-      uiOpacity: state.uiOpacity,
-      uiBlur: state.uiBlur,
-      iconFrameEnabled: state.iconFrameEnabled,
-      openInNewTab: state.openInNewTab,
-      timezone: state.timezone,
-      bingIndex: state.bingIndex,
-      themeMode: state.themeMode,
-      accentHue: state.accentHue,
-      particlesEnabled: state.particlesEnabled,
-      gradientFlow: state.gradientFlow,
-      minimalMode: state.minimalMode
-    }, () => {
-      if (chrome.runtime.lastError) {
-        showToast('保存失败，请重试');
-        if (typeof rollback === 'function') rollback();
-        return;
-      }
-      if (typeof onOk === 'function') onOk();
-      writeBootMirror();
-    });
+  function renderWorkspaceSettings() {
+    const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
+    elements.timezoneLabel.textContent = tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
+    applyUiOpacitySetting();
+    applyUiBlurSetting();
+    applyIconFrameSetting();
+    applyThemeMode();
+    applyAccentColor();
+    applyParticles();
+    applyGradientFlow();
+    applyMinimalMode();
+    if (window.OpenTabSettingsNav) {
+      OpenTabSettingsNav.syncFromState();
+      OpenTabSettingsNav.noteIcons(state.icons);
+    }
   }
+
+  const workspace = OpenTabWorkspace.connect({
+    state,
+    onChange: () => {
+      refreshIconViews(false);
+      renderTodos();
+      updateClock();
+      renderWorkspaceSettings();
+      renderTodoPanel();
+      updateBackground({ fade: false });
+    },
+    onError: (error) => showToast(error.message || '保存失败，请重试'),
+    onSaved: writeBootMirror
+  });
+  const saveState = workspace.save;
 
   function loadState() {
     chrome.storage.local.get(
-      ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'].concat(
+      OpenTabWorkspace.KEYS.concat(
         window.OpenTabLayout ? OpenTabLayout.STORAGE_KEYS : []
       ),
       (result) => {
@@ -1400,25 +1405,12 @@
         const requestedFolderId = result.currentFolderId || HOME_FOLDER_ID;
         state.currentFolderId = getFolderById(requestedFolderId) ? requestedFolderId : HOME_FOLDER_ID;
 
-        const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
-        elements.timezoneLabel.textContent = tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
-
         updateClock();
         renderTimezoneList();
         initCalendar();
 
-        applyUiOpacitySetting();
-        applyUiBlurSetting();
-        applyIconFrameSetting();
-        applyThemeMode();
-        applyAccentColor();
-        applyParticles();
-        applyGradientFlow();
-        applyMinimalMode();
-        if (window.OpenTabSettingsNav) {
-          OpenTabSettingsNav.syncFromState();
-          OpenTabSettingsNav.noteIcons(state.icons);
-        }
+        renderWorkspaceSettings();
+        workspace.seed(result, { ...OpenTabWorkspace.migrationOverrides(result, state), ...(backgroundChanged ? { background: result.background } : {}) });
         refreshIconViews(false);
         renderTodos();
         setTodoPanelOpen(state.todoPanelOpen);

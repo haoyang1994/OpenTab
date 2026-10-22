@@ -15,12 +15,12 @@
   "scripts": {
     "pw:install": "playwright install chromium",
     "ssh:gateway": "node ssh-gateway.mjs",
-    "test": "node tests/repo-hygiene.test.mjs && node tests/import-sync.test.mjs && node tests/first-screen-unit.test.mjs && node tests/weather-unit.test.mjs && node tests/bing-persistence.test.mjs && node tests/layout.test.mjs && node tests/icons.test.mjs && npm run test:ssh-gateway && npm run test:e2e",
+    "test": "node tests/repo-hygiene.test.mjs && node tests/import-sync.test.mjs && node tests/first-screen-unit.test.mjs && node tests/weather-unit.test.mjs && node tests/bing-persistence.test.mjs && node tests/workspace-persistence.test.mjs && node tests/layout.test.mjs && node tests/icons.test.mjs && npm run test:ssh-gateway && npm run test:e2e",
     "test:ssh-gateway": "node tests/ssh-gateway.test.mjs",
     "test:e2e": "bash scripts/run-e2e.sh",
-    "test:e2e:headed": "HEADLESS=false node tests/extension.test.mjs && HEADLESS=false node tests/search.test.mjs && HEADLESS=false node tests/first-run.test.mjs && HEADLESS=false node tests/settings-layout.test.mjs && HEADLESS=false node tests/weather.test.mjs",
-    "test:e2e:headless": "HEADLESS=true node tests/extension.test.mjs && HEADLESS=true node tests/search.test.mjs && HEADLESS=true node tests/first-run.test.mjs && HEADLESS=true node tests/settings-layout.test.mjs && HEADLESS=true node tests/weather.test.mjs",
-    "test:ci": "node tests/repo-hygiene.test.mjs && node tests/import-sync.test.mjs && node tests/first-screen-unit.test.mjs && node tests/weather-unit.test.mjs && node tests/bing-persistence.test.mjs && node tests/layout.test.mjs && node tests/icons.test.mjs && npm run test:ssh-gateway && npm run test:e2e"
+    "test:e2e:headed": "HEADLESS=false node tests/extension.test.mjs && HEADLESS=false node tests/search.test.mjs && HEADLESS=false node tests/first-run.test.mjs && HEADLESS=false node tests/settings-layout.test.mjs && HEADLESS=false node tests/weather.test.mjs && HEADLESS=false node tests/workspace.test.mjs",
+    "test:e2e:headless": "HEADLESS=true node tests/extension.test.mjs && HEADLESS=true node tests/search.test.mjs && HEADLESS=true node tests/first-run.test.mjs && HEADLESS=true node tests/settings-layout.test.mjs && HEADLESS=true node tests/weather.test.mjs && HEADLESS=true node tests/workspace.test.mjs",
+    "test:ci": "node tests/repo-hygiene.test.mjs && node tests/import-sync.test.mjs && node tests/first-screen-unit.test.mjs && node tests/weather-unit.test.mjs && node tests/bing-persistence.test.mjs && node tests/workspace-persistence.test.mjs && node tests/layout.test.mjs && node tests/icons.test.mjs && npm run test:ssh-gateway && npm run test:e2e"
   },
   "devDependencies": {
     "crx": "^5.0.1",

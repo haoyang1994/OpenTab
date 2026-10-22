@@ -1,4 +1,4 @@
-importScripts('lib/bing-daily.js');
+importScripts('lib/bing-daily.js', 'workspace-persistence.js');
 
 const BING_CACHE = 'opentab-bing-v1';
 const DEFAULT_LOCAL_BG = 'assets/default_background/default.webp';
@@ -11,22 +11,16 @@ function absoluteBingUrl(url) {
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason !== 'install') return;
-  chrome.storage.local.get(['icons', 'background', 'clockFormat', 'showSeconds'], (result) => {
-    if (!result.icons) {
-      chrome.storage.local.set({
-        icons: [],
-        background: {
-          type: 'image',
-          value: DEFAULT_LOCAL_BG,
-          source: 'preset'
-        },
-        clockFormat: '12h',
-        showSeconds: false,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        bingIndex: 0
-      });
-    }
-  });
+  OpenTabWorkspace.transaction(async ({ read, write }) => {
+    const result = await read(['icons', 'background', 'clockFormat', 'showSeconds', 'timezone', 'bingIndex']);
+    if (result.icons) return;
+    const defaults = {
+      icons: [], background: { type: 'image', value: DEFAULT_LOCAL_BG, source: 'preset' },
+      clockFormat: '12h', showSeconds: false,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, bingIndex: 0
+    };
+    await write(Object.fromEntries(Object.entries(defaults).filter(([key]) => result[key] === undefined)));
+  }).catch((error) => console.warn('Initial workspace setup failed:', error));
 });
 
 async function fetchArchive(idx) {

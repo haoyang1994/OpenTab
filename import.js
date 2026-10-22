@@ -9,6 +9,7 @@
   const TOP_SITES_LIMIT = 12;
   const UNDO_KEY = 'opentab.importUndo';
   const NOTICE_KEY = 'opentab.importNotice';
+  const EPOCH_KEY = 'opentab.workspaceEpoch';
   const SECRET_FIELDS = ['sshPassword', 'sshGatewayToken', 'sshSocksPassword'];
 
   const MSG_BOOKMARKS_DENIED = '未获得书签权限，已取消导入。可在下次点击时重新授权。';
@@ -17,6 +18,7 @@
   const MSG_INVALID_JSON = '无法解析该文件：不是有效的 JSON。现有数据未改动。';
 
   let chromeRef = null;
+  let workspaceRef = null;
   let idFactory = null;
   let reloader = null;
 
@@ -27,6 +29,17 @@
 
   function setChrome(api) {
     chromeRef = api || null;
+    workspaceRef = null;
+  }
+
+  function getWorkspace() {
+    if (workspaceRef) return workspaceRef;
+    if (typeof module === 'object' && module.exports && chromeRef) {
+      workspaceRef = require('./workspace-persistence.js').forChrome(chromeRef);
+      return workspaceRef;
+    }
+    if (typeof OpenTabWorkspace !== 'undefined') return OpenTabWorkspace;
+    throw new Error('Workspace persistence is unavailable.');
   }
 
   function setIdFactory(fn) {
@@ -92,12 +105,6 @@
     const api = getChrome();
     if (!api || !api.storage || !api.storage.local) return Promise.resolve({});
     return chromeCall(api.storage.local.get.bind(api.storage.local), [keys]).then((result) => result || {});
-  }
-
-  function storageLocalSet(payload) {
-    const api = getChrome();
-    if (!api || !api.storage || !api.storage.local) return Promise.resolve();
-    return chromeCall(api.storage.local.set.bind(api.storage.local), [payload]);
   }
 
   function copyGroupRecord(item) {
@@ -280,9 +287,8 @@
     return trimmed;
   }
 
-  async function saveSnapshotRecord(reason) {
-    const current = await storageLocalGet(backupStateKeys(true).concat([BACKUP_SNAPSHOTS_KEY]));
-    const list = Array.isArray(current[BACKUP_SNAPSHOTS_KEY]) ? current[BACKUP_SNAPSHOTS_KEY] : [];
+  function prepareSnapshotRecord(reason, current) {
+    const list = Array.isArray(current[BACKUP_SNAPSHOTS_KEY]) ? current[BACKUP_SNAPSHOTS_KEY].slice() : [];
     const data = mergeBackupPayload(current, current);
     delete data[BACKUP_SNAPSHOTS_KEY];
     if (Array.isArray(data.icons)) data.icons = stripSnapshotIconData(data.icons);
@@ -292,24 +298,38 @@
       reason: reason || 'manual',
       data
     });
-    const trimmed = trimSnapshotList(list);
-    await storageLocalSet({ [BACKUP_SNAPSHOTS_KEY]: trimmed });
-    return trimmed[0];
+    const records = trimSnapshotList(list);
+    return { record: records[0], records };
   }
 
-  async function applyOpenTabBackup(rawPayload) {
+  async function saveSnapshotRecord(reason) {
+    return getWorkspace().transaction(async ({ read, write }) => {
+      const current = await read(backupStateKeys(true).concat([BACKUP_SNAPSHOTS_KEY]));
+      const prepared = prepareSnapshotRecord(reason, current);
+      await write({ [BACKUP_SNAPSHOTS_KEY]: prepared.records });
+      return prepared.record;
+    });
+  }
+
+  async function applyOpenTabBackup(rawPayload, options) {
     const resumeBackground = typeof OpenTabBingCache !== 'undefined' && OpenTabBingCache.suspendUpdates
       ? OpenTabBingCache.suspendUpdates() : null;
     try {
-      const current = await storageLocalGet(backupStateKeys(true));
-      const writePayload = mergeBackupPayload(rawPayload, current);
-      Object.keys(writePayload).forEach((key) => {
-        if (writePayload[key] === undefined) delete writePayload[key];
+      let writePayload;
+      await getWorkspace().replace(async (current) => {
+        writePayload = mergeBackupPayload(rawPayload, current);
+        Object.keys(writePayload).forEach((key) => {
+          if (writePayload[key] === undefined) delete writePayload[key];
+        });
+        if (Array.isArray(writePayload.icons) && typeof OpenTabFolders !== 'undefined' && OpenTabFolders.repairIconGraph) {
+          OpenTabFolders.repairIconGraph(writePayload.icons);
+        }
+        if (options && options.snapshotReason) {
+          const prepared = prepareSnapshotRecord(options.snapshotReason, current);
+          writePayload[BACKUP_SNAPSHOTS_KEY] = prepared.records;
+        }
+        return writePayload;
       });
-      if (Array.isArray(writePayload.icons) && typeof OpenTabFolders !== 'undefined' && OpenTabFolders.repairIconGraph) {
-        OpenTabFolders.repairIconGraph(writePayload.icons);
-      }
-      await storageLocalSet(writePayload);
       reloadPage();
       return writePayload;
     } catch (error) {
@@ -344,9 +364,8 @@
       updateBackupStatus('没有可恢复的快照。', true);
       return;
     }
-    await saveSnapshotRecord('before-restore');
     updateBackupStatus('正在恢复快照并刷新页面...', false);
-    await applyOpenTabBackup(list[0].data || {});
+    await applyOpenTabBackup(list[0].data || {}, { snapshotReason: 'before-restore' });
   }
 
   function showImportToast(notice) {
@@ -360,7 +379,10 @@
       btn.textContent = '撤销';
       btn.onclick = () => {
         toast.classList.add('hidden');
-        undoLastImport();
+        undoLastImport().catch((error) => {
+          toast.textContent = undoFailureMessage(error);
+          toast.classList.remove('hidden');
+        });
       };
       toast.appendChild(btn);
     }
@@ -388,10 +410,8 @@
         if (!file) return;
         Promise.resolve(file.text()).then((text) => {
           const raw = JSON.parse(text);
-          return saveSnapshotRecord('before-import').then(() => {
-            updateBackupStatus('正在导入备份并刷新页面...', false);
-            return applyOpenTabBackup(raw);
-          });
+          updateBackupStatus('正在导入备份并刷新页面...', false);
+          return applyOpenTabBackup(raw, { snapshotReason: 'before-import' });
         }).catch(() => {
           updateBackupStatus('导入失败：JSON 无效或结构不支持。', true);
         }).then(() => {
@@ -704,8 +724,12 @@
     const btn = typeof document !== 'undefined' ? document.getElementById('import-undo-btn') : null;
     if (!btn) return Promise.resolve(false);
     return storageLocalGet([UNDO_KEY]).then((result) => {
-      const enabled = !!(result && result[UNDO_KEY]);
+      const snapshot = result && result[UNDO_KEY];
+      const enabled = !!(snapshot && snapshot.before && snapshot.after);
       btn.disabled = !enabled;
+      const legacy = snapshot && !enabled;
+      btn.title = legacy ? '旧版撤销记录缺少冲突信息，无法安全撤销；原记录保留。' : '';
+      if (legacy) setStatus(btn.title, true);
       return enabled;
     }, () => {
       btn.disabled = true;
@@ -714,47 +738,52 @@
   }
 
   function consumeNotice(callback) {
-    return storageLocalGet([NOTICE_KEY]).then((result) => {
+    return getWorkspace().transaction(async ({ read, write }) => {
+      const result = await read([NOTICE_KEY]);
       const notice = result && result[NOTICE_KEY];
       if (!notice) return null;
-      return storageLocalSet({ [NOTICE_KEY]: null }).then(() => {
-        if (notice.text) setStatus(notice.text, !!notice.error);
-        if (typeof callback === 'function') callback(notice);
-        return notice;
-      });
-    });
-  }
-
-  async function snapshotWorkspace(current) {
-    await storageLocalSet({
-      [UNDO_KEY]: {
-        createdAt: new Date().toISOString(),
-        icons: Array.isArray(current.icons) ? current.icons : [],
-        folders: Array.isArray(current.folders) ? current.folders : [],
-        currentFolderId: current.currentFolderId || HOME_GROUP_ID
-      }
+      await write({ [NOTICE_KEY]: null });
+      return notice;
+    }).then((notice) => {
+      if (!notice) return null;
+      if (notice.text) setStatus(notice.text, !!notice.error);
+      if (typeof callback === 'function') callback(notice);
+      return notice;
     });
   }
 
   async function commitImport(parsed) {
-    const current = await storageLocalGet(['icons', 'folders', 'currentFolderId']);
-    const materialized = materializeImport(parsed, current);
-    if (!materialized.iconCount) {
-      const empty = { ok: false, error: 'empty', message: '备份里没有可导入的图标，现有数据未改动。' };
-      setStatus(empty.message, true);
-      return empty;
-    }
-    await snapshotWorkspace(current);
-    const text = importResultMessage(materialized.iconCount, materialized.groupCount);
-    await storageLocalSet({
-      icons: materialized.icons,
-      folders: materialized.folders,
-      [NOTICE_KEY]: { text, canUndo: true }
+    const result = await getWorkspace().transaction(async ({ read, write }) => {
+      const current = await read(['icons', 'folders', EPOCH_KEY]);
+      const materialized = materializeImport(parsed, current);
+      if (!materialized.iconCount) {
+        return { ok: false, error: 'empty', message: '备份里没有可导入的图标，现有数据未改动。' };
+      }
+      const epoch = current[EPOCH_KEY] || 0;
+      const before = stripSecretsFromState({
+        icons: Array.isArray(current.icons) ? current.icons : [],
+        folders: Array.isArray(current.folders) ? current.folders : [],
+        [EPOCH_KEY]: epoch
+      });
+      const after = stripSecretsFromState({
+        icons: materialized.icons,
+        folders: materialized.folders,
+        [EPOCH_KEY]: epoch
+      });
+      const text = importResultMessage(materialized.iconCount, materialized.groupCount);
+      await write({
+        icons: materialized.icons,
+        folders: materialized.folders,
+        [UNDO_KEY]: { id: generateId(), createdAt: new Date().toISOString(), before, after },
+        [NOTICE_KEY]: { text, canUndo: true }
+      });
+      return { ok: true, format: parsed.format, iconCount: materialized.iconCount, groupCount: materialized.groupCount, message: text };
     });
-    setStatus(text, false);
+    setStatus(result.message, !result.ok);
+    if (!result.ok) return result;
     refreshUndoButton();
     reloadPage();
-    return { ok: true, format: parsed.format, iconCount: materialized.iconCount, groupCount: materialized.groupCount };
+    return result;
   }
 
   async function requestOptionalPermission(name) {
@@ -831,20 +860,42 @@
     }
   }
 
+  function undoFailureMessage(error) {
+    return error && error.code === 'WORKSPACE_CONFLICT'
+      ? '导入后相关内容已被修改，无法安全撤销。现有数据未改动。'
+      : '撤销失败，请重试。';
+  }
+
   async function undoLastImport() {
-    const result = await storageLocalGet([UNDO_KEY]);
-    const snapshot = result && result[UNDO_KEY];
-    if (!snapshot) {
-      setStatus('没有可撤销的导入。', true);
-      return { ok: false };
+    let result;
+    try {
+      result = await getWorkspace().transaction(async ({ read, write, merge }) => {
+        const current = await read(null);
+        const snapshot = current[UNDO_KEY];
+        if (!snapshot) return { ok: false, message: '没有可撤销的导入。' };
+        if (!snapshot.before || !snapshot.after) {
+          return { ok: false, error: 'legacy-undo', message: '该导入记录较旧，无法安全撤销。现有数据未改动。' };
+        }
+        // Apply only the inverse import delta, preserving later independent edits.
+        const merged = merge(snapshot.after, snapshot.before, current);
+        const patch = {
+          [UNDO_KEY]: null,
+          [NOTICE_KEY]: { text: '已撤销上次导入。', canUndo: false }
+        };
+        ['icons', 'folders', 'currentFolderId'].forEach((key) => {
+          if (JSON.stringify(merged[key]) !== JSON.stringify(current[key])) patch[key] = merged[key];
+        });
+        await write(patch);
+        return { ok: true };
+      });
+    } catch (error) {
+      setStatus(undoFailureMessage(error), true);
+      throw error;
     }
-    await storageLocalSet({
-      icons: snapshot.icons || [],
-      folders: snapshot.folders || [],
-      currentFolderId: snapshot.currentFolderId || HOME_GROUP_ID,
-      [UNDO_KEY]: null,
-      [NOTICE_KEY]: { text: '已撤销上次导入。', canUndo: false }
-    });
+    if (!result.ok) {
+      setStatus(result.message, true);
+      return result;
+    }
     setStatus('已撤销上次导入。', false);
     refreshUndoButton();
     reloadPage();
@@ -938,7 +989,7 @@
 
     if (undoBtn) {
       undoBtn.addEventListener('click', () => {
-        undoLastImport().catch(() => setStatus('撤销失败。', true));
+        undoLastImport().catch((error) => setStatus(undoFailureMessage(error), true));
       });
     }
 
@@ -947,7 +998,7 @@
     if (settingsBtn) {
       settingsBtn.addEventListener('click', () => { refreshUndoButton(); });
     }
-    consumeNotice((notice) => { showImportToast(notice); });
+    consumeNotice((notice) => { showImportToast(notice); }).catch(() => setStatus('读取导入状态失败，请重试。', true));
     refreshUndoButton();
   }
 
@@ -991,6 +1042,7 @@
     applyOpenTabBackup,
     buildBackupPayload,
     saveSnapshotRecord,
+    prepareSnapshotRecord,
     stripSnapshotIconData,
     BACKUP_SNAPSHOTS_KEY,
     BACKUP_SNAPSHOT_MAX_BYTES

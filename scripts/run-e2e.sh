@@ -13,6 +13,7 @@ run_headed() {
   env HEADLESS=false node tests/first-run.test.mjs
   env HEADLESS=false node tests/settings-layout.test.mjs
   env HEADLESS=false node tests/weather.test.mjs
+  env HEADLESS=false node tests/workspace.test.mjs
 }
 
 run_with_xvfb() {
@@ -24,7 +25,7 @@ run_with_xvfb() {
     exit 1
   fi
   echo "$reason"
-  xvfb-run -a bash -c 'export PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1 HEADLESS=false; node tests/extension.test.mjs && node tests/search.test.mjs && node tests/first-run.test.mjs && node tests/settings-layout.test.mjs && node tests/weather.test.mjs'
+  xvfb-run -a bash -c 'export PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1 HEADLESS=false; node tests/extension.test.mjs && node tests/search.test.mjs && node tests/first-run.test.mjs && node tests/settings-layout.test.mjs && node tests/weather.test.mjs && node tests/workspace.test.mjs'
 }
 
 if [[ "${CI:-}" == "true" ]]; then

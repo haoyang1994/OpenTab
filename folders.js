@@ -147,6 +147,7 @@
   }
 
   function persistUndo(before, text) {
+    const after = snapshot();
     host.saveState(() => {
       restore(before);
       closeOverlay(true);
@@ -155,7 +156,8 @@
     host.showToast(text, {
       actionLabel: '撤销',
       onAction: () => {
-        restore(before);
+        try { restore(OpenTabWorkspace.merge(after, before, snapshot())); }
+        catch (_) { host.showToast('内容已变化，无法撤销。'); return; }
         closeOverlay(true);
         host.saveState();
         host.refreshIconViews();
