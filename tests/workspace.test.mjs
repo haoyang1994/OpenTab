@@ -17,7 +17,26 @@ const icon = (id, name = id) => ({ id, name, type: 'shortcut', url: `https://exa
   folderId: HOME, parentId: '', uploadedIconDataUrl: PIXEL, resolvedIconUrl: PIXEL });
 const background = { type: 'image', value: 'assets/default_background/default.webp', source: 'preset' };
 const errors = [];
-let pages = [];
+let pages = [], caseNumber = 0;
+const writeTrace = [], pageIds = new WeakMap();
+let nextPageId = 0;
+context.on('page', (page) => {
+  const pageId = ++nextPageId; pageIds.set(page, pageId);
+  page.on('console', (message) => {
+    if (message.text().startsWith('__workspace_write__')) writeTrace.push({ caseNumber, pageId, url: page.url(), message: message.text() });
+  });
+});
+await context.addInitScript(() => {
+  if (!globalThis.chrome?.storage?.local) return;
+  const area = chrome.storage.local, set = area.set.bind(area);
+  area.set = function (items, ...args) {
+    if (Array.isArray(items?.icons)) console.debug('__workspace_write__' + JSON.stringify({
+      documentId: performance.timeOrigin, icons: items.icons.map(({ id, name, folderId, parentId }) => ({ id, name, folderId, parentId })),
+      caller: new Error().stack
+    }));
+    return set(items, ...args);
+  };
+});
 try {
   await context.route('**/*', (route) => /^https?:/.test(route.request().url())
     ? route.fulfill({ contentType: 'image/gif', body: Buffer.from(PIXEL.split(',')[1], 'base64') })
@@ -30,11 +49,13 @@ try {
   const bootstrap = await context.newPage();
   await bootstrap.goto(home); await ready(bootstrap); await bootstrap.close();
   async function pair(icons = [icon('x'), icon('y')]) {
+    caseNumber += 1;
     for (const page of pages) if (!page.isClosed()) await page.close();
     await worker.evaluate(async (fixture) => { await chrome.storage.local.clear(); await chrome.storage.local.set(fixture); }, {
       icons, folders: [{ id: HOME, name: '主页' }], currentFolderId: HOME,
       background, clockFormat: '24h', themeMode: 'light', todos: [], todoPanelOpen: false
     });
+    writeTrace.push({ type: 'fixture-installed', caseNumber, icons: icons.map(({ id, name }) => ({ id, name })) });
     pages = await Promise.all([context.newPage(), context.newPage()]);
     for (const page of pages) page.on('pageerror', (error) => errors.push(error.message));
     await Promise.all(pages.map(async (page) => { await page.goto(home); await ready(page); }));
@@ -69,7 +90,18 @@ try {
       if (page.isClosed()) continue;
       await page.reload(); await ready(page);
       const rendered = await page.locator('#icons-container .icon-widget[data-id] .icon-name').allTextContents();
-      assert.deepEqual(rendered.sort(), names.slice().sort(), 'persisted merge survives reload');
+      try { assert.deepEqual(rendered.sort(), names.slice().sort(), 'persisted merge survives reload'); }
+      catch (error) {
+        console.error('workspace reload diagnostics', JSON.stringify({ caseNumber, pageIndex: pages.indexOf(page), pageId: pageIds.get(page), expected: names,
+          workerStorage: (await stored()).icons.map(({ id, name, folderId, parentId }) => ({ id, name, folderId, parentId })),
+          pageState: await page.evaluate(async () => ({
+            documentId: performance.timeOrigin, modalHidden: document.querySelector('#add-icon-modal').classList.contains('hidden'),
+            saveDisabled: document.querySelector('#save-btn').disabled, storage: (await chrome.storage.local.get('icons')).icons.map(({ id, name, folderId, parentId }) => ({ id, name, folderId, parentId })),
+            rendered: [...document.querySelectorAll('#icons-container .icon-widget[data-id]')].map((node) => ({ id: node.dataset.id, name: node.querySelector('.icon-name')?.textContent })),
+            marks: performance.getEntriesByType('mark').map(({ name, startTime }) => ({ name, startTime }))
+          })), writeTrace: writeTrace.slice(-30) }));
+        throw error;
+      }
     }
   }
   async function backup(page, icons) {
