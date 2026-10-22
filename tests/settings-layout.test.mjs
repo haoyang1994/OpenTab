@@ -473,8 +473,16 @@ async function runSettingsLayoutE2E() {
 
     await page.locator('#save-btn').focus();
     await page.keyboard.press('Tab');
-    const modalTrap = await page.evaluate(() => document.activeElement && document.activeElement.id === 'icon-type');
-    assert.equal(modalTrap, true, 'AC6 add-icon modal traps Tab from last to first');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'modal-paste-sites',
+      'AC6 add-icon modal traps Tab from Save to its new first batch-add entry');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'icon-type',
+      'AC6 the batch-add entry participates in the native form tab order');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'modal-paste-sites');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'save-btn',
+      'AC6 add-icon modal traps Shift+Tab from its first entry back to Save');
     await page.keyboard.press('Escape');
 
     await openSettings(page);
