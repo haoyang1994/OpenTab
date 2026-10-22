@@ -257,6 +257,7 @@
   let calendarPicker = null;
   let editingIconId = null;
   let iconDraftIntent = null;
+  const iconSaveGate = OpenTabIcons.createSaveGate();
   let contextMenuIconId = null;
   let pendingIconUploadDataUrl = '';
   let iconSwitchToken = 0;
@@ -381,7 +382,7 @@
     const opts = options || {};
     toast.textContent = text;
     if (opts.actionLabel && opts.onAction) {
-      const actionIntent = workspace.captureIntent();
+      const actionIntent = opts.intent || workspace.captureIntent();
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = opts.actionLabel;
@@ -1008,12 +1009,7 @@
     });
   }
 
-  function persistOrRollback(beforeIcons) {
-    saveState(() => {
-      state.icons = beforeIcons;
-      refreshIconViews();
-    });
-  }
+  function persistOrRollback() { return saveState(); }
 
   function commitFolderReorder(iconId, insertIndex, announce) {
     const before = state.icons.slice();
@@ -1236,9 +1232,10 @@
 
     const before = state.icons.slice();
     state.icons.push(newIcon);
-    persistOrRollback(before);
+    const saved = persistOrRollback(before);
     refreshIconViews();
     if (window.OpenTabIcons) OpenTabIcons.resolveLater(newIcon.id);
+    return saved;
   }
 
   function updateIcon(iconId, payload) {
@@ -1273,23 +1270,24 @@
     else if (window.OpenTabIcons) OpenTabIcons.prepareRecord(icon);
     else icon.resolvedIconUrl = payload.uploadedIconDataUrl || payload.customIconUrl || '';
 
-    saveState();
+    const saved = saveState();
     refreshIconViews();
     if (window.OpenTabIcons && !isSsh) OpenTabIcons.resolveLater(icon.id);
+    return saved;
   }
 
-  function undoDelete(snapshot) {
+  async function undoDelete(snapshot) {
     if (state.icons.some((item) => item.id === snapshot.icon.id)) return;
     const before = state.icons.slice();
     const next = before.slice();
     next.splice(Math.min(snapshot.index, next.length), 0, snapshot.icon);
     state.icons = next;
-    persistOrRollback(before);
+    const saved = persistOrRollback(before);
     refreshIconViews();
-    showToast('已恢复', { duration: 1500 });
+    if (await saved) showToast('已恢复', { duration: 1500 });
   }
 
-  function deleteIcon(iconId) {
+  async function deleteIcon(iconId) {
     if (window.OpenTabFolders && OpenTabFolders.handleDeleteIcon(iconId)) return;
     const index = state.icons.findIndex((icon) => icon.id === iconId);
     if (index < 0) return;
@@ -1297,11 +1295,12 @@
     const before = state.icons.slice();
     state.icons = before.filter((icon) => icon.id !== iconId);
     pendingUndo = snapshot;
-    persistOrRollback(before);
+    const intent = workspace.captureIntent(), saved = persistOrRollback(before);
     refreshIconViews();
+    if (!(await saved) || !workspace.isIntentCurrent(intent)) return;
     showToast(`已删除「${snapshot.icon.name}」`, {
       actionLabel: '撤销',
-      onAction: () => undoDelete(snapshot),
+      onAction: () => undoDelete(snapshot), intent,
       duration: 6000
     });
   }
@@ -1428,6 +1427,7 @@
   }
 
   function openAddIconModal() {
+    iconSaveGate.release();
     iconDraftIntent = workspace.captureIntent();
     editingIconId = null;
     pendingIconUploadDataUrl = '';
@@ -1461,6 +1461,7 @@
     const icon = state.icons.find((item) => item.id === iconId);
     if (!icon) return;
 
+    iconSaveGate.release();
     editingIconId = iconId;
     iconDraftIntent = workspace.captureIntent({ icons: [iconId], folders: [icon.folderId] });
     pendingIconUploadDataUrl = '';
@@ -1494,12 +1495,15 @@
   }
 
   function closeAddIconModal() {
+    iconSaveGate.release();
+    iconDraftIntent = null;
     editingIconId = null;
     pendingIconUploadDataUrl = '';
     elements.addIconModal.classList.add('hidden');
   }
 
   async function handleSaveIcon() {
+    if (iconSaveGate.has(iconDraftIntent)) return;
     if (!workspace.isIntentCurrent(iconDraftIntent)) {
       closeAddIconModal(); showToast('内容已变化，请重新编辑。'); return;
     }
@@ -1599,52 +1603,22 @@
       }
     }
 
-    if (editingIconId) {
-      const current = state.icons.find((item) => item.id === editingIconId);
-      updateIcon(editingIconId, {
-        name,
-        url,
-        type: iconType,
-        sshGatewayUrl,
-        sshGatewayToken,
-        sshHost,
-        sshPort,
-        sshUsername,
-        sshPassword,
-        sshSocksHost,
-        sshSocksPort,
-        sshSocksUsername,
-        sshSocksPassword,
-        folderId: current?.folderId || state.currentFolderId || HOME_FOLDER_ID,
-        customIconUrl,
-        emoji: '',
-        uploadedIconDataUrl: isSsh ? '' : (pendingIconUploadDataUrl || (current?.uploadedIconDataUrl || '')),
-        toolSubtype: isTool ? toolSubtype : ''
-      });
-    } else {
-      addIcon({
-        name,
-        url,
-        type: iconType,
-        sshGatewayUrl,
-        sshGatewayToken,
-        sshHost,
-        sshPort,
-        sshUsername,
-        sshPassword,
-        sshSocksHost,
-        sshSocksPort,
-        sshSocksUsername,
-        sshSocksPassword,
-        folderId,
-        customIconUrl,
-        emoji: '',
-        uploadedIconDataUrl: isSsh ? '' : pendingIconUploadDataUrl,
-        toolSubtype: isTool ? toolSubtype : ''
-      });
+    const id = editingIconId, draft = iconDraftIntent;
+    const current = state.icons.find((item) => item.id === id);
+    const payload = {
+      name, url, type: iconType, sshGatewayUrl, sshGatewayToken, sshHost, sshPort,
+      sshUsername, sshPassword, sshSocksHost, sshSocksPort, sshSocksUsername, sshSocksPassword,
+      folderId: current?.folderId || folderId, customIconUrl, emoji: '',
+      uploadedIconDataUrl: isSsh ? '' : (pendingIconUploadDataUrl || current?.uploadedIconDataUrl || ''),
+      toolSubtype: isTool ? toolSubtype : ''
+    };
+    try {
+      await iconSaveGate.run(draft, elements.addIconModal,
+        () => id ? updateIcon(id, payload) : addIcon(payload),
+        () => { if (iconDraftIntent === draft) closeAddIconModal(); });
+    } catch (error) {
+      showToast('保存失败，请重试。');
     }
-
-    closeAddIconModal();
   }
 
   async function handleIconFileChange() {

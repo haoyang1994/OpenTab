@@ -284,8 +284,9 @@
   }
 
   function persist(refresh) {
-    if (typeof host.saveState === 'function') host.saveState();
+    const saved = typeof host.saveState === 'function' ? host.saveState() : Promise.resolve(false);
     if (refresh && typeof host.refreshIconViews === 'function') host.refreshIconViews();
+    return saved;
   }
 
   function prepareRecord(icon) {
@@ -842,9 +843,10 @@
           if (ok) {
             IMAGE_FIELDS.forEach((key) => { if (Object.hasOwn(working, key)) current[key] = working[key]; });
             renewChangerIntent(current);
-            persist(true);
+            const submitted = changerIntent;
+            if (!(await persist(true)) || changerIntent !== submitted) return;
           }
-          refreshChangerPreview(current);
+          refreshChangerPreview(findIcon(action.id));
           setChangerStatus(ok ? '已重新抓取图标' : MSG_REFETCH_BLOCKED);
         } catch (error) {
           const current = currentChanger(action);
@@ -869,8 +871,9 @@
           icon.iconSource = 'upload';
           icon.iconCacheState = 'local';
           renewChangerIntent(icon);
-          persist(true);
-          refreshChangerPreview(icon);
+          const submitted = changerIntent;
+          if (!(await persist(true)) || changerIntent !== submitted) return;
+          refreshChangerPreview(findIcon(action.id));
           if (typeof host.showToast === 'function') host.showToast('已使用本地图片');
         } catch (error) {
           if (typeof host.showToast === 'function') host.showToast('图片读取失败');
@@ -879,7 +882,7 @@
       });
     }
     if (ui.placeholder) {
-      ui.placeholder.addEventListener('click', () => {
+      ui.placeholder.addEventListener('click', async () => {
         const action = beginChangerAction();
         const icon = currentChanger(action);
         if (!icon) return;
@@ -887,11 +890,36 @@
         const color = (ui.color && ui.color.value) || icon.placeholderColor;
         applyPlaceholder(icon, letter, color);
         renewChangerIntent(icon);
-        persist(true);
-        refreshChangerPreview(icon);
+        const submitted = changerIntent;
+        if (!(await persist(true)) || changerIntent !== submitted) return;
+        refreshChangerPreview(findIcon(action.id));
         if (typeof host.showToast === 'function') host.showToast('已使用首字母占位');
       });
     }
+  }
+
+  function createSaveGate() {
+    const pending = new WeakSet();
+    let releaseCurrent = () => {};
+    return {
+      has: (draft) => !!draft && pending.has(draft),
+      release: () => releaseCurrent(),
+      async run(draft, form, task, onSuccess) {
+        if (pending.has(draft)) return;
+        pending.add(draft);
+        const controls = [...form.querySelectorAll('input, select, textarea, button')].map((node) => [node, node.disabled]);
+        controls.forEach(([node]) => { node.disabled = true; });
+        let released = false;
+        const release = () => {
+          if (released) return;
+          released = true;
+          controls.forEach(([node, disabled]) => { node.disabled = disabled; });
+        };
+        releaseCurrent = release;
+        try { if (await task()) onSuccess(); }
+        finally { pending.delete(draft); release(); }
+      }
+    };
   }
 
   function init(nextHost) {
@@ -929,6 +957,7 @@
     readAndCompressFile,
     applyPlaceholder,
     openChanger,
+    createSaveGate,
     closeChanger,
     placeMenu,
     handleEscape,

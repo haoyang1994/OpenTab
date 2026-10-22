@@ -17,6 +17,8 @@ Workspace read/merge/write operations use one same-origin [Web Lock](https://www
 - Explicit backup or cloud replacement establishes a new workspace generation. A still-open tab cannot replay an old shortcut edit into it. An unrelated setting can still be saved without restoring the old shortcuts.
 - Undo applies the inverse of its own changes, not an old full-workspace snapshot. Unrelated later additions are retained; incompatible changes to the affected content cause undo to be refused. A pre-upgrade import-undo record without the matching after-state cannot be safely replayed: it is retained in storage but refused instead of overwriting newer data.
 
+The shortcut add/edit dialog waits for its storage commit before closing. Shortcut deletion and icon-change success notices also follow successful saves. This is not a crash-safe write queue: closing a document while a save is still pending can cancel that uncommitted operation.
+
 No new extension permission or remote service is required. Existing storage data remains readable. The existing SSH-secret vault/storage wrapper remains responsible for encrypting secrets and excluding them from sync and exported backups. SSH passwords and gateway/proxy secrets are separate from the workspace metadata comparison: concurrent secret-only edits retain the vault’s existing last-successful-save behavior. This change does not add collaborative credential editing.
 
 ## Regression coverage

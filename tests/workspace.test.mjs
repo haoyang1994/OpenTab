@@ -262,8 +262,11 @@ try {
   });
   await a.waitForFunction(() => window.__workspaceLockHeld);
   await add(b, 'After lock owner closed');
+  assert.equal(await b.locator('#add-icon-modal').isVisible(), true, 'save remains pending while lock is held');
+  assert.equal(await b.locator('#save-btn').isDisabled(), true, 'pending save cannot be submitted twice');
   assert.deepEqual((await stored()).icons.map((item) => item.name), ['x', 'y'], 'waiting writer has not bypassed the held lock');
   await a.close();
+  await b.waitForSelector('#add-icon-modal.hidden');
   await expectNames(b, ['x', 'y', 'After lock owner closed']); await reloadCheck(['x', 'y', 'After lock owner closed']);
   console.log('workspace: closing lock owner releases waiting save');
 

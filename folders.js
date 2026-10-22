@@ -147,22 +147,23 @@
     state().currentFolderId = before.currentFolderId;
   }
 
-  function persistUndo(before, text) {
-    const after = snapshot();
-    host.saveState(() => {
+  async function persistUndo(before, text) {
+    const after = snapshot(), intent = host.captureIntent();
+    const saved = await host.saveState(() => {
       restore(before);
       closeOverlay(true);
       host.refreshIconViews();
     });
+    if (!saved || !host.isIntentCurrent(intent)) return;
     host.showToast(text, {
-      actionLabel: '撤销',
-      onAction: () => {
+      intent, actionLabel: '撤销',
+      onAction: async () => {
         try { restore(OpenTabWorkspace.merge(after, before, snapshot())); }
         catch (_) { host.showToast('内容已变化，无法撤销。'); return; }
         closeOverlay(true);
-        host.saveState();
+        const saved = host.saveState();
         host.refreshIconViews();
-        host.showToast('已恢复', { duration: 1500 });
+        if (await saved) host.showToast('已恢复', { duration: 1500 });
       },
       duration: 6000
     });
