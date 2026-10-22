@@ -100,12 +100,30 @@ try {
   await swipe('#time', -20, 0); assert.equal(await card(), '0', 'short swipe is ignored');
   await swipe('#time', -15, 70); assert.equal(await card(), '0', 'vertical page pan is ignored');
   await page.locator('#clock-deck').scrollIntoViewIfNeeded();
-  await page.evaluate(() => { const range = document.createRange(); range.selectNodeContents(document.getElementById('welcome-text')); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); });
-  // Pointer events exercise the selection veto deterministically; native touch
-  // may clear browser text selection before delivering pointerdown.
-  await page.locator('#time').dispatchEvent('pointerdown', { pointerId: 2, isPrimary: true, button: 0, clientX: 200, clientY: 100 });
-  await page.locator('#time').dispatchEvent('pointerup', { pointerId: 2, isPrimary: true, button: 0, clientX: 100, clientY: 100 });
-  assert.equal(await card(), '0'); await page.evaluate(() => getSelection().removeAllRanges());
+  // The shell deliberately disables selection. Make this real text selectable
+  // for the guard fixture, and prove the browser actually has a nonempty range.
+  const previousStyle = await page.locator('#welcome-text').getAttribute('style');
+  try {
+    const selected = await page.evaluate(() => {
+      const text = document.getElementById('welcome-text');
+      text.style.userSelect = 'text';
+      const range = document.createRange(); range.selectNodeContents(text);
+      const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      return String(selection);
+    });
+    assert.ok(selected.trim().length > 0, 'selection veto requires an actual browser text selection');
+    // Synthetic pointer delivery preserves the selection; native touch can
+    // clear it before pointerdown. Native swipe behavior is tested above.
+    await page.locator('#time').dispatchEvent('pointerdown', { pointerId: 2, isPrimary: true, button: 0, clientX: 200, clientY: 100 });
+    await page.locator('#time').dispatchEvent('pointerup', { pointerId: 2, isPrimary: true, button: 0, clientX: 100, clientY: 100 });
+    assert.equal(await card(), '0');
+  } finally {
+    await page.evaluate((style) => {
+      getSelection().removeAllRanges();
+      const text = document.getElementById('welcome-text');
+      if (style === null) text.removeAttribute('style'); else text.setAttribute('style', style);
+    }, previousStyle);
+  }
 
   await reset(); await select(1); await page.click('#clock-focus-toggle');
   const running = await page.evaluate(() => JSON.parse(sessionStorage.getItem('opentab.focus.v1')));
