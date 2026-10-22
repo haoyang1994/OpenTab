@@ -153,3 +153,5 @@ console.log('Site selection real-module UI pending, duplicate-submit, failure, s
   assert.equal(h.selection.isActive(), true); assert.equal(el('site-selection-dialog').open, true);
 }
 console.log('Changed destination capture disables confirmation and preserves selection');
+
+assert.match(fs.readFileSync(new URL('../home.css', import.meta.url), 'utf8'), /\.site-selection-dialog\s*\{\s*margin:\s*auto;/, 'modal explicitly overrides the global margin reset');

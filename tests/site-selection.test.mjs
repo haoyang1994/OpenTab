@@ -54,8 +54,10 @@ async function choose(kind, id) {
   await page.locator('#site-selection-destination').focus();
   await page.keyboard.press('Home');
   for (let step = 0; step < index; step++) await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
+  // Closed native selects apply Home/ArrowDown immediately. Enter here can
+  // open the native option popup rather than confirm an already applied value.
   assert.equal(await page.locator('#site-selection-destination').inputValue(), String(index));
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'site-selection-destination');
 }
 async function assertClosed() { await page.waitForFunction(() => !OpenTabSiteSelection.isActive()); }
 try {
@@ -184,8 +186,10 @@ try {
   for (const languagePreference of ['en', 'zh-CN']) for (const themeMode of ['light', 'dark']) {
     await reset({ languagePreference, themeMode }); await page.setViewportSize({ width: 390, height: 844 });
     await start(); await page.click(check('a')); await choose('folder', 'target');
-    const bounds = await page.locator('#site-selection-dialog').evaluate(el => { const rect = el.getBoundingClientRect(), css = getComputedStyle(el); return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight, bg: css.backgroundColor, opacity: css.opacity }; });
-    assert.ok(bounds.left >= 0 && bounds.right <= bounds.width && bounds.bottom <= bounds.height);
+    const bounds = await page.locator('#site-selection-dialog').evaluate(el => { const rect = el.getBoundingClientRect(), css = getComputedStyle(el); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: innerWidth, height: innerHeight, bg: css.backgroundColor, opacity: css.opacity }; });
+    assert.ok(bounds.left >= 16 && bounds.right <= bounds.width - 16 && bounds.top >= 16 && bounds.bottom <= bounds.height - 16);
+    assert.ok(Math.abs(bounds.left - (bounds.width - bounds.right)) <= 1, 'dialog is horizontally centered');
+    assert.ok(Math.abs(bounds.top - (bounds.height - bounds.bottom)) <= 1, 'dialog is vertically centered');
     assert.equal(bounds.opacity, '1'); assert.match(bounds.bg, /^rgb\(/);
     for (const key of ['Tab', 'Shift+Tab']) {
       const ids = key === 'Tab'
@@ -195,7 +199,7 @@ try {
         await page.keyboard.press(key);
         const focus = await page.evaluate(() => ({ id: document.activeElement.id, tag: document.activeElement.tagName, inside: document.querySelector('#site-selection-dialog').contains(document.activeElement) }));
         assert.equal(focus.inside, true, JSON.stringify({ key, i, focus }));
-        assert.equal(focus.id, ids[i % ids.length], `${key} follows the exact dialog control sequence`);
+        assert.equal(focus.id, ids[i % ids.length], `${key} step ${i} follows the exact dialog control sequence: ${JSON.stringify(focus)}`);
       }
     }
     await page.screenshot({ path: path.join(artifacts, `site-selection-${languagePreference}-${themeMode}-narrow.png`) });
