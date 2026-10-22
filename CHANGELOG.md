@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Refine group controls, the shortcut form, and the quick-launch badge with slate/indigo surfaces; use labeled icon buttons for site selection and batch-add entry points.
+- Replace the heavy application mark with a lighter open ribbon and lifted tab.
+- Dismiss settings with an outside click or touch while preserving drafts and blocking accidental background activation.
+- Apply a successfully refreshed Bing wallpaper immediately in the current page, including when unrelated workspace changes interrupt an earlier fade.
 - Cmd/Ctrl+K now opens a dedicated quick-launch dialog for saved sites, groups, and existing actions, instead of focusing the inline search box. The dialog works in clock-only mode without changing preferences.
 - Refreshed the application icon with a legible browser-tab silhouette at extension icon sizes.
 
@@ -21,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check the installed dependency tree with `npm audit --audit-level=high` in CI, alongside the full existing test suite.
 
 ### Added
+- Delete individual search-history entries from the suggestions with pointer or keyboard controls.
+- Toggle the to-do entry in layout settings without deleting tasks or an open task draft. The preference supports reload, backup/sync, and settings reset/Undo.
 
 - Select multiple websites in the current view and move them to an existing group or folder with a single durable save and conflict-safe Undo. No new permissions or requests.
 

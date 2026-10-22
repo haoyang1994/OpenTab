@@ -44,6 +44,9 @@
   let trapBound = false;
   let activeId = 'appearance';
   let filterQuery = '';
+  let preserveDraftsOnOpen = false;
+  let pointerStartedInside = false;
+  let dragging = false;
   let developerToolsEnabled = false;
   let developerMigrated = false;
 
@@ -592,6 +595,7 @@
   function open(options = {}) {
     const el = panel();
     if (!el) return;
+    if (!el.classList.contains('hidden')) return;
     if (host && host.rememberFocus) host.rememberFocus(options.opener || $('settings-btn'));
     el.classList.remove('hidden');
     buildNav();
@@ -600,30 +604,94 @@
     syncFromState();
     const search = $('settings-search');
     if (search) {
-      search.value = '';
-      applyFilter('');
+      if (!preserveDraftsOnOpen) search.value = '';
+      applyFilter(search.value);
       search.focus();
     }
+    preserveDraftsOnOpen = false;
     setActive(activeId);
   }
 
   function openSection(id) {
     if (!metaById(id) || (id === 'advanced' && !developerToolsEnabled) || !panel()) return false;
     open();
+    // Explicit navigation must reveal its destination even after a preserved
+    // filter, or when a different settings section is already open.
+    const search = $('settings-search');
+    if (search) search.value = '';
+    applyFilter('');
     setActive(id, { scroll: true });
     return true;
   }
 
-  function close() {
+  function close(options = {}) {
     if (globalThis.OpenTabSiteList?.isBusy()) return false;
     const el = panel();
     if (!el || el.classList.contains('hidden')) return false;
     const search = $('settings-search');
-    if (search) search.value = '';
-    applyFilter('');
+    preserveDraftsOnOpen = options.preserveDrafts === true;
+    if (!preserveDraftsOnOpen) {
+      if (search) search.value = '';
+      applyFilter('');
+    }
     el.classList.add('hidden');
     if (host && host.restoreFocus) host.restoreFocus();
     return true;
+  }
+
+  // Capture before background controls see a dismissal gesture. Close on click,
+  // not pointerdown: a cancelled touch or a slider drag must not dismiss settings.
+  function hasNestedLayer() {
+    return DIALOG_IDS.filter(id => id !== 'settings-panel').some(id => {
+      const node = $(id);
+      return node && isShown(node);
+    }) || !!document.querySelector('dialog[open], .flatpickr-calendar.open')
+      || ['icon-context-menu', 'timezone-selector', 'calendar-popover', 'command-palette'].some(id => {
+        const node = $(id);
+        return node && isShown(node);
+      });
+  }
+
+  function consumeOutsideEvent(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  function onOutsidePointerDown(event) {
+    pointerStartedInside = false;
+    const el = panel();
+    if (!el || el.classList.contains('hidden') || event.button !== 0 || hasNestedLayer()) return;
+    pointerStartedInside = el.contains(event.target);
+    if (pointerStartedInside || dragging) return;
+    consumeOutsideEvent(event);
+  }
+
+  function onOutsideClick(event) {
+    // Application-generated clicks (for example backup download anchors) are
+    // not user dismissal gestures and must keep their existing behavior.
+    if (event.isTrusted === false) return;
+    const startedInside = pointerStartedInside;
+    pointerStartedInside = false;
+    const el = panel();
+    if (!el || el.classList.contains('hidden') || event.button > 0 || hasNestedLayer()) return;
+    if (el.contains(event.target)) return;
+    // Even a gesture that cannot dismiss must not activate an underlying link.
+    consumeOutsideEvent(event);
+    if (startedInside || dragging) return;
+    if (globalThis.OpenTabSiteList?.isBusy() || el.querySelector('[aria-busy="true"]')) return;
+    // Keyboard/AT clicks have no preceding pointerdown and are handled too.
+    close({ preserveDrafts: true });
+  }
+
+  function bindOutsideDismissal() {
+    document.addEventListener('pointerdown', onOutsidePointerDown, true);
+    document.addEventListener('click', onOutsideClick, true);
+    document.addEventListener('pointercancel', () => {
+      pointerStartedInside = false;
+    }, true);
+    document.addEventListener('dragstart', () => { dragging = true; }, true);
+    document.addEventListener('dragend', () => { dragging = false; }, true);
+    document.addEventListener('drop', () => { dragging = false; }, true);
   }
 
   function handleEscape() {
@@ -876,6 +944,7 @@
   function bindPanel() {
     if (bound || typeof document === 'undefined') return;
     bound = true;
+    bindOutsideDismissal();
     const settingsBtn = $('settings-btn');
     const closeBtn = $('close-settings');
     const search = $('settings-search');

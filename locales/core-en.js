@@ -156,6 +156,8 @@ OpenTabI18n.register({
   "把复杂问题拆成三个小动作。": "Break a complex problem into three small actions.",
   "已保存的网站": "Saved sites",
   "搜索历史": "Search history",
+  "删除搜索历史：{query}": "Delete search history: {query}",
+  "无法删除搜索历史，请重试。": "Could not delete search history. Please try again.",
   "正在读取图片…": "Reading image…",
   "节奏稳，结果自然会好。": "A steady pace brings results."
 });

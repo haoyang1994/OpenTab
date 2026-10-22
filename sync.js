@@ -50,6 +50,7 @@
     'layoutColumns',
     'layoutShowNames',
     'layoutMaxWidth',
+    'todoButtonVisible',
     'developerToolsEnabled'
   ];
   const SYNC_TRIGGERS = new Set(['icons', 'folders'].concat(SYNC_SETTING_KEYS));

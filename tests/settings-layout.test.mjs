@@ -1,3 +1,5 @@
+import { runUiRefinement } from './ui-refinement.mjs';
+import { verifySettingsDismissal } from './settings-dismiss.mjs';
 import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,9 +11,8 @@ import { formatConsoleError, unexpectedErrors } from './console-allow.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const EXTENSION_PATH = path.resolve(__dirname, '..');
-const ARTIFACTS = fs.existsSync('/opt/cursor/artifacts')
-  ? '/opt/cursor/artifacts'
-  : path.join(EXTENSION_PATH, 'artifacts');
+// Keep screenshots in the same directory uploaded by the CI workflow.
+const ARTIFACTS = path.join(EXTENSION_PATH, 'artifacts');
 fs.mkdirSync(ARTIFACTS, { recursive: true });
 const GRID_READY_BUDGET_MS = 500;
 const HOME = 'folder-home';
@@ -358,9 +359,11 @@ async function runSettingsLayoutE2E() {
       iconsBefore,
       'AC4 restore does not touch shortcuts'
     );
+    await page.click('#close-settings');
     await page.locator('#toast button').click();
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--layout-icon-size').trim() === '80px');
     console.log('AC4 section restore + undo passed');
+    await openSettings(page);
 
     await page.$eval('#layout-icon-size', (el) => {
       el.value = '64';
@@ -490,6 +493,9 @@ async function runSettingsLayoutE2E() {
     assert.deepEqual(unlabeled, [], 'AC6 settings controls have labels/aria: ' + unlabeled.join(','));
     const unlabeledModal = await labeledControls(page, '#add-icon-modal');
     assert.deepEqual(unlabeledModal, [], 'AC6 add-icon controls have labels/aria: ' + unlabeledModal.join(','));
+
+    await verifySettingsDismissal(page);
+    await runUiRefinement(page, serviceWorker, ARTIFACTS);
 
     const leftover = unexpectedErrors(consoleErrors);
     assert.equal(leftover.length, 0, `AC7 console errors: ${leftover.join(' | ')}`);

@@ -20,9 +20,9 @@ function harness() {
       }
     }
   } };
-  const element = () => { const classes = new Set(); return { style: {}, disabled: false, classList: { add: key => classes.add(key), remove: key => classes.delete(key), contains: key => classes.has(key) }, pause() {}, setAttribute() {}, removeAttribute() {} }; };
+  const element = () => { const classes = new Set(); return { style: {}, children: [], querySelectorAll() { return this.children.filter(child => child.className === 'bg-fade-in'); }, appendChild(child) { this.children.push(child); child.parentNode = this; }, remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); }, disabled: false, classList: { add: key => classes.add(key), remove: key => classes.delete(key), contains: key => classes.has(key) }, pause() {}, setAttribute() {}, removeAttribute() {} }; };
   const g = { state, chrome, console, setTimeout, clearTimeout, queueMicrotask, Date, URL, AbortController, navigator: { locks: { request: async (_name, _options, task) => task() } }, showToast() {},
-    document: { readyState: 'loading', addEventListener() {}, documentElement: {} }, matchMedia: () => ({ matches: true }),
+    document: { createElement: () => element(), readyState: 'loading', addEventListener() {}, documentElement: {} }, matchMedia: () => ({ matches: true }),
     Image: class { set src(_) { queueMicrotask(() => this.onerror?.()); } },
     OpenTabBoot: { DEFAULT_BG: 'assets/default.jpg', isLocalAsset: () => true },
     OpenTabBing: { shouldCheck: () => true, ymd: () => '20261022' }
@@ -157,3 +157,61 @@ for (const invalidate of [false, true]) {
   assert.equal(h.elements.refreshBgBtn.disabled, false);
 }
 console.log('Pending-image tests passed: shared state stays committed and external changes invalidate safely');
+
+// Normal motion must commit the active base layer, not only storage or a
+// temporary fade child. Exercise the real refresh handler with held fade timers.
+{
+  const h = harness(), fades = [];
+  h.g.matchMedia = () => ({ matches: false });
+  h.g.requestAnimationFrame = fn => fn();
+  h.g.setTimeout = (fn, ms) => ms === 200 ? (fades.push(fn), -1) : setTimeout(fn, ms);
+  await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  h.respond(0); await pending;
+  h.g.chrome.storage.local.set({ icons: [{ id: 'external-edit' }] });
+  fades.forEach(fn => fn());
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, 'url(assets/new.jpg)', 'saved manual wallpaper must remain on the active layer after workspace invalidation');
+  assert.equal(h.elements.backgroundLayer.children.length, 0, 'no temporary overlay can hide a stale base layer');
+}
+
+// A settings/workspace render of the unchanged old background during decode
+// must not silently cancel the manual candidate yet still save it as success.
+for (const superseded of [false, true]) {
+  const h = harness(), images = [], revoked = [];
+  h.g.matchMedia = () => ({ matches: false });
+  h.g.OpenTabBoot.isLocalAsset = url => url.startsWith('assets/');
+  h.g.caches = { open: async () => ({ match: async () => ({ blob: async () => ({ color: 'blue' }) }) }) };
+  h.g.URL = { createObjectURL: blob => `blob:${blob.color}`, revokeObjectURL: url => revoked.push(url) };
+  h.g.Image = class { set src(value) { this.value = value; images.push(this); if (value.startsWith('assets/')) queueMicrotask(() => this.onload?.()); } decode() { return Promise.resolve(); } };
+  await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  h.respond(0, { url: 'https://www.bing.com/blue.jpg' });
+  for (let n = 0; n < 20 && !images.some(img => img.value === 'blob:blue'); n++) await Promise.resolve();
+  const candidate = images.find(img => img.value === 'blob:blue');
+  assert.ok(candidate);
+  if (superseded) h.g.chrome.storage.local.set({ background: { type: 'image', value: 'assets/red.jpg' } });
+  await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  candidate.onload(); await pending;
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, superseded ? 'url(assets/red.jpg)' : 'url(blob:blue)', 'the active decoded source must match the latest authorized choice on the same page');
+  assert.equal(h.stored.background.value, superseded ? 'assets/red.jpg' : 'https://www.bing.com/blue.jpg');
+  assert.deepEqual(revoked, superseded ? ['blob:blue'] : [], 'accepted object URL stays alive; stale candidate is released');
+}
+console.log('Immediate wallpaper tests passed: normal-motion base layer, workspace fade invalidation, concurrent repaint and stale decoded candidate');
+
+// A daily fade already in progress must not cover a completed manual refresh.
+{
+  const h = harness(), fades = [];
+  h.g.matchMedia = () => ({ matches: false });
+  h.g.requestAnimationFrame = fn => fn();
+  h.g.setTimeout = (fn, ms) => ms === 200 ? (fades.push(fn), -1) : setTimeout(fn, ms);
+  await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  await h.g.OpenTabBingCache.updateBackground({ fade: true });
+  assert.equal(h.elements.backgroundLayer.children.length, 1, 'daily photo overlay is present before manual refresh');
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  h.respond(0); await pending;
+  assert.equal(h.elements.backgroundLayer.children.length, 0, 'manual completion immediately removes the preceding daily overlay');
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, 'url(assets/new.jpg)');
+  fades.forEach(fn => fn());
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, 'url(assets/new.jpg)', 'obsolete daily timer cannot replace the manual photo');
+}
+console.log('Overlapping wallpaper test passed: completed manual photo is not covered by an earlier daily fade');

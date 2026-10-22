@@ -1,5 +1,6 @@
 /* Static shell strings. Keys are the original UI phrases, never user content. */
 OpenTabI18n.register({
+  "显示待办按钮": "Show to-do button",
   "选择网站": "Select sites",
   "移动": "Move",
   "选择网站：{name}": "Select site: {name}",

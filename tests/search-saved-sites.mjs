@@ -132,15 +132,29 @@ export async function verifySavedSites(page, worker) {
   assert.equal((await log()).length, count + 1, 'middle click must not also submit the input');
   assert.equal((await log()).at(-1).openInNewTab, true);
 
-  // Options participate in the input's active-descendant pattern, not the Tab
-  // sequence. Tab must leave the widget, and delayed blur must not hide focus.
+  // Result choices use active-descendant navigation. The new delete actions
+  // are native Tab stops: visit each exact action, then leave the widget.
+  // A focused delete must not disappear when the input's blur timer runs.
   for (const key of ['Tab', 'Shift+Tab']) {
     await type('doc'); await page.locator('#search-input').press('ArrowDown');
+    const beforeTabNavigation = (await log()).length;
+    if (key === 'Tab') {
+      const actions = page.locator('#search-history .search-history-delete');
+      const actionCount = await actions.count();
+      assert.ok(actionCount > 0, 'fixture includes deletable history');
+      for (let index = 0; index < actionCount; index++) {
+        await page.keyboard.press('Tab');
+        assert.equal(await actions.nth(index).evaluate(node => document.activeElement === node), true,
+          `Tab visits delete action ${index} without opening a result`);
+        assert.equal(await page.locator('#search-history').isVisible(), true);
+      }
+    }
     await page.keyboard.press(key);
     assert.equal(await page.evaluate(() => !!document.activeElement?.closest('#search-history')), false);
     assert.notEqual(await page.evaluate(() => document.activeElement?.id), 'search-input');
     await page.waitForFunction(() => document.getElementById('search-history').classList.contains('hidden'));
     assert.equal(await active(), null);
+    assert.equal((await log()).length, beforeTabNavigation, 'Tab traversal never activates a result');
   }
   await type('doc'); await page.locator('#search-input').press('ArrowDown');
   const beforeIme = await active();
@@ -191,7 +205,7 @@ export async function verifySavedSites(page, worker) {
         const rect = list.getBoundingClientRect();
         return { left: rect.left, right: rect.right, width: rect.width, contentWidth: list.scrollWidth, clientWidth: list.clientWidth,
           inputWidth: document.getElementById('search-input').getBoundingClientRect().width,
-          rows: [...list.querySelectorAll('[role="option"]')].map(row => ({ width: row.getBoundingClientRect().width, tabIndex: row.tabIndex })) };
+          rows: [...list.querySelectorAll('button.search-result-item[role="gridcell"]')].map(row => ({ width: row.getBoundingClientRect().width, tabIndex: row.tabIndex })) };
       });
       assert.ok(bounds.left >= 0 && bounds.right <= width, 'saved-site dropdown stays inside the viewport');
       assert.ok(bounds.contentWidth <= bounds.clientWidth + 1, 'long metadata is ellipsized, not horizontally scrollable');
@@ -201,6 +215,46 @@ export async function verifySavedSites(page, worker) {
       await captureSearchThemes(page, `search-saved-sites-${preference}-${width}`);
     }
   }
+  // Native keyboard activation must never bubble into search/site navigation.
+  await store({ ...fixture, languagePreference: 'en', searchHistory: [
+    { q: 'docs query', engine: 'bing', at: 3 },
+    { q: 'docs keyboard', engine: 'google', at: 2 },
+    { q: 'docs space', engine: 'google', at: 1 }
+  ] });
+  await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+  await type('docs');
+  assert.equal(await page.getAttribute('#search-input', 'aria-haspopup'), 'grid');
+  assert.equal(await page.getAttribute('#search-history', 'role'), 'grid');
+  const deletes = page.locator('#search-history .search-history-delete');
+  assert.equal(await deletes.count(), 3);
+  await deletes.first().click();
+  await page.waitForFunction(() => document.querySelectorAll('#search-history .search-history-delete').length === 2);
+  assert.equal(await page.inputValue('#search-input'), 'docs');
+  assert.equal((await log()).length, 0, 'pointer deletion does not execute search or open a site');
+  assert.equal(await page.locator(siteSelector).count(), 5);
+  await page.locator('#search-input').focus();
+  await page.locator('#search-input').press('Tab');
+  await deletes.first().waitFor({ state: 'visible' });
+  assert.equal(await deletes.first().evaluate(node => document.activeElement === node), true, 'native Tab reaches the first delete button');
+  await deletes.first().press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('#search-history .search-history-delete').length === 1);
+  assert.equal(await deletes.first().evaluate(node => document.activeElement === node), true, 'Enter deletion keeps next action focused');
+  await deletes.first().press('Space');
+  await page.waitForFunction(() => document.querySelectorAll('#search-history .search-history-delete').length === 0);
+  assert.equal(await page.locator('#search-input').evaluate(node => document.activeElement === node), true);
+  assert.equal((await log()).length, 0, 'Enter and Space delete without activation');
+  assert.equal(await page.locator(siteSelector).count(), 5, 'history deletion preserves saved sites');
+  assert.equal(await active(), null, 'deletion clears stale active descendant');
+  assert.deepEqual(await worker.evaluate(async () => (await chrome.storage.local.get('searchHistory')).searchHistory), []);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.OpenTabSearch && performance.getEntriesByName('opentab:grid-ready').length > 0);
+  await type(''); await page.locator('#search-input').focus();
+  assert.equal(await page.locator(historySelector).count(), 0, 'deleted records stay gone after reload');
+  assert.equal(await page.getAttribute('#search-input', 'aria-expanded'), 'false', 'empty history has no empty open popup');
+  await type('docs');
+  assert.equal(await page.locator(siteSelector).count(), 5);
+  await page.locator('#search-input').press('Tab');
+  assert.equal(await page.locator('#search-input').evaluate(node => document.activeElement === node), false, 'native Tab still exits search when no delete actions remain');
   await page.setViewportSize({ width: 1280, height: 800 });
   console.log('Saved-site E2E: local-only lookup, safe explicit navigation, live stale rejection, history/ARIA/IME/Tab and bilingual responsive screenshots passed.');
 }
@@ -248,7 +302,7 @@ async function assertResultHit(page, index = 0, selector = siteSelector) {
 }
 
 async function assertVisibleResultHits(page) {
-  const selector = '#search-history [role="option"]';
+  const selector = '#search-history button.search-result-item[role="gridcell"]';
   const count = await page.locator(selector).count();
   assert.ok(count > 0);
   for (const index of new Set([0, Math.floor((count - 1) / 2), count - 1])) {

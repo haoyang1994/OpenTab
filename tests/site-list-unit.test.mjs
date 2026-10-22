@@ -191,7 +191,7 @@ for (const options of [
   const source = fs.readFileSync(new URL('../settings-nav.js', import.meta.url), 'utf8');
   const range = source.slice(source.indexOf('  function open('), source.indexOf('  function onContentScroll('));
   const h = harness(); const remembered = [], restored = [];
-  const g = { OpenTabSiteList: { isBusy: () => false }, panel: () => h.$('settings-panel'), $: h.$, activeId: 'appearance', buildNav() {}, ensureResetButtons() {}, fillAbout() {}, syncFromState() {}, setActive() {}, applyFilter() {},
+  const g = { preserveDraftsOnOpen: false, OpenTabSiteList: { isBusy: () => false }, panel: () => h.$('settings-panel'), $: h.$, activeId: 'appearance', buildNav() {}, ensureResetButtons() {}, fillAbout() {}, syncFromState() {}, setActive() {}, applyFilter() {},
     host: { rememberFocus: el => remembered.push(el), restoreFocus: () => restored.push(remembered.pop()) } };
   vm.createContext(g); vm.runInContext(range, g);
   g.open({ opener: h.$('empty-paste-sites') }); g.close(); assert.equal(restored[0], h.$('empty-paste-sites'));
