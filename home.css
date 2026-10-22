@@ -305,6 +305,11 @@ body.particles-enabled #particles-canvas {
   transition: background 0.4s var(--transition), border-color 0.4s var(--transition);
 }
 
+/* Lift the containing stacking context, not only the calendar child. */
+#clock-widget:has(.calendar-popover:not(.hidden)) {
+  z-index: 1270;
+}
+
 #clock-widget::before {
   content: '';
   position: absolute;
@@ -1133,10 +1138,10 @@ body.theme-light #icon-drop-indicator {
   padding: 7px 12px;
   border: 1px solid var(--section-border);
   border-radius: 999px;
-  background: var(--control-bg);
-  color: var(--text-secondary);
+  background: var(--panel-bg);
+  color: var(--text-primary);
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.2s var(--transition), border-color 0.2s var(--transition), color 0.2s var(--transition), transform 0.2s var(--spring);
 }
@@ -1152,12 +1157,12 @@ body.theme-light #icon-drop-indicator {
 
 .group-tab:hover,
 .group-add-btn:hover {
-  background: var(--control-hover);
+  background: linear-gradient(var(--control-hover), var(--control-hover)), var(--panel-bg-solid);
   color: var(--text-primary);
 }
 
 .group-tab.active {
-  background: var(--accent-soft);
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--panel-bg-solid);
   border-color: var(--accent-line);
   color: var(--text-primary);
 }
@@ -1183,10 +1188,18 @@ body.theme-light #icon-drop-indicator {
   padding: 0 10px;
   border: 1px solid var(--accent-line);
   border-radius: 999px;
-  background: var(--control-bg);
+  background: var(--panel-bg);
   color: var(--text-primary);
   font-size: 13px;
   outline: none;
+}
+
+/* A stable local surface keeps names legible even at minimum frame opacity. */
+.group-tab:focus-visible,
+.group-add-btn:focus-visible,
+.group-inline-input:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
 }
 
 .icon-visual.folder-preview {
@@ -2281,6 +2294,10 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 }
 
 .calendar-popover {
+  --calendar-selected-bg: #8dd9ff;
+  --calendar-selected-text: #0c121e;
+  --calendar-holiday: #ff8fa4;
+  --calendar-term: #42e7c2;
   position: absolute;
   top: calc(100% + 12px);
   left: 50%;
@@ -2289,7 +2306,9 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   padding: 12px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
-  background: var(--panel-bg);
+  /* Dense dates need a solid local surface; nested backdrop filters cannot
+     reliably blur the shortcuts behind the clock stacking context. */
+  background: var(--panel-bg-solid);
   backdrop-filter: blur(40px) saturate(160%);
   -webkit-backdrop-filter: blur(40px) saturate(160%);
   box-shadow: var(--shadow-panel);
@@ -2312,7 +2331,7 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   margin-top: 8px;
   padding: 4px 4px 0;
   font-size: 11.5px;
-  color: var(--text-tertiary);
+  color: var(--text-hint);
 }
 
 .legend-item {
@@ -2329,11 +2348,11 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 }
 
 .dot.holiday {
-  background: #ff6a83;
+  background: var(--calendar-holiday);
 }
 
 .dot.solar-term {
-  background: #23d9b7;
+  background: var(--calendar-term);
 }
 
 /* Flatpickr */
@@ -2363,7 +2382,7 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 .calendar-popover .flatpickr-weekday {
   font-size: 11px;
   font-weight: 500;
-  color: var(--text-tertiary);
+  color: var(--text-hint);
   background: transparent;
 }
 
@@ -2391,8 +2410,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 .calendar-popover .flatpickr-day.startRange,
 .calendar-popover .flatpickr-day.endRange {
   border-color: transparent;
-  background: var(--accent-1);
-  color: var(--text-on-accent);
+  background: var(--calendar-selected-bg);
+  color: var(--calendar-selected-text);
   box-shadow: 0 4px 14px -4px var(--accent-glow);
 }
 
@@ -2408,21 +2427,21 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 }
 
 .calendar-popover .flatpickr-day.has-holiday .fp-meta {
-  color: #ff8fa4;
+  color: var(--calendar-holiday);
 }
 
 .calendar-popover .flatpickr-day.has-solar-term .fp-meta {
-  color: #42e7c2;
+  color: var(--calendar-term);
 }
 
 .calendar-popover .flatpickr-day.prevMonthDay,
 .calendar-popover .flatpickr-day.nextMonthDay {
-  color: var(--text-tertiary);
+  color: var(--text-hint);
 }
 
 .calendar-popover .flatpickr-day.flatpickr-disabled,
 .calendar-popover .flatpickr-day.flatpickr-disabled:hover {
-  color: var(--text-tertiary);
+  color: var(--text-hint);
   opacity: 0.45;
 }
 
@@ -2432,8 +2451,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: var(--text-secondary);
-  fill: var(--text-secondary);
+  color: var(--text-hint);
+  fill: var(--text-hint);
   transition: background 0.15s var(--transition), color 0.15s var(--transition);
 }
 
@@ -2444,10 +2463,35 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   fill: var(--text-primary);
 }
 
-body.theme-light .calendar-popover .flatpickr-day.selected,
-body.theme-light .calendar-popover .flatpickr-day.startRange,
-body.theme-light .calendar-popover .flatpickr-day.endRange {
-  color: #ffffff;
+body.theme-light .calendar-popover {
+  --calendar-selected-bg: #176b99;
+  --calendar-selected-text: #ffffff;
+  --calendar-holiday: #b12547;
+  --calendar-term: #08745e;
+}
+
+.calendar-popover .flatpickr-day.selected .fp-meta,
+.calendar-popover .flatpickr-day.startRange .fp-meta,
+.calendar-popover .flatpickr-day.endRange .fp-meta {
+  color: var(--calendar-selected-text);
+}
+
+.calendar-popover .flatpickr-day:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: -2px;
+}
+
+/* Flatpickr defaults to a fixed 307px grid, which clips on narrow screens. */
+.calendar-popover .flatpickr-rContainer,
+.calendar-popover .flatpickr-days,
+.calendar-popover .dayContainer {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.calendar-popover .flatpickr-day {
+  max-width: none;
 }
 
 /* ==========================================================================

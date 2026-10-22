@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Give group labels readable local surfaces on bright/busy wallpapers and keep the calendar above overlapping groups, with stronger date/annotation contrast and a narrow-screen date grid.
+
+- Make manual Bing refresh advance beyond the current daily wallpaper, keep repeated clicks single-flight, and retain the previous background with visible retry feedback on failure. Bound background network/cache work and preserve newer wallpaper choices against late responses.
+
 - Let Tab and Shift+Tab leave the JSON input without changing its contents; keep two-space indentation on the visible Ctrl+] shortcut, with composition/modifier guards and labelled input/output fields.
 
 - Release native Tab/Shift+Tab navigation from the search input instead of trapping focus. Engine cycling moves to Alt+Down/Up, with localized hints and IME/modifier guards.

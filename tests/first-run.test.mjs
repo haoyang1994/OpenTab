@@ -126,7 +126,7 @@ async function launchExt() {
         const payload = {
           images: [{
             startdate: ymd(),
-            url: '/th?id=TEST.jpg',
+            url: cfg.indexed ? `/th?id=INDEX${new URL(url).searchParams.get('idx')}.jpg` : '/th?id=TEST.jpg',
             copyright: 'Test Copyright',
             title: 'Test Wallpaper'
           }]
@@ -138,6 +138,8 @@ async function launchExt() {
         });
       }
       if (url.includes('/th?id=TEST.jpg') || url.includes('th?id=')) {
+        if (cfg.imageDelay) await new Promise(resolve => setTimeout(resolve, cfg.imageDelay));
+        if (cfg.imageGate) await cfg.imageGate;
         return route.fulfill({ status: 200, contentType: 'image/jpeg', body: BING_JPG });
       }
       return route.fulfill({ status: 200, contentType: 'text/plain', body: 'ok' });
@@ -454,6 +456,7 @@ async function run() {
     ), 12000);
     assert.match(String(updated.background.value), /TEST/);
     assert.equal(updated.background.bing.startdate, ymd());
+    assert.equal(updated.bingIndex, 1, 'E5 next manual wallpaper advances beyond daily index zero');
     const cached = await ext.page.evaluate(async () => {
       const cache = await caches.open('opentab-bing-v1');
       const keys = await cache.keys();
@@ -506,6 +509,71 @@ async function run() {
     assert.equal(ext.errors.console.length, 0, `E6 console ${ext.errors.console.join(' | ')}`);
     console.log('E6 passed');
     await ext.context.close();
+  }
+
+  {
+    const ext = await launchExt();
+    try {
+      ext.cfg.indexed = true;
+      await waitStorage(ext.serviceWorker, value => Boolean(value?.background));
+      await openHome(ext.page, ext.extensionId);
+      const button = ext.page.locator('#refresh-bg-btn');
+      await button.click();
+      await waitStorage(ext.serviceWorker, value => /INDEX0/.test(value?.background?.value || ''), 12000);
+      await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
+      // A genuinely slow cached image must outlive the former 8-second RPC
+      // ceiling without being discarded. Repeated physical clicks stay single-flight.
+      ext.cfg.imageDelay = 9000;
+      await button.click();
+      assert.equal(await button.isDisabled(), true);
+      const box = await button.boundingBox();
+      await ext.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await waitStorage(ext.serviceWorker, value => /INDEX1/.test(value?.background?.value || ''), 22000);
+      await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
+      assert.equal(ext.net.bing.filter(url => url.includes('HPImageArchive') && new URL(url).searchParams.get('idx') === '1').length, 1);
+      ext.cfg.imageDelay = 0;
+      await ext.page.reload({ waitUntil: 'domcontentloaded' });
+      await ext.page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0);
+      assert.match((await storageGet(ext.serviceWorker, ['background'])).background.value, /INDEX1/);
+      const previous = await storageGet(ext.serviceWorker, ['background', 'bingIndex']);
+      ext.cfg.bingMode = '500';
+      await button.click();
+      await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
+      assert.deepEqual(await storageGet(ext.serviceWorker, ['background', 'bingIndex']), previous);
+      assert.match(await ext.page.locator('#toast').textContent(), /已保留原背景/);
+      ext.cfg.bingMode = 'ok';
+      await button.click();
+      await waitStorage(ext.serviceWorker, value => /INDEX2/.test(value?.background?.value || ''), 12000);
+      await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
+      let releaseImage;
+      ext.cfg.imageGate = new Promise(resolve => { releaseImage = resolve; });
+      await button.click();
+      // Waiting on the worker request, not a fixed render delay, makes the
+      // external replacement deterministically precede the stale completion.
+      const deadline = Date.now() + 5000;
+      while (!ext.net.bing.some(url => url.includes('INDEX3')) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.ok(ext.net.bing.some(url => url.includes('INDEX3')));
+      const external = { type: 'gradient', value: 'linear-gradient(#123, #456)', source: 'gradient' };
+      await ext.page.evaluate(() => {
+        window.__externalWallpaperSeen = false;
+        const listener = (changes, area) => {
+          if (area === 'local' && changes.background?.newValue?.type === 'gradient') {
+            window.__externalWallpaperSeen = true; chrome.storage.onChanged.removeListener(listener);
+          }
+        };
+        chrome.storage.onChanged.addListener(listener);
+      });
+      await storageSet(ext.serviceWorker, { background: external });
+      await ext.page.waitForFunction(() => window.__externalWallpaperSeen === true);
+      releaseImage(); ext.cfg.imageGate = null;
+      await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
+      assert.deepEqual((await storageGet(ext.serviceWorker, ['background'])).background, external);
+      await ext.page.reload({ waitUntil: 'domcontentloaded' });
+      await ext.page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0);
+      assert.deepEqual((await storageGet(ext.serviceWorker, ['background'])).background, external);
+      assert.equal(ext.errors.page.length, 0, ext.errors.page.join(' | '));
+      console.log('E7 passed: native Bing refresh clicks, slow image, single flight, durable reload, failure/retry and stale choice');
+    } finally { await ext.context.close(); }
   }
 
   console.log('first-run e2e passed');

@@ -2,6 +2,7 @@
 (function (root) {
   'use strict';
   root.OpenTabI18n.register({
+  "壁纸更新失败，已保留原背景，请稍后重试": "Could not update the wallpaper. Your previous background is kept. Please try again later.",
   "其他标签页已修改此内容，请刷新后重试。": "Another tab changed this content. Refresh and try again.",
   "浏览器暂不支持安全保存，请更新 Chrome 后重试。": "This browser does not support safe saving. Update Chrome and try again.",
   "保存等待超时，请重试。": "Saving timed out. Please try again.",

@@ -151,3 +151,5 @@ for (const selector of ['.settings-panel.hidden', '#todo-widget.hidden', '.timez
 }
 
 console.log('Core accessibility unit tests passed');
+
+await import('./wallpaper-readability-unit.mjs');

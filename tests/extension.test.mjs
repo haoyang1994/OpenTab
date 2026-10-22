@@ -1,3 +1,4 @@
+import { verifyWallpaperReadability } from './wallpaper-readability.mjs';
 import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
@@ -618,6 +619,8 @@ async function runExtensionE2E() {
       'function',
       'flatpickr should load from vendor/ without node_modules'
     );
+
+    await verifyWallpaperReadability(page, ARTIFACTS);
 
     const sshPage = await context.newPage();
     const sshConsoleErrors = [];
