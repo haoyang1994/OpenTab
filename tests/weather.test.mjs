@@ -68,17 +68,20 @@ try {
   assert.equal(requests, 1, 'reload reuses fresh cache');
   await settings();
   fs.mkdirSync(path.join(root, 'artifacts'), { recursive: true });
-  await page.screenshot({ path: path.join(root, 'artifacts/weather-dark.png') });
+  await page.locator('#settings-search').fill('');
+  await page.locator('.theme-mode-tab[data-theme="dark"]').click();
+  await page.locator('#settings-search').fill('天气');
+  await page.screenshot({ animations: 'disabled', path: path.join(root, 'artifacts/weather-dark.png') });
   await page.locator('#settings-search').fill('');
   await page.locator('.theme-mode-tab[data-theme="light"]').click();
   await page.locator('#settings-search').fill('天气');
-  await page.screenshot({ path: path.join(root, 'artifacts/weather-light.png') });
+  await page.screenshot({ animations: 'disabled', path: path.join(root, 'artifacts/weather-light.png') });
   await page.setViewportSize({ width: 600, height: 800 });
   await page.locator('#weather-city').scrollIntoViewIfNeeded();
   const cityBox = await page.locator('#weather-city').boundingBox();
   const saveBox = await page.locator('#weather-save').boundingBox();
   assert.ok(cityBox && saveBox && cityBox.x >= 0 && saveBox.x + saveBox.width <= 600, 'weather city controls fit narrow viewport');
-  await page.screenshot({ path: path.join(root, 'artifacts/weather-narrow.png') });
+  await page.screenshot({ animations: 'disabled', path: path.join(root, 'artifacts/weather-narrow.png') });
   await page.setViewportSize({ width: 1280, height: 800 });
   mode = 'failure';
   await page.locator('#weather-refresh').click();
@@ -106,7 +109,7 @@ try {
   assert.equal(await page.evaluate(() => window.__weatherGeoCalls), 0);
   assert.deepEqual(errors, [], 'no uncaught page errors');
   fs.mkdirSync(path.join(root, 'artifacts'), { recursive: true });
-  await page.screenshot({ path: path.join(root, 'artifacts/weather-settings.png') });
+  await page.screenshot({ animations: 'disabled', path: path.join(root, 'artifacts/weather-settings.png') });
   console.log('weather E2E passed: privacy default, opt-in, cache, units, failure, disable, validation');
 } finally {
   releasePending?.();

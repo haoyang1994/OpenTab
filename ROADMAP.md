@@ -12,7 +12,7 @@ Baseline inspected: `master` at `16c9b9e`, version 1.1.0.
 
 ## This iteration: weather privacy and usefulness
 
-Implemented locally, pending real Chrome extension acceptance and release approval:
+Implemented in this branch. Full real-MV3 regression suite passed on the [GitHub Actions cloud runner](https://github.com/haoyang1994/OpenTab/actions/runs/39718057430); subsequent commits must stay green before merge. Store publication is a separate, unperformed step:
 
 - Replace unconditional device geolocation and wttr.in requests with an off-by-default weather setting and manually entered city.
 - Remove the now-unused geolocation permission. Do not widen host permissions or CSP.
@@ -25,7 +25,7 @@ Default weather-off does **not** mean the entire extension has zero network traf
 
 ## Next: trust and everyday usability
 
-1. Complete actual MV3 Chrome acceptance on a supported test machine, including fresh install and upgrade, keyboard/IME, narrow layouts and both themes. Run the full existing and new test suite before release.
+1. Keep the full MV3 regression suite green on every change, including fresh install, keyboard/IME and both themes. Expand upgrade and narrow-layout coverage beyond the current weather/settings checks before a store release.
 2. Audit bookmark import, folder/group editing, backup/restore, sync conflicts and undo end to end with representative data. Make destructive/recovery paths understandable.
 3. Polish the first-use path: immediate useful page, concise opt-in customization and clear import entry. Measure local startup behavior, not invasive analytics.
 4. Audit accessible labels, focus return/traps, contrast and reduced motion with real keyboard and browser checks.
