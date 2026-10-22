@@ -438,7 +438,7 @@ for (const conflict of ['same-entity-edit', 'newer-replacement']) {
   });
 }
 
-console.log('workspace persistence tests passed: real home path, parallel writers, normalized state, conflict/epoch protection, inverse undo, failure and vault wrapper');
+
 
 // Intent tokens outlive session rebase: UI drafts and undo cannot borrow a newer epoch.
 {
@@ -505,7 +505,7 @@ console.log('workspace persistence tests passed: real home path, parallel writer
   const toast = { textContent: '', classList: { add() {}, remove() {} }, appendChild(value) { button = value; } };
   const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  workspace: c, elements: { toast }, document: { createElement: () => ({}) }, toastTimer: null, pendingUndo: null, clearTimeout() {}, setTimeout() {}, action: () => { actions++; } });
   const start = source.indexOf('  function showToast(');
-  vm.runInContext(source.slice(start, source.indexOf('  function isFocusable(', start)) + "\nshowToast('deleted', { actionLabel: 'Undo', onAction: action });", context);
+  vm.runInContext(source.slice(start, source.indexOf('  function hideDropIndicator(', start)) + "\nshowToast('deleted', { actionLabel: 'Undo', onAction: action });", context);
   const oldButton = button;
   await h.api.replace({ ...base(), icons: [{ id: 'replacement', folderId: 'folder-home' }] });
   state.clockFormat = '12h'; await c.save(); oldButton.onclick();
@@ -570,7 +570,7 @@ function iconChanger(h, state) {
   ui.ctx.fetch = async () => ({ ok: true, blob: async () => ({ size: 100, type: 'image/svg+xml', text: () => new Promise((resolve) => { release = resolve; }) }) });
   ui.icons.openChanger('x'); const original = state.icons[0];
   const refetching = ui.get('change-icon-refetch').handlers.click();
-  while (!release) await Promise.resolve();
+  await until(() => release);
   await h.api.replace(clone(h.store)); state.clockFormat = '12h'; await ui.c.save();
   release('<svg>late remote response</svg>'); await refetching;
   assert.equal(original.resolvedIconUrl, undefined, 'refetch never mutates the captured stale object');
@@ -582,12 +582,13 @@ function homeIconEditor(h, state, editId = null) {
   let hidden = false, ids = 0;
   const elements = Object.fromEntries(['iconType', 'iconName', 'iconUrl', 'iconCustomUrl', 'sshGatewayUrl', 'sshGatewayToken', 'sshHost', 'sshPort', 'sshUsername', 'sshPassword', 'sshSocksHost', 'sshSocksPort', 'sshSocksUsername', 'sshSocksPassword', 'toolSubtype'].map((key) => [key, { value: '', focus() {} }]));
   elements.iconType.value = 'shortcut'; elements.iconName.value = 'Submitted'; elements.iconUrl.value = 'https://synthetic.example.test';
-  elements.saveBtn = { disabled: false }; elements.addIconModal = { querySelectorAll: () => Object.values(elements).filter((node) => node !== elements.addIconModal), classList: { add() { hidden = true; } } };
+  elements.cancelBtn = { id: 'cancel-btn', disabled: false };
+  elements.saveBtn = { disabled: false }; elements.addIconModal = { querySelectorAll: () => Object.values(elements).filter((node) => node !== elements.addIconModal), classList: { contains() { return hidden; }, add() { hidden = true; } } };
   const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  state, elements, window: {}, workspace: c, saveState: c.save,
-    editingIconId: editId, iconSaveGate: require('../icons.js').createSaveGate(), iconDraftIntent: c.captureIntent(editId ? { icons: [editId] } : {}), pendingIconUploadDataUrl: '',
+    editingIconId: editId, iconUploadGate: require('../icons.js').createUploadGate(), iconSaveGate: require('../icons.js').createSaveGate(), iconDraftIntent: c.captureIntent(editId ? { icons: [editId] } : {}), pendingIconUploadDataUrl: '',
     ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'folder-home',
     normalizeIconType: (value) => value || 'shortcut', normalizeUrl: (value) => value, normalizeOptionalUrl: (value) => value,
-    generateId: () => `submitted-${++ids}`, getFolderById: (id) => state.folders.find((item) => item.id === id), refreshIconViews() {}, showToast() {} });
+    generateId: () => `submitted-${++ids}`, getFolderById: (id) => state.folders.find((item) => item.id === id), refreshIconViews() {}, restoreFocus() {}, showToast() {} });
   const source = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');
   for (const name of ['persistOrRollback', 'addIcon', 'updateIcon', 'closeAddIconModal', 'handleSaveIcon']) {
     const start = source.search(new RegExp(`  (?:async )?function ${name}\\(`));
@@ -600,7 +601,7 @@ function homeIconEditor(h, state, editId = null) {
   const originalSet = h.chrome.storage.local.set; let release, entered = false;
   const gate = new Promise((resolve) => { release = resolve; });
   h.chrome.storage.local.set = async (patch) => { entered = true; await gate; return originalSet(patch); };
-  const submitted = editor.submit(); while (!entered) await Promise.resolve();
+  const submitted = editor.submit(); await until(() => entered);
   await editor.submit();
   assert.equal(editor.hidden(), false, 'actual add modal stays open before durable storage write');
   assert.equal(editor.elements.saveBtn.disabled, true);
@@ -612,7 +613,7 @@ function homeIconEditor(h, state, editId = null) {
 {
   const h = memory(), state = base(), editor = homeIconEditor(h, state, 'x'); let release, entered = false;
   const owner = h.api.transaction(async () => { entered = true; await new Promise((resolve) => { release = resolve; }); });
-  while (!entered) await Promise.resolve();
+  await until(() => entered);
   const submitted = editor.submit(); await Promise.resolve();
   assert.equal(editor.hidden(), false, 'edit modal stays open while another tab owns workspace lock');
   assert.equal(h.store.icons[0].name, 'X');
@@ -631,7 +632,7 @@ function homeIconEditor(h, state, editId = null) {
   const h = memory(), state = base(), editor = homeIconEditor(h, state); let release, entered = false;
   const originalSet = h.chrome.storage.local.set;
   h.chrome.storage.local.set = async (patch) => { entered = true; await new Promise((resolve) => { release = resolve; }); return originalSet(patch); };
-  const submitted = editor.submit(); while (!entered) await Promise.resolve();
+  const submitted = editor.submit(); await until(() => entered);
   editor.reopen(); editor.elements.iconName.value = 'New modal draft';
   release(); await submitted;
   assert.equal(editor.hidden(), false, 'late completion never closes a newer modal');
@@ -657,7 +658,7 @@ function homeIconEditor(h, state, editId = null) {
   const originalSet = h.chrome.storage.local.set;
   h.chrome.storage.local.set = async (patch) => { entered = true; await new Promise((resolve) => { release = resolve; }); return originalSet(patch); };
   ui.icons.openChanger('x'); ui.get('change-icon-letter').value = 'P';
-  const changing = ui.get('change-icon-placeholder').handlers.click(); while (!entered) await Promise.resolve();
+  const changing = ui.get('change-icon-placeholder').handlers.click(); await until(() => entered);
   assert.deepEqual(ui.messages, [], 'icon changer must not announce success before durable save');
   release(); await changing;
   assert.match(ui.messages.at(-1), /已使用/); assert.equal(h.store.icons[0].placeholderLetter, 'P');
@@ -672,11 +673,11 @@ function homeIconEditor(h, state, editId = null) {
   }
   let release, entered = false; const originalSet = h.chrome.storage.local.set;
   h.chrome.storage.local.set = async (patch) => { entered = true; await new Promise((resolve) => { release = resolve; }); return originalSet(patch); };
-  const deleting = vm.runInContext("deleteIcon('x')", editor.context); while (!entered) await Promise.resolve();
+  const deleting = vm.runInContext("deleteIcon('x')", editor.context); await until(() => entered);
   assert.equal(messages.length, 0, 'delete undo action is not offered before delete commits');
   release(); await deleting; assert.match(messages.at(-1).text, /已删除/);
   const action = messages.at(-1).opts.onAction; messages.length = 0; entered = false;
-  const undoing = action(); while (!entered) await Promise.resolve();
+  const undoing = action(); await until(() => entered);
   assert.equal(messages.length, 0, 'undo success is not announced before restore commits');
   release(); await undoing; assert.match(messages.at(-1).text, /已恢复/);
   assert.deepEqual(h.store.icons.map((item) => item.id), ['x', 'y']);
@@ -689,9 +690,20 @@ function homeIconEditor(h, state, editId = null) {
   const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  OpenTabWorkspace: h.api, before, snapshot: () => clone(state), restore: (snapshot) => Object.assign(state, clone(snapshot)), closeOverlay() {}, host: { ...c, saveState: c.save, refreshIconViews() {}, showToast: (text, opts) => messages.push({ text, opts }) } });
   const source = fs.readFileSync(new URL('../folders.js', import.meta.url), 'utf8'), start = source.indexOf('  async function persistUndo(');
   vm.runInContext(source.slice(start, source.indexOf('\n  }\n', start) + 5), context);
-  const saving = vm.runInContext("persistUndo(before, '已完成')", context); while (!entered) await Promise.resolve();
+  const saving = vm.runInContext("persistUndo(before, '已完成')", context); await until(() => entered);
   assert.equal(messages.length, 0, 'folder undo is not exposed before persistence'); release(); await saving;
   assert.equal(messages.length, 1); const action = messages[0].opts.onAction; messages.length = 0; entered = false;
-  const undoing = action(); while (!entered) await Promise.resolve(); assert.equal(messages.length, 0);
+  const undoing = action(); await until(() => entered); assert.equal(messages.length, 0);
   release(); await undoing; assert.match(messages.at(-1).text, /已恢复/); assert.equal(h.store.icons[0].name, 'X');
+}
+
+await assert.rejects(until(() => false), /synchronization point/, 'a broken fixture fails instead of spinning forever');
+console.log('workspace persistence tests passed: real home path, parallel writers, normalized state, conflict/epoch protection, inverse undo, failure and vault wrapper');
+
+async function until(predicate) {
+  for (let turn = 0; turn < 1000; turn++) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  assert.fail('Expected mocked async operation did not reach its synchronization point');
 }

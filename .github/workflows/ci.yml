@@ -45,6 +45,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: browser-verification
-          path: artifacts/*.png
+          path: |
+            artifacts/*.png
+            artifacts/accessibility-contrast.json
+            artifacts/accessibility-chooser.json
           if-no-files-found: ignore
           retention-days: 7

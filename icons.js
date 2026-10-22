@@ -689,6 +689,7 @@
       refetch: document.getElementById('change-icon-refetch'),
       status: document.getElementById('change-icon-status'),
       file: document.getElementById('change-icon-file'),
+      upload: document.getElementById('change-icon-upload'),
       letter: document.getElementById('change-icon-letter'),
       color: document.getElementById('change-icon-color'),
       placeholder: document.getElementById('change-icon-placeholder'),
@@ -826,6 +827,7 @@
         openChanger(iconId);
       });
     }
+    if (ui.upload && ui.file) ui.upload.addEventListener('click', () => ui.file.click());
     if (ui.close) ui.close.addEventListener('click', closeChanger);
     ui.modal.addEventListener('click', (event) => {
       if (event.target === ui.modal) closeChanger();
@@ -900,6 +902,55 @@
     }
   }
 
+  // Keep failed reads visible and prevent Save from committing an older image.
+  function createUploadGate() {
+    let latest = null;
+    return {
+      reset() { latest?.wake(); latest = null; },
+      read(draft, read, apply, fail, current) {
+        latest?.wake();
+        const entry = { draft, ok: false };
+        entry.changed = new Promise((resolve) => { entry.wake = resolve; });
+        latest = entry;
+        entry.done = (async () => {
+          try {
+            const data = await read();
+            if (latest !== entry || !current()) return;
+            apply(data);
+            entry.ok = true;
+          } catch (error) {
+            if (latest === entry && current()) fail(error);
+          }
+        })();
+        return entry.done;
+      },
+      select(draft, elements, read, apply, current, t) {
+        const [file] = elements.iconFile.files || [];
+        if (!file) {
+          this.reset();
+          apply('');
+          elements.iconUploadStatus.textContent = t('支持 PNG / JPG / SVG / WebP。');
+          return;
+        }
+        elements.iconUploadStatus.textContent = t('正在读取图片…');
+        return this.read(draft, () => read(file), (data) => {
+          apply(data);
+          elements.iconUploadStatus.textContent = t('已选择：{name}', { name: file.name });
+        }, () => {
+          elements.iconUploadStatus.textContent = t('读取失败，请重新选择。');
+        }, current);
+      },
+      async wait(draft) {
+        while (latest?.draft === draft) {
+          const entry = latest;
+          await Promise.race([entry.done, entry.changed]);
+          if (latest === entry) return entry.ok;
+        }
+        return true;
+      }
+    };
+  }
+
   function createSaveGate() {
     const pending = new WeakSet();
     let releaseCurrent = () => {};
@@ -910,7 +961,7 @@
         if (pending.has(draft)) return;
         pending.add(draft);
         const controls = [...form.querySelectorAll('input, select, textarea, button')].map((node) => [node, node.disabled]);
-        controls.forEach(([node]) => { node.disabled = true; });
+        controls.forEach(([node]) => { if (node.id !== 'cancel-btn') node.disabled = true; });
         let released = false;
         const release = () => {
           if (released) return;
@@ -960,6 +1011,7 @@
     applyPlaceholder,
     openChanger,
     createSaveGate,
+    createUploadGate,
     closeChanger,
     placeMenu,
     handleEscape,

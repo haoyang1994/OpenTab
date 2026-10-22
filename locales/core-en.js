@@ -153,5 +153,6 @@ OpenTabI18n.register({
   "不要等状态，先动起来。": "Do not wait for motivation. Begin.",
   "今天的专注，会变成明天的自由。": "Today’s focus creates tomorrow’s freedom.",
   "把复杂问题拆成三个小动作。": "Break a complex problem into three small actions.",
+  "正在读取图片…": "Reading image…",
   "节奏稳，结果自然会好。": "A steady pace brings results."
 });

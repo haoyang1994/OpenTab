@@ -68,6 +68,7 @@
   --text-primary: #f7fbff;
   --text-secondary: rgba(232, 242, 255, 0.68);
   --text-tertiary: rgba(214, 232, 250, 0.44);
+  --text-hint: #b6c6d8;
   --text-on-accent: #ffffff;
 
   /* Depth */
@@ -122,6 +123,7 @@ body.theme-light {
   --text-primary: #101b2b;
   --text-secondary: rgba(25, 43, 68, 0.66);
   --text-tertiary: rgba(25, 43, 68, 0.44);
+  --text-hint: #536176;
   --text-on-accent: #ffffff;
 
   --shadow-color: rgba(30, 55, 90, 0.16);
@@ -612,7 +614,7 @@ body.theme-light .engine-btn.active {
 }
 
 #search-widget input::placeholder {
-  color: var(--text-tertiary);
+  color: var(--text-hint);
 }
 
 #search-widget input:focus {
@@ -1344,6 +1346,7 @@ body.theme-light #icon-drop-indicator {
 }
 
 .settings-panel.hidden {
+  visibility: hidden;
   transform: translateX(calc(100% + 24px));
   opacity: 0;
   pointer-events: none;
@@ -1628,7 +1631,7 @@ body.theme-light .tab-btn.active {
   padding: 4px 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: var(--text-tertiary);
+  color: var(--text-hint);
 }
 
 .preset-grid {
@@ -2043,6 +2046,7 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 }
 
 #todo-widget.hidden {
+  visibility: hidden;
   transform: translateX(calc(100% + 32px));
   opacity: 0;
   pointer-events: none;
@@ -2226,6 +2230,7 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 }
 
 .timezone-selector.hidden {
+  visibility: hidden;
   opacity: 0;
   transform: translateY(-6px) scale(0.97);
   pointer-events: none;
@@ -2236,6 +2241,11 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 }
 
 .timezone-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2245,7 +2255,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   transition: background 0.15s var(--transition);
 }
 
-.timezone-item:hover {
+.timezone-item:hover,
+.timezone-item:focus-visible {
   background: var(--control-hover);
 }
 
@@ -2261,7 +2272,7 @@ body.theme-light .setting-row input[type='checkbox']:checked {
 .timezone-item-offset {
   margin-left: 10px;
   font-size: 11.5px;
-  color: var(--text-tertiary);
+  color: var(--text-hint);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2460,6 +2471,7 @@ body.theme-light .calendar-popover .flatpickr-day.endRange {
 }
 
 .modal.hidden {
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
 }
@@ -2555,14 +2567,14 @@ body.theme-light .calendar-popover .flatpickr-day.endRange {
 }
 
 .form-group input::placeholder {
-  color: var(--text-tertiary);
+  color: var(--text-hint);
 }
 
 .form-hint {
   margin-top: 7px;
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--text-tertiary);
+  color: var(--text-hint);
 }
 
 .modal-buttons {

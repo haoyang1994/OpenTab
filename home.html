@@ -23,7 +23,7 @@
 
     <div id="content">
       <div id="clock-widget">
-        <button id="timezone-btn" class="widget-btn" title="切换时区" data-i18n-title="切换时区">
+        <button id="timezone-btn" aria-controls="timezone-selector" aria-expanded="false" class="widget-btn" title="切换时区" data-i18n-title="切换时区">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"></circle>
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
@@ -93,7 +93,7 @@
             </button>
             <span id="search-custom-engines" class="search-custom-engines"></span>
           </div>
-          <input id="search-input" type="text" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
+          <input id="search-input" type="text" title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" data-i18n-title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" aria-keyshortcuts="Alt+ArrowDown Alt+ArrowUp" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
         </div>
         <p id="search-hint" class="search-hint hidden" role="status" aria-live="polite"></p>
         <div id="search-history" class="search-history hidden" role="listbox"></div>
@@ -179,7 +179,7 @@
           <div class="form-group">
             <label for="icon-file" data-i18n="本地图标上传（可选）">本地图标上传（可选）</label>
             <input type="file" id="icon-file" accept="image/*">
-            <p class="form-hint" id="icon-upload-status" data-i18n="支持 PNG / JPG / SVG / WebP。">支持 PNG / JPG / SVG / WebP。</p>
+            <p class="form-hint" id="icon-upload-status" role="status" aria-live="polite" data-i18n="支持 PNG / JPG / SVG / WebP。">支持 PNG / JPG / SVG / WebP。</p>
           </div>
         </div>
 
@@ -270,10 +270,10 @@
         <p id="change-icon-status" class="form-hint" aria-live="polite"></p>
         <div class="modal-buttons change-icon-actions">
           <button id="change-icon-refetch" class="btn-secondary" type="button" data-i18n="重新抓取">重新抓取</button>
-          <label class="btn-secondary change-icon-upload">
+          <button id="change-icon-upload" class="btn-secondary change-icon-upload" type="button">
             <span data-i18n="上传本地图片">上传本地图片</span>
-            <input id="change-icon-file" type="file" accept="image/*" hidden>
-          </label>
+          </button>
+          <input id="change-icon-file" type="file" accept="image/*" hidden>
           <button id="change-icon-close" class="btn-primary" type="button" data-i18n="关闭">关闭</button>
         </div>
       </div>
@@ -681,6 +681,7 @@
   <script src="bing-cache.js"></script>
   <script src="icons.js"></script>
   <script src="weather.js"></script>
+  <script src="lib/core-accessibility.js"></script>
   <script src="home.js"></script>
 </body>
 </html>
