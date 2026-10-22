@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
@@ -52,7 +53,7 @@ export async function verifySceneRefreshFixture() {
     const loader = g.OpenTabSceneHome.create({ state, workspace: bridge,
       HOME_FOLDER_ID: 'folder-home', LEGACY_PRESET_FOLDER_IDS: new Set(), activeHomeId: () => runtime?.getView()?.homeGroupId || 'folder-home',
       t: value => value, ensureFolders: g.OpenTabFolders.ensureGroups, normalizeIconType: value => value || 'shortcut',
-      migrateBackground: structuredClone, backgroundsEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+      migrateBackground: structuredClone, backgroundsEqual: (a, b) => isDeepStrictEqual(structuredClone(a), structuredClone(b)),
       getFolderById: id => state.folders.find(item => item.id === id),
       updateClock() {}, renderTimezoneList() {}, initCalendar() {}, renderWorkspaceSettings() {}, renderTodos() {}, writeBootMirror() {},
       refreshIconViews() { counters.renders++; }, saveState: () => runtime.saveState(),
@@ -88,7 +89,7 @@ export async function verifySceneRefreshFixture() {
     await a.host.onSwitch(DEFAULT_SCENE, context(a));
     const resolved = counts(); await drain(); const settled = counts(); await drain();
     assert.deepEqual(counts(), settled, 'legal notifications and normalization rerenders settle, not repeat indefinitely');
-    assert.deepEqual(writes.map(patch => Object.keys(patch)), [['scenes', 'sceneProfiles', 'folders'], ['scenes'], ['lastOpenedSceneId', 'currentFolderId']]);
+    assert.deepEqual(writes.map(patch => Object.keys(patch).sort()), [['folders', 'sceneProfiles', 'scenes'], ['scenes'], ['currentFolderId', 'lastOpenedSceneId']]);
     assert.deepEqual(store.icons, initial.icons, 'notification renders never overwrite the complete site graph');
     assert.deepEqual(store.todos, initial.todos); assert.deepEqual(store.folders.slice(0, initial.folders.length), initial.folders);
     assert.equal(a.runtime.getView().sceneId, DEFAULT_SCENE); assert.equal(b.runtime.getView().sceneId, DEFAULT_SCENE);

@@ -8,6 +8,17 @@
   // enable action, not by loading the page or opening the scene introduction.
   const clone = value => value === undefined ? undefined : structuredClone(value);
   const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // Storage dictionaries may return keys in another order. Acknowledgements
+  // still require every key/value and ordered array entry, without coercion.
+  function sameStoredValue(a, b) {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const array = Array.isArray(a);
+    if (array !== Array.isArray(b) || (array && a.length !== b.length)) return false;
+    if (!array && [a, b].some(value => Object.prototype.toString.call(value) !== '[object Object]')) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameStoredValue(a[key], b[key]));
+  }
   const fail = code => Object.assign(new Error(code), { code });
   const t = source => root.OpenTabI18n?.t(source) ?? source;
   const LAYOUT_KEYS = ['layoutIconSize', 'layoutColumns', 'layoutShowNames', 'layoutMaxWidth'];
@@ -472,7 +483,8 @@
             const latest = await coordinator.read(keys);
             if (disposed) return;
             if (revision !== committedRevision || observed !== notificationRevision) continue;
-            if (committedViewIsCurrent() && keys.every(key => equal(latest[key], committedSnapshot[key]))) return;
+            if (committedViewIsCurrent() && keys.every(key => Object.hasOwn(latest, key) === Object.hasOwn(committedSnapshot, key)
+              && sameStoredValue(latest[key], committedSnapshot[key]))) return;
           }
           // Differences and unknown data still use the original protected
           // drain/read/adopt boundary, including real scene transitions.

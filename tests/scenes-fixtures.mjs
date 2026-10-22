@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 // Synthetic-only data shared by the real MV3 suite and its Node preflight.
 export const SCHEMA_KEY = 'opentab.sceneSchemaVersion';
 export const BACKUP_KEY = 'opentab.sceneMigrationBackup';
@@ -43,4 +45,12 @@ export function expectedLegacyFirstLoad() {
     sshSocksUsername: '', sshSocksPassword: ''
   });
   return expected;
+}
+
+// Select the requested profile fields, but compare each complete stored value.
+// Object property insertion order is irrelevant; missing/extra nested fields,
+// primitive types and array order must still match exactly.
+export function matchesProfileExpectation(profile, expected) {
+  return profile != null && Object.entries(expected).every(([key, value]) =>
+    Object.hasOwn(profile, key) && isDeepStrictEqual(profile[key], value));
 }

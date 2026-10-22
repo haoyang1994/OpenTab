@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
+import { waitForAsync } from './wait-for-async.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { verifySceneRefreshFixture } from './scenes-refresh-fixture.mjs';
 import { verifySceneControlFixture } from './scenes-controls-fixture.mjs';
 import { createSceneDiagnostics, diagnosticProfile, diagnosticStorage, boundedDiagnostic } from './scenes-diagnostics.mjs';
-import { legacyFixture, expectedLegacyFirstLoad, DEFAULT_SCENE, PIXEL, SCHEMA_KEY } from './scenes-fixtures.mjs';
+import { legacyFixture, expectedLegacyFirstLoad, matchesProfileExpectation, DEFAULT_SCENE, PIXEL, SCHEMA_KEY, SECOND_GRADIENT } from './scenes-fixtures.mjs';
 const require = createRequire(import.meta.url);
 const Schema = require('../scene-schema.js');
 const Imports = require('../import.js');
@@ -42,7 +44,7 @@ const context = { structuredClone, URL, state, workspace, OpenTabWorkspace: Work
   OpenTabLayout: { loadFromStorage() {} }, OpenTabBingCache: { afterStateLoaded() {} },
   HOME_FOLDER_ID: 'folder-home', LEGACY_PRESET_FOLDER_IDS: new Set(), activeHomeId: () => 'folder-home',
   t: value => value === '主页' ? 'Home' : value, normalizeIconType: value => value || 'shortcut',
-  migrateBackground: structuredClone, backgroundsEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  migrateBackground: structuredClone, backgroundsEqual: (a, b) => isDeepStrictEqual(structuredClone(a), structuredClone(b)),
   getFolderById: id => state.folders.find(item => item.id === id),
   updateClock() {}, renderTimezoneList() {}, initCalendar() {}, renderWorkspaceSettings() {},
   refreshIconViews() {}, renderTodos() {}, writeBootMirror() {}, saveState: () => workspace.save()
@@ -115,3 +117,56 @@ const brokenLogger = createSceneDiagnostics({ phase: () => 'fixture phase', log(
 await assert.rejects(brokenLogger.wait('preserve original', null, () => { throw originalFailure; }, () => null), error => error === originalFailure);
 assert.equal(brokenLoggerCalls, 1);
 console.log('Scenes diagnostics: named expected/actual state, secret redaction, bounded reads, one viewport screenshot and original error/cause preservation passed.');
+
+// Use the real preset producer expression. Reordering its identical properties
+// reproduces the former JSON-stringify failure without changing any value.
+const presetSource = fs.readFileSync(new URL('../settings-nav.js', import.meta.url), 'utf8').split('const onPreset = (event) => {')[1];
+const presetExpression = presetSource.match(/host\.state\.background = (\{[\s\S]*?\});/)[1];
+const producedBackground = structuredClone(vm.runInNewContext(`(${presetExpression})`, { bgType: 'gradient', preset: { dataset: { value: SECOND_GRADIENT } } }));
+const expectedBackground = { type: 'gradient', value: SECOND_GRADIENT, source: 'gradient' };
+assert.deepEqual(producedBackground, expectedBackground);
+// These loader adapters cross VM realms. Normalize prototypes, not values or
+// fields, before strict comparison so an unchanged background stays clean.
+const otherRealmBackground = vm.runInNewContext(`(${JSON.stringify(expectedBackground)})`);
+assert.equal(context.backgroundsEqual(otherRealmBackground, expectedBackground), true);
+otherRealmBackground.extra = undefined;
+assert.equal(context.backgroundsEqual(otherRealmBackground, expectedBackground), false, 'realm normalization does not discard extra fields');
+const permutations = keys => keys.length ? keys.flatMap((key, index) => permutations(keys.filter((_, at) => at !== index)).map(rest => [key, ...rest])) : [[]];
+let formerFalseNegatives = 0;
+for (const keys of permutations(Object.keys(producedBackground))) {
+  const reordered = Object.fromEntries(keys.map(key => [key, producedBackground[key]]));
+  assert.deepEqual(reordered, expectedBackground);
+  assert.equal(matchesProfileExpectation({ background: reordered }, { background: expectedBackground }), true);
+  if (JSON.stringify(reordered) !== JSON.stringify(expectedBackground)) formerFalseNegatives++;
+}
+assert.equal(formerFalseNegatives, 5, 'the old predicate rejected five equivalent insertion orders');
+for (const background of [
+  { ...expectedBackground, type: 'image' }, { ...expectedBackground, value: 'different gradient' }, { ...expectedBackground, source: 'preset' },
+  { type: 'gradient', source: 'gradient' }, { ...expectedBackground, extra: 'unexpected' }, { ...expectedBackground, extra: undefined },
+  null, Object.values(expectedBackground)
+]) assert.equal(matchesProfileExpectation({ background }, { background: expectedBackground }), false, 'full nested background equality rejects any extra/missing/type/value mismatch');
+assert.equal(matchesProfileExpectation({ layoutIconSize: '80' }, { layoutIconSize: 80 }), false);
+assert.equal(matchesProfileExpectation({}, { background: undefined }), false, 'missing and present-undefined remain distinct');
+assert.equal(matchesProfileExpectation({ background: undefined }, { background: undefined }), true);
+const nested = { background: { ...expectedBackground, metadata: { colors: ['red', 'blue'], position: { x: 0, y: 1 } } } };
+assert.equal(matchesProfileExpectation({ background: { metadata: { position: { y: 1, x: 0 }, colors: ['red', 'blue'] }, source: 'gradient', value: SECOND_GRADIENT, type: 'gradient' } }, nested), true);
+for (const metadata of [{ colors: ['blue', 'red'], position: { x: 0, y: 1 } }, { colors: ['red', 'blue'], position: { x: '0', y: 1 } }, { colors: ['red', 'blue'], position: { x: 0, y: 1, extra: true } }]) {
+  assert.equal(matchesProfileExpectation({ background: { ...expectedBackground, metadata } }, nested), false, 'recursive equality preserves nested values, fields, types and array order');
+}
+assert.equal(matchesProfileExpectation(null, { background: expectedBackground }), false);
+console.log('Scenes profile equality: actual preset producer, all six insertion orders and strict missing/extra/type/value/nested/array-order negatives passed.');
+
+// Invoke the actual suite helper with its real polling utility: an extra field
+// must keep waiting, then a complete reordered value must satisfy the condition.
+let profileReads = 0;
+const nativeAssertProfileSource = nativeSuite.slice(nativeSuite.indexOf('async function assertProfile('), nativeSuite.indexOf('async function assertGlobal('));
+const nativeAssertProfile = vm.runInNewContext(`(${nativeAssertProfileSource})`, {
+  diagnostics: { wait: (_name, _expected, run) => run() }, diagnosticProfile, matchesProfileExpectation, waitForAsync,
+  stored: async key => {
+    assert.equal(key, 'sceneProfiles'); profileReads++;
+    const background = profileReads === 1 ? { ...expectedBackground, extra: true } : Object.fromEntries(Object.keys(expectedBackground).reverse().map(key => [key, expectedBackground[key]]));
+    return { sceneProfiles: [{ id: DEFAULT_SCENE, background }] };
+  }
+});
+await nativeAssertProfile(DEFAULT_SCENE, { background: expectedBackground });
+assert.equal(profileReads, 2, 'actual helper rejects extra fields before accepting reordered complete values under the same poll loop');

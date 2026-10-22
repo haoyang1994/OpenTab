@@ -205,6 +205,62 @@ const context = tab => ({ view: tab.runtime.getView() });
   await switching; assert.equal(a.runtime.getView().sceneId, 'study');
 }
 
+// Chrome storage dictionaries need not retain the coordinator result's key
+// insertion order. Reordering nested objects alone is still an acknowledgement,
+// not a refresh that locks the next input or writes data back to storage.
+{
+  const reorder = value => Array.isArray(value) ? value.map(reorder) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reorder(item)])) : value;
+  const initial = seed();
+  initial.sceneProfiles[0].background = { type: 'gradient', value: 'linear-gradient(#123,#456)', source: 'gradient',
+    details: { first: 1, second: [{ left: 'x', right: null }, false] } };
+  const busy = [], h = harness(initial), a = h.tab({ onBusy: value => busy.push(value) });
+  await a.runtime.load(); busy.length = 0;
+  const view = a.runtime.getView();
+  h.onNextWrite(patch => {
+    h.store.sceneProfiles = reorder(patch.sceneProfiles);
+    h.emit({ sceneProfiles: { newValue: copy(h.store.sceneProfiles) } });
+  });
+  a.g.OpenTabLayout.patch({ layoutIconSize: 80 }); await a.g.OpenTabLayout.whenIdle();
+  for (let n = 0; n < 5; n++) await flush();
+  assert.notEqual(JSON.stringify(h.store.sceneProfiles), JSON.stringify(a.state.sceneProfiles), 'fixture changes dictionary order');
+  assert.deepEqual(h.store.sceneProfiles, a.state.sceneProfiles, 'all stored keys and values are unchanged');
+  assert.deepEqual(busy, [], 'reordered durable acknowledgement must not activate the UI lock');
+  assert.equal(a.loads.length, 1); assert.equal(h.writes.length, 1);
+  assert.deepEqual(a.runtime.getView(), view); assert.deepEqual(a.errors, []);
+}
+
+// Equivalence ignores dictionary order only: values, own keys, primitive types,
+// and array type/length/order must still enter the original protected refresh.
+for (const [name, change] of [
+  ['nested value', profiles => { profiles[0].background.details.first = 2; }],
+  ['added key', profiles => { profiles[0].background.details.extra = null; }],
+  ['removed key', profiles => { delete profiles[0].background.details.first; }],
+  ['primitive type', profiles => { profiles[0].background.details.first = '1'; }],
+  ['array order', profiles => { profiles.reverse(); }],
+  ['array length', profiles => { profiles[0].background.details.second.push(false); }],
+  ['array type', profiles => { profiles[0].background.details.second = { 0: 'x', 1: 'y' }; }],
+  ['undefined own key', profiles => { profiles[0].background.details.extra = undefined; }]
+]) {
+  const initial = seed(); initial.sceneProfiles[0].background.details = { first: 1, second: ['x', 'y'] };
+  const busy = [], h = harness(initial), a = h.tab({ onBusy: value => busy.push(value) });
+  await a.runtime.load(); busy.length = 0;
+  change(h.store.sceneProfiles); const stored = copy(h.store);
+  h.emit({ sceneProfiles: { newValue: copy(h.store.sceneProfiles) } });
+  await until(() => busy.includes(true)); await until(() => busy.at(-1) === false);
+  assert.ok(busy.includes(true), name + ' is not an acknowledgement');
+  assert.deepEqual(h.store, stored, name + ' verification never rewrites storage');
+  assert.equal(h.writes.length, 0);
+}
+{
+  const busy = [], h = harness(), a = h.tab({ onBusy: value => busy.push(value) });
+  await a.runtime.load(); busy.length = 0;
+  assert.equal(Object.hasOwn(h.store, 'openInNewTab'), false);
+  h.store.openInNewTab = undefined; h.emit({ openInNewTab: { newValue: undefined } });
+  await until(() => busy.includes(true)); await until(() => busy.at(-1) === false);
+  assert.equal(h.writes.length, 0, 'top-level key presence also remains significant without a storage rewrite');
+}
+
 // A matching optimistic value from another writer does not bless a failed local
 // baseline. Preserve the consumed failure boundary, then recover from real data.
 {

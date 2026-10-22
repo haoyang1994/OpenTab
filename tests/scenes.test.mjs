@@ -8,7 +8,7 @@ import { waitForAsync } from './wait-for-async.mjs';
 import { formatConsoleError } from './console-allow.mjs';
 import { verifySceneControlFixture } from './scenes-controls-fixture.mjs';
 import { createSceneDiagnostics, diagnosticProfile, diagnosticStorage, sceneDiagnosticGlobals } from './scenes-diagnostics.mjs';
-import { legacyFixture, expectedLegacyFirstLoad, SCHEMA_KEY, BACKUP_KEY, EPOCH_KEY, DEFAULT_SCENE, PIXEL, SECOND_GRADIENT, graphKeys } from './scenes-fixtures.mjs';
+import { legacyFixture, expectedLegacyFirstLoad, matchesProfileExpectation, SCHEMA_KEY, BACKUP_KEY, EPOCH_KEY, DEFAULT_SCENE, PIXEL, SECOND_GRADIENT, graphKeys } from './scenes-fixtures.mjs';
 
 // Real unpacked MV3 pages, native inputs and the actual storage coordinator.
 // The only browser API fixture is popup activeTab discovery, whose automation
@@ -187,10 +187,12 @@ async function retryUnchangedRecovery(p) {
   await p.waitForFunction(() => window.__scenesRetryReported);
 }
 async function assertProfile(sceneId, expected) {
-  await diagnostics.wait(`scene profile ${sceneId}: ${Object.keys(expected).join(', ')}`, diagnosticProfile({ id: sceneId, ...expected }), () => waitForAsync(worker, async ({ sceneId, expected }) => {
-    const profile = (await chrome.storage.local.get('sceneProfiles')).sceneProfiles.find(item => item.id === sceneId);
-    return Object.entries(expected).every(([key, value]) => JSON.stringify(profile?.[key]) === JSON.stringify(value));
-  }, { sceneId, expected }), async () => diagnosticProfile((await stored('sceneProfiles')).sceneProfiles?.find(item => item.id === sceneId)));
+  // Keep the real worker read and existing polling budget. Compare the returned
+  // structured data in Node so native deep equality, not JSON key order, decides.
+  const profileCondition = { evaluate: async () => matchesProfileExpectation(
+    (await stored('sceneProfiles')).sceneProfiles?.find(item => item.id === sceneId), expected) };
+  await diagnostics.wait(`scene profile ${sceneId}: ${Object.keys(expected).join(', ')}`, diagnosticProfile({ id: sceneId, ...expected }),
+    () => waitForAsync(profileCondition), async () => diagnosticProfile((await stored('sceneProfiles')).sceneProfiles?.find(item => item.id === sceneId)));
 }
 async function assertGlobal(key, expected) {
   assert.ok(sceneDiagnosticGlobals.includes(key), 'global diagnostics only read allowlisted non-sensitive settings');
