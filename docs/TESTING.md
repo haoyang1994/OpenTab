@@ -28,7 +28,7 @@
 
 - AC1 内置 Google/Bing/百度/DuckDuckGo/GitHub；自定义 `%s` 引擎增删改与非法 URL 拒绝；默认引擎刷新后保持
 - AC2 `example.com` / `https://a.b/c` / `localhost:3000` 直达；`hello world` / `1.5` / `a.b c` 当关键词
-- AC3 Tab/Shift+Tab 切换引擎并高亮；`/` 与可打印字符聚焦搜索框；设置面板和其他输入框不受影响；聚焦「+」后空格打开添加弹窗（不劫持 button / `a[href]` / `[role=button]` / `summary` / `[tabindex]`）；中文输入法 `Process` / keyCode 229 / `compositionstart` 聚焦搜索框且不 `preventDefault`
+- AC3 Tab/Shift+Tab 离开搜索框且不改引擎；Alt+↓/↑ 切换引擎并高亮；`/` 与可打印字符聚焦搜索框；设置面板和其他输入框不受影响；聚焦「+」后空格打开添加弹窗（不劫持 button / `a[href]` / `[role=button]` / `summary` / `[tabindex]`）；中文输入法 `Process` / keyCode 229 / `compositionstart` 聚焦搜索框且不 `preventDefault`
 - AC4 历史最多 20、去重、可关、可清，只写 `chrome.storage.local`
 - AC5 快捷方式名称完全匹配（忽略大小写）回车打开并显示提示
 - AC6 新标签页设置、Ctrl+Enter、中键

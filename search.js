@@ -728,12 +728,16 @@
   }
 
   function onSearchKeydown(event) {
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      cycleEngine(event.shiftKey ? -1 : 1);
-      return;
-    }
+    if (event.defaultPrevented || event.isComposing || isImeKeydown(event)) return;
+    // Tab and Shift+Tab retain native focus navigation. Only Alt+Up/Down
+    // in this input switches engines; modified arrows remain browser/editor keys.
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.altKey) {
+        event.preventDefault();
+        cycleEngine(event.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
       const items = filteredHistory();
       if (searchState.searchHistoryEnabled && items.length) {
         event.preventDefault();

@@ -68,7 +68,7 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 
 - Search engines: Google, Bing, Baidu, DuckDuckGo, GitHub, plus custom `%s` engines
 - Type a URL or domain to open it; Enter on an exact shortcut name opens that shortcut
-- Tab / Shift+Tab cycles engines; `/` or typing focuses search when nothing else is focused
+- Alt+ArrowDown / Alt+ArrowUp cycles engines while the search input is focused; Tab / Shift+Tab moves focus normally. `/` or typing focuses search when nothing else is focused
 - Local search history (up to 20 items, can be disabled or cleared)
 - Option to open search results in a new tab (also Ctrl/Cmd+Enter and middle-click)
 - Optional weather: off by default. Enable it and save a city in Settings → Weather; choose °C / °F or refresh manually. No device location is read. Fresh weather is cached for 30 minutes, with up to 24-hour-old data retained during an outage. Weather preferences and cache stay local, outside sync and JSON backups.

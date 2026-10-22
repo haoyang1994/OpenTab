@@ -153,6 +153,7 @@ try {
     await activate(button); await page.waitForSelector(`${panel}:not(.hidden)`);
     await page.keyboard.press('Escape'); await closed(panel, button);
   }
+  console.log('Accessibility: closed surfaces and native settings/to-do/timezone entry passed');
   await openAdd(); await activate('#cancel-btn', 'Space'); await closed('#add-icon-modal', '#add-shortcut-tile');
   await openAdd(); await page.keyboard.press('Escape'); await closed('#add-icon-modal', '#add-shortcut-tile');
   await activate('#timezone-btn', 'Space');
@@ -166,6 +167,7 @@ try {
   assert.equal(await focused(zoneSelector), true, 'opening focuses selected timezone');
   await page.keyboard.press('Escape'); await closed('#timezone-selector', '#timezone-btn');
 
+  console.log('Accessibility: Add/Cancel focus and timezone persistence passed');
   await installCompressionGate();
   await openAdd(); await fillDraft('Pending Add');
   const addJob = await queueFile(upload('add.png')); await pendingSave(addJob, 0); await release(addJob);
@@ -228,6 +230,7 @@ try {
   await page.keyboard.press('Escape'); await closed('#change-icon-modal', tile);
   await sweepClosed();
 
+  console.log('Accessibility: pending image phases and native file chooser passed');
   const contrasts = [];
   for (const theme of ['light', 'dark']) {
     await page.evaluate(async value => { await chrome.storage.local.set({ themeMode: value }); }, theme);
@@ -256,4 +259,7 @@ try {
   fs.writeFileSync(path.join(artifacts, 'accessibility-contrast.json'), JSON.stringify(contrasts, null, 2));
   assert.deepEqual(errors, [], 'core release workflows have no uncaught page errors');
   console.log('Accessibility: real keyboard, hidden surfaces, focus restoration, timezone persistence, native upload, pending image saves and computed contrast passed');
+} catch (error) {
+  try { await page.screenshot({ path: path.join(artifacts, 'accessibility-failure.png'), animations: 'disabled' }); } catch {}
+  throw error;
 } finally { await context.close(); }

@@ -219,19 +219,26 @@ async function runSearchE2E() {
     log = await navLog(page);
     assert.equal(log.at(-1)?.url, 'https://example.com', 'AC2 example.com should open as a URL');
 
-    // AC3 Tab engine cycle + type-to-focus
+    // AC3 native Tab navigation, Alt+arrow engine cycle + type-to-focus
     await page.click('.engine-btn[data-engine="google"]');
     await page.waitForFunction(() => window.OpenTabSearch.getState().searchEngine === 'google');
+    for (const key of ['Tab', 'Shift+Tab']) {
+      await page.locator('#search-input').focus();
+      await page.keyboard.press(key);
+      assert.notEqual(await page.evaluate(() => document.activeElement?.id), 'search-input', `AC3 ${key} must leave search`);
+      assert.equal(await page.evaluate(() => window.OpenTabSearch.getState().searchEngine), 'google', `AC3 ${key} must not change engines`);
+    }
     await page.locator('#search-input').focus();
-    await page.keyboard.press('Tab');
+    await page.keyboard.press('Alt+ArrowDown');
     await page.waitForFunction(() => window.OpenTabSearch.getState().searchEngine === 'bing');
     assert.equal(
       await page.locator('.engine-btn[data-engine="bing"]').evaluate((el) => el.classList.contains('active')),
       true,
-      'AC3 Tab should highlight the next engine'
+      'AC3 Alt+ArrowDown should highlight the next engine'
     );
-    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Alt+ArrowUp');
     await page.waitForFunction(() => window.OpenTabSearch.getState().searchEngine === 'google');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'search-input', 'AC3 engine cycling keeps focus in search');
 
     await page.click('#settings-btn');
     await page.waitForSelector('#settings-panel:not(.hidden)');

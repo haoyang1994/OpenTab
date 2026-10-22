@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Release native Tab/Shift+Tab navigation from the search input instead of trapping focus. Engine cycling moves to Alt+Down/Up, with localized hints and IME/modifier guards.
+
 - Wait for the selected local image before saving a shortcut; keep failed uploads editable without overwriting the saved image, and reject cancelled or duplicate submissions.
 - Exclude closed panels from keyboard navigation, restore Add/Edit focus, make timezone and image-upload controls keyboard-operable, and improve hint/placeholder contrast.
 

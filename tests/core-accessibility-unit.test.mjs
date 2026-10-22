@@ -73,4 +73,81 @@ for (const selector of ['.settings-panel.hidden', '#todo-widget.hidden', '.timez
   assert.equal(context.iconDraftIntent, null);
 }
 
+// Exercise the production handler without exporting a test-only API.
+{
+  const search = fs.readFileSync(new URL('search.js', root), 'utf8');
+  const handlerStart = search.indexOf('  function onSearchKeydown(');
+  const imeStart = search.indexOf('  function isImeKeydown(');
+  assert.ok(handlerStart >= 0 && imeStart >= 0);
+  assert.match(search, /input\.addEventListener\('keydown', onSearchKeydown\)/);
+  const effects = [];
+  const context = vm.createContext({
+    searchState: { searchHistoryEnabled: true }, historyHighlight: -1,
+    filteredHistory: () => ['first', 'second', 'third'],
+    renderHistory: () => effects.push('history'),
+    cycleEngine: (step) => effects.push(['engine', step]),
+    submit: (options) => effects.push(['submit', options.forceNewTab]),
+    applyHistoryItem: (item, forceNewTab) => effects.push(['item', item, forceNewTab])
+  });
+  vm.runInContext(
+    search.slice(imeStart, search.indexOf('\n  function ', imeStart + 1)) +
+    search.slice(handlerStart, search.indexOf('  function onSearchAuxClick(', handlerStart)), context);
+  function press(key, overrides = {}) {
+    effects.length = 0;
+    let prevented = false;
+    const event = { key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false,
+      preventDefault() { prevented = true; }, ...overrides };
+    context.onSearchKeydown(event);
+    return prevented;
+  }
+  for (const shiftKey of [false, true]) {
+    assert.equal(press('Tab', { shiftKey }), false, 'both Tab directions allow native focus navigation');
+    assert.deepEqual(effects, [], 'Tab never cycles engines or history');
+  }
+  for (const [key, step] of [['ArrowDown', 1], ['ArrowUp', -1]]) {
+    assert.equal(press(key, { altKey: true }), true);
+    assert.deepEqual(effects, [['engine', step]], `${key} with Alt cycles only engines`);
+    for (const modifier of ['ctrlKey', 'metaKey', 'shiftKey']) {
+      for (const altKey of [false, true]) {
+        assert.equal(press(key, { altKey, [modifier]: true }), false, `${modifier} is not intercepted`);
+        assert.deepEqual(effects, []);
+      }
+    }
+    for (const ime of [{ isComposing: true }, { keyCode: 229 }, { which: 229 }]) {
+      for (const altKey of [false, true]) {
+        assert.equal(press(key, { altKey, ...ime }), false, 'IME keeps native arrows');
+        assert.deepEqual(effects, []);
+      }
+      assert.equal(press('Enter', ime), false, 'IME confirmation must not submit');
+      assert.deepEqual(effects, []);
+    }
+    assert.equal(press(key, { altKey: true, defaultPrevented: true }), false);
+    assert.deepEqual(effects, []);
+  }
+  assert.equal(press('Process', { altKey: true }), false);
+  assert.deepEqual(effects, []);
+  assert.equal(press('ArrowDown'), true);
+  assert.equal(context.historyHighlight, 0, 'ordinary Down selects first history item');
+  assert.deepEqual(effects, ['history']);
+  assert.equal(press('ArrowUp'), true);
+  assert.equal(context.historyHighlight, 2, 'ordinary Up wraps history backwards');
+  assert.deepEqual(effects, ['history']);
+  context.searchState.searchHistoryEnabled = false;
+  assert.equal(press('ArrowDown'), false, 'disabled history leaves ordinary arrows alone');
+  assert.deepEqual(effects, []);
+  context.searchState.searchHistoryEnabled = true;
+  context.filteredHistory = () => [];
+  assert.equal(press('ArrowUp'), false, 'empty history leaves ordinary arrows alone');
+  assert.deepEqual(effects, []);
+  assert.equal(press('ArrowDown', { altKey: true }), true, 'engine switching does not require history');
+  assert.deepEqual(effects, [['engine', 1]]);
+  context.historyHighlight = -1;
+  for (const modifier of ['ctrlKey', 'metaKey']) {
+    assert.equal(press('Enter', { [modifier]: true }), true);
+    assert.deepEqual(effects, [['submit', true]], `${modifier}+Enter still opens a new tab`);
+  }
+  assert.match(html, /id="search-input"[^>]*data-i18n-title="[^"]*Alt\+↓[^"]*Tab[^"]*"/);
+  assert.match(html, /id="search-input"[^>]*aria-keyshortcuts="Alt\+ArrowDown Alt\+ArrowUp"/);
+}
+
 console.log('Core accessibility unit tests passed');

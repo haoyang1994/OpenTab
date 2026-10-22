@@ -1,5 +1,6 @@
 /* Static shell strings. Keys are the original UI phrases, never user content. */
 OpenTabI18n.register({
+  "搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点": "In the search input, Alt+ArrowDown / Alt+ArrowUp switches engines; Tab / Shift+Tab moves focus",
   "切换时区": "Change time zone",
   "查看日历": "View calendar",
   "天气": "Weather",
