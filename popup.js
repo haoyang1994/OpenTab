@@ -1,4 +1,10 @@
 (() => {
+  // Translate only application-owned prose, never stored user content.
+  function t(source, params = {}) {
+    const i18n = typeof globalThis !== 'undefined' && globalThis.OpenTabI18n;
+    return i18n ? i18n.t(source, params) : String(source).replace(/\{(\w+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(params, key) ? String(params[key]) : match);
+  }
+
   const HOME_FOLDER_ID = 'folder-home';
   const DEFAULT_FOLDERS = [{ id: HOME_FOLDER_ID, name: '主页' }];
 
@@ -25,7 +31,7 @@
 
     const byId = new Map(normalized.map((item) => [item.id, item]));
     DEFAULT_FOLDERS.forEach((item) => {
-      if (!byId.has(item.id)) byId.set(item.id, { ...item });
+      if (!byId.has(item.id)) byId.set(item.id, { ...item, name: t(item.name) });
     });
     return Array.from(byId.values());
   }
@@ -56,7 +62,7 @@
     state.folders.forEach((folder) => {
       const option = document.createElement('option');
       option.value = folder.id;
-      option.textContent = folder.id === HOME_FOLDER_ID ? `${folder.name}（默认）` : folder.name;
+      option.textContent = folder.id === HOME_FOLDER_ID ? t('{name}（默认）', { name: folder.name }) : folder.name;
       elements.folderSelect.appendChild(option);
     });
     elements.folderSelect.value = HOME_FOLDER_ID;
@@ -68,9 +74,9 @@
     state.tab = tab || null;
 
     if (!tab || !tab.url || /^chrome:\/\//.test(tab.url)) {
-      elements.currentUrl.textContent = '当前页面不支持添加';
+      elements.currentUrl.textContent = t('当前页面不支持添加');
       elements.saveBtn.disabled = true;
-      setStatus('请在普通网页中使用该功能。', true);
+      setStatus(t('请在普通网页中使用该功能。'), true);
       return;
     }
 
@@ -92,7 +98,7 @@
     const name = elements.siteName.value.trim();
     if (!name) {
       elements.siteName.focus();
-      setStatus('请输入名称。', true);
+      setStatus(t('请输入名称。'), true);
       return;
     }
 
@@ -127,12 +133,12 @@
 
         await write({ icons, folders });
       });
-      setStatus('已添加到 OpenTab。');
+      setStatus(t('已添加到 OpenTab。'));
       setTimeout(() => window.close(), 550);
     } catch (error) {
       state.saving = false;
       elements.saveBtn.disabled = false;
-      setStatus('保存失败，请重试。', true);
+      setStatus(t('保存失败，请重试。'), true);
     }
   }
 
@@ -141,7 +147,7 @@
     if (event.key === 'Enter') saveCurrentTab();
   });
 
-  Promise.all([loadFolders(), loadCurrentTab()]).catch(() => {
-    setStatus('读取当前页面失败，请重试。', true);
+  Promise.resolve(globalThis.OpenTabI18n?.ready).then(() => Promise.all([loadFolders(), loadCurrentTab()])).catch(() => {
+    setStatus(t('读取当前页面失败，请重试。'), true);
   });
 })();

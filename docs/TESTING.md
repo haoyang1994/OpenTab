@@ -202,3 +202,13 @@ npm run test:ssh-gateway
 - `tests/workspace.test.mjs`：真实 MV3 双页面共享持久存储，并发添加/独立重命名、旧标签修改时钟、删除不复活、同一项目冲突、设置保存合并后旧编辑弹窗/图标更换/撤销仍被拒绝、行内重命名显式取消、备份替换代次、删除、导入和同步撤销保留新项目、popup 与主页并发添加、持锁页面关闭后保存恢复。每个数据场景验证存储及重新加载后的内容。
 - 上述测试均进入 `npm test` / `test:ci`；浏览器套件保留成功截图及失败时两个页面的截图，使用合成网址并拦截外部网络。
 - 这不是跨设备实时协同编辑保证。具体冲突与撤销规则见 [PERSISTENCE.md](PERSISTENCE.md)。
+
+## Runtime localization
+
+`tests/i18n-unit.test.mjs` verifies locale defaults/overrides, storage failures,
+translation coverage and placeholders. `tests/i18n.test.mjs` runs real MV3 English
+and Chinese flows, unsupported-locale fallback, persisted language selection,
+user-title preservation, import/undo, weather and popup, and captures wide/600px
+screenshots. Existing browser suites explicitly select `zh-CN`; their original
+behavior, performance and size assertions remain in force. See LOCALIZATION.md
+for the intentionally excluded standalone developer-tool pages.

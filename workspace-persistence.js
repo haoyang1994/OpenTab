@@ -5,6 +5,7 @@
   if (root) root.OpenTabWorkspace = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (root, node) {
   'use strict';
+  const t = (source) => root.OpenTabI18n ? root.OpenTabI18n.t(source) : source;
   const LOCK_NAME = 'opentab-workspace-v1';
   const EPOCH_KEY = 'opentab.workspaceEpoch';
   const ENTITIES = ['icons', 'folders', 'todos'];
@@ -16,7 +17,7 @@
     return value;
   }
   const equal = (a, b) => JSON.stringify(stable(a)) === JSON.stringify(stable(b));
-  function conflict() { const error = new Error('其他标签页已修改此内容，请刷新后重试。'); error.code = 'WORKSPACE_CONFLICT'; return error; }
+  function conflict() { const error = new Error(t('其他标签页已修改此内容，请刷新后重试。')); error.code = 'WORKSPACE_CONFLICT'; return error; }
   function records(list, tolerant = false) {
     const map = new Map();
     for (const item of Array.isArray(list) ? list : []) {
@@ -114,7 +115,7 @@
         const error = chrome.runtime && chrome.runtime.lastError;
         queueMicrotask(() => {
           if (returned && typeof returned.then === 'function') return;
-          if (error) reject(new Error(error.message || '保存失败，请重试。')); else resolve(value);
+          if (error) reject(new Error(error.message || t('保存失败，请重试。'))); else resolve(value);
         });
       };
       try { returned = method(arg, callback); }
@@ -125,7 +126,7 @@
   function createAPI(getChrome, getLocks) {
     function transaction(task) {
       const locks = getLocks();
-      if (!locks || typeof locks.request !== 'function') return Promise.reject(new Error('浏览器暂不支持安全保存，请更新 Chrome 后重试。'));
+      if (!locks || typeof locks.request !== 'function') return Promise.reject(new Error(t('浏览器暂不支持安全保存，请更新 Chrome 后重试。')));
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
       return Promise.resolve().then(() => locks.request(LOCK_NAME, { mode: 'exclusive', signal: controller.signal }, async () => {
@@ -135,7 +136,7 @@
         const write = (payload) => call(chrome, area.set.bind(area), payload);
         return task({ read, write, merge });
       })).catch((error) => {
-        if (error.name === 'AbortError') throw new Error('保存等待超时，请重试。');
+        if (error.name === 'AbortError') throw new Error(t('保存等待超时，请重试。'));
         throw error;
       }).finally(() => clearTimeout(timer));
     }
@@ -194,7 +195,7 @@
       function save(_rollback, onOk) {
         if (!session) {
           if (committed) apply(committed);
-          if (onError) onError(new Error('保存暂不可用，请重新打开标签页。'));
+          if (onError) onError(new Error(t('保存暂不可用，请重新打开标签页。')));
           return Promise.resolve(false);
         }
         const active = session;

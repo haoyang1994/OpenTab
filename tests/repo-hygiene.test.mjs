@@ -244,7 +244,7 @@ assert.ok(
 );
 assert.ok(nativeDialogs.length <= 1, `home.js should have at most one native dialog, got ${nativeDialogs.length}`);
 if (nativeDialogs.length === 1) {
-  assert.match(homeJs, /alert\('请输入有效的 SSH 配置/);
+  assert.match(homeJs, /alert\((?:t\()?'请输入有效的 SSH 配置/);
 }
 
 function gitShow(ref, file) {

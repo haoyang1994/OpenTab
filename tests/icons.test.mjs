@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -230,6 +231,63 @@ assert.equal(syncPayload.icons[0].librarySlug, 'github');
 const candidates = OpenTabIcons.faviconCandidates('https://example.com/page');
 assert.ok(candidates[0].endsWith('/apple-touch-icon.png'), 'AC1: apple-touch-icon before favicon.ico');
 assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
+
+// The actual add/edit upload handler must not update a later modal draft or file choice.
+{
+  const source = fs.readFileSync(path.join(root, 'home.js'), 'utf8');
+  const start = source.indexOf('  async function handleIconFileChange()');
+  const handler = source.slice(start, source.indexOf('  function hideIconContextMenu()', start));
+  const reads = [], firstDraft = {}, nextDraft = {};
+  const context = vm.createContext({
+    iconFileGeneration: 0, iconDraftIntent: firstDraft, pendingIconUploadDataUrl: '',
+    elements: { iconFile: { files: [] }, iconUploadStatus: { textContent: '' } },
+    workspace: { isIntentCurrent: (draft) => draft !== null },
+    t: (s, params) => s.replace(/\{(\w+)\}/g, (match, key) => params?.[key] ?? match),
+    window: { OpenTabIcons: true },
+    OpenTabIcons: { readAndCompressFile: () => new Promise((resolve, reject) => reads.push({ resolve, reject })) }
+  });
+  vm.runInContext(handler, context);
+  const select = (name) => {
+    context.elements.iconFile.files = [{ name }];
+    return context.handleIconFileChange();
+  };
+  const oldModalRead = select('old.png');
+  context.iconDraftIntent = nextDraft;
+  context.pendingIconUploadDataUrl = 'next-draft-image';
+  context.elements.iconUploadStatus.textContent = 'next-draft-status';
+  reads.shift().resolve('stale-image');
+  await oldModalRead;
+  assert.equal(context.pendingIconUploadDataUrl, 'next-draft-image', 'late read cannot overwrite another modal draft');
+  assert.equal(context.elements.iconUploadStatus.textContent, 'next-draft-status');
+
+  const older = select('older.png'), newer = select('newer.png');
+  const oldRead = reads.shift(), newRead = reads.shift();
+  newRead.resolve('new-image'); await newer;
+  oldRead.resolve('old-image'); await older;
+  assert.equal(context.pendingIconUploadDataUrl, 'new-image', 'latest file selection wins');
+  assert.match(context.elements.iconUploadStatus.textContent, /newer.png/);
+
+  const failedOldRead = select('fail.png');
+  context.iconDraftIntent = {};
+  context.pendingIconUploadDataUrl = 'keep-image';
+  context.elements.iconUploadStatus.textContent = 'keep-status';
+  reads.shift().reject(new Error('delayed file failure'));
+  await failedOldRead;
+  assert.equal(context.pendingIconUploadDataUrl, 'keep-image', 'late failure cannot clear another draft');
+  assert.equal(context.elements.iconUploadStatus.textContent, 'keep-status');
+
+  const closedRead = select('closed.png');
+  context.iconDraftIntent = null;
+  context.pendingIconUploadDataUrl = '';
+  reads.shift().resolve('closed-image'); await closedRead;
+  assert.equal(context.pendingIconUploadDataUrl, '', 'closed draft ignores delayed image completion');
+
+  context.iconDraftIntent = {};
+  const invalidRead = select('invalid.png');
+  context.workspace.isIntentCurrent = () => false;
+  reads.shift().resolve('invalid-image'); await invalidRead;
+  assert.equal(context.pendingIconUploadDataUrl, '', 'workspace-invalidated draft ignores delayed image completion');
+}
 
 function addedFileBytes() {
   const names = new Set();

@@ -90,6 +90,7 @@ async function launchExt() {
   const cfg = { bingMode: 'ok' };
   const errors = { page: [], console: [], sw: [] };
   const context = await chromium.launchPersistentContext('', {
+    locale: 'zh-CN',
     headless: resolveHeadless(false),
     viewport: { width: 1280, height: 800 },
     args: [

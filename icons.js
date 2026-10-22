@@ -4,6 +4,8 @@
   if (root) root.OpenTabIcons = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  const t = (s, p) => globalThis.OpenTabI18n ? globalThis.OpenTabI18n.t(s, p) : s.replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
+
 
   const MAX_ICON_PX = 128;
   const MAX_ICON_BYTES = 20 * 1024;
@@ -763,7 +765,7 @@
     const icon = findIcon(intent.id);
     if (icon && host.isIntentCurrent(intent.token) && imageSignature(icon) === intent.image) return icon;
     closeChanger();
-    if (host.showToast) host.showToast('内容已变化，请重新编辑。');
+    if (host.showToast) host.showToast(t('内容已变化，请重新编辑。'));
     return null;
   }
   function beginChangerAction() {
@@ -847,10 +849,10 @@
             if (!(await persist(true)) || changerIntent !== submitted) return;
           }
           refreshChangerPreview(findIcon(action.id));
-          setChangerStatus(ok ? '已重新抓取图标' : MSG_REFETCH_BLOCKED);
+          setChangerStatus(ok ? t('已重新抓取图标') : t(MSG_REFETCH_BLOCKED));
         } catch (error) {
           const current = currentChanger(action);
-          if (current) { setChangerStatus(MSG_REFETCH_BLOCKED); refreshChangerPreview(current); }
+          if (current) { setChangerStatus(t(MSG_REFETCH_BLOCKED)); refreshChangerPreview(current); }
         } finally {
           ui.refetch.disabled = false;
         }
@@ -874,9 +876,9 @@
           const submitted = changerIntent;
           if (!(await persist(true)) || changerIntent !== submitted) return;
           refreshChangerPreview(findIcon(action.id));
-          if (typeof host.showToast === 'function') host.showToast('已使用本地图片');
+          if (typeof host.showToast === 'function') host.showToast(t('已使用本地图片'));
         } catch (error) {
-          if (typeof host.showToast === 'function') host.showToast('图片读取失败');
+          if (typeof host.showToast === 'function') host.showToast(t('图片读取失败'));
         }
         ui.file.value = '';
       });
@@ -893,7 +895,7 @@
         const submitted = changerIntent;
         if (!(await persist(true)) || changerIntent !== submitted) return;
         refreshChangerPreview(findIcon(action.id));
-        if (typeof host.showToast === 'function') host.showToast('已使用首字母占位');
+        if (typeof host.showToast === 'function') host.showToast(t('已使用首字母占位'));
       });
     }
   }

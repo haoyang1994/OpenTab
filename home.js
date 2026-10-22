@@ -1,4 +1,7 @@
-(function() {
+(async function() {
+  if (window.OpenTabI18n) await OpenTabI18n.ready;
+  const t = (s, p) => globalThis.OpenTabI18n ? globalThis.OpenTabI18n.t(s, p) : s.replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
+
   const HOME_FOLDER_ID = 'folder-home';
   const ICON_TYPE_SHORTCUT = 'shortcut';
   const ICON_TYPE_SSH = 'ssh';
@@ -31,7 +34,7 @@
   ];
 
   const DEFAULT_FOLDERS = [
-    { id: HOME_FOLDER_ID, name: '主页' }
+    { id: HOME_FOLDER_ID, name: t('主页') }
   ];
   const LEGACY_PRESET_FOLDER_IDS = new Set(['folder-blog', 'folder-tools', 'folder-ops']);
 
@@ -246,7 +249,6 @@
     weatherLocation: '',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     bingIndex: 0,
-    // 主题相关
     themeMode: 'dark',
     accentHue: 200,
     particlesEnabled: false,
@@ -260,6 +262,7 @@
   const iconSaveGate = OpenTabIcons.createSaveGate();
   let contextMenuIconId = null;
   let pendingIconUploadDataUrl = '';
+  let iconFileGeneration = 0;
   let iconSwitchToken = 0;
   let draggingIconId = null;
   let dragPointerY = 0;
@@ -309,7 +312,7 @@
     const candidate = /^(wss?|https?):\/\//i.test(trimmed) ? trimmed : `wss://${trimmed}`;
     const parsed = new URL(candidate);
     if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
-      throw new Error('SSH 网关地址必须使用 ws:// 或 wss://');
+      throw new Error(t('SSH 网关地址必须使用 ws:// 或 wss://'));
     }
     return parsed.toString();
   }
@@ -329,14 +332,8 @@
     elements.iconUrl.disabled = isSsh || isTool;
     elements.iconCustomUrl.disabled = isSsh || isTool;
     elements.iconFile.disabled = isSsh || isTool;
-    const titleVerb = editingIconId ? '编辑' : '添加';
-    if (isSsh) {
-      elements.iconModalTitle.textContent = `${titleVerb} SSH 链接`;
-    } else if (isTool) {
-      elements.iconModalTitle.textContent = `${titleVerb}工具`;
-    } else {
-      elements.iconModalTitle.textContent = `${titleVerb}快捷图标`;
-    }
+    const titles = isSsh ? ['添加 SSH 链接', '编辑 SSH 链接'] : isTool ? ['添加工具', '编辑工具'] : ['添加快捷图标', '编辑快捷图标'];
+    elements.iconModalTitle.textContent = t(titles[editingIconId ? 1 : 0]);
   }
 
   function getIconHref(icon) {
@@ -367,7 +364,7 @@
   }
 
   function disabledIconToast(icon) {
-    return normalizeIconType(icon.type) === ICON_TYPE_SSH ? 'SSH 配置不完整，请先编辑这个图标' : '网址无效，请编辑';
+    return normalizeIconType(icon.type) === ICON_TYPE_SSH ? t('SSH 配置不完整，请先编辑这个图标') : t('网址无效，请编辑');
   }
 
   function openIconTarget(icon) {
@@ -390,7 +387,7 @@
         clearTimeout(toastTimer);
         toast.classList.add('hidden');
         pendingUndo = null;
-        if (!workspace.isIntentCurrent(actionIntent)) { showToast('内容已变化，无法执行旧操作。'); return; }
+        if (!workspace.isIntentCurrent(actionIntent)) { showToast(t('内容已变化，无法执行旧操作。')); return; }
         opts.onAction();
       };
       toast.appendChild(btn);
@@ -435,7 +432,7 @@
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-      reader.onerror = () => reject(new Error('读取文件失败'));
+      reader.onerror = () => reject(new Error(t('读取文件失败')));
       reader.readAsDataURL(file);
     });
   }
@@ -465,7 +462,7 @@
       item.className = `timezone-item${tz.id === state.timezone ? ' active' : ''}`;
       item.dataset.tz = tz.id;
       item.innerHTML = `
-        <span class="timezone-item-name">${tz.name}</span>
+        <span class="timezone-item-name">${t(tz.name)}</span>
         <span class="timezone-item-offset">${formatTimezoneOffset(tz.offset)}</span>
       `;
       item.addEventListener('click', () => selectTimezone(tz.id));
@@ -480,7 +477,7 @@
       item.classList.toggle('active', item.dataset.tz === tzId);
     });
     const tz = COMMON_TIMEZONES.find((item) => item.id === tzId);
-    elements.timezoneLabel.textContent = tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : tzId;
+    elements.timezoneLabel.textContent = tz ? `${t(tz.name)} (${formatTimezoneOffset(tz.offset)})` : tzId;
     toggleTimezoneSelector(false);
     updateClock();
   }
@@ -547,7 +544,7 @@
     const weatherPool = WELCOME_WEATHER_POOL[weatherTag] || WELCOME_WEATHER_POOL.unknown;
     const weatherText = pickBySeed(weatherPool, `${baseKey}-weather`);
     const motivationText = pickBySeed(WELCOME_MOTIVATION_POOL, `${baseKey}-motivation`);
-    return `${timeText} ${weatherText} ${motivationText}`.trim();
+    return `${t(timeText)} ${t(weatherText)} ${t(motivationText)}`.trim();
   }
 
   function updateClock() {
@@ -561,7 +558,7 @@
 
     if (state.showSeconds) options.second = '2-digit';
     // Strip the localized day period; #ampm renders AM/PM separately.
-    elements.time.textContent = new Intl.DateTimeFormat('zh-CN', options)
+    elements.time.textContent = new Intl.DateTimeFormat(window.OpenTabI18n?.locale || 'zh-CN', options)
       .formatToParts(now)
       .filter((part) => part.type !== 'dayPeriod')
       .map((part) => part.value)
@@ -569,18 +566,13 @@
       .trim();
 
     if (state.clockFormat === '12h') {
-      const hours = now.toLocaleTimeString('zh-CN', {
-        timeZone: state.timezone,
-        hour: 'numeric',
-        hour12: true
-      });
-      elements.ampm.textContent = hours.includes('下午') ? 'PM' : 'AM';
+      elements.ampm.textContent = getTimePartsInTimezone(now, state.timezone).hour >= 12 ? 'PM' : 'AM';
       elements.ampm.style.display = 'block';
     } else {
       elements.ampm.style.display = 'none';
     }
 
-    elements.date.textContent = now.toLocaleDateString('zh-CN', {
+    elements.date.textContent = now.toLocaleDateString(window.OpenTabI18n?.locale || 'zh-CN', {
       timeZone: state.timezone,
       year: 'numeric',
       month: 'long',
@@ -626,6 +618,7 @@
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = Boolean(todo.done);
+      checkbox.setAttribute('aria-label', t(todo.done ? '标记为未完成' : '标记为已完成'));
       checkbox.addEventListener('change', () => {
         todo.done = checkbox.checked;
         saveState();
@@ -640,6 +633,7 @@
       remove.type = 'button';
       remove.className = 'todo-delete';
       remove.textContent = '×';
+      remove.setAttribute('aria-label', t('删除待办：{name}', { name: todo.text }));
       remove.addEventListener('click', () => {
         state.todos = state.todos.filter((item) => item.id !== todo.id);
         saveState();
@@ -672,8 +666,8 @@
     elements.todoWidget.classList.toggle('hidden', !open);
     elements.todoToggleBtn.classList.toggle('active', open);
     elements.todoCollapseBtn.textContent = '×';
-    elements.todoCollapseBtn.title = '关闭待办';
-    elements.todoCollapseBtn.setAttribute('aria-label', '关闭待办');
+    elements.todoCollapseBtn.title = t('关闭待办');
+    elements.todoCollapseBtn.setAttribute('aria-label', t('关闭待办'));
   }
 
   function toggleTodoPanel() {
@@ -739,8 +733,6 @@
   function applyMinimalMode() {
     document.body.classList.toggle('minimal-mode', state.minimalMode);
   }
-
-  // ===== 粒子背景系统 =====
   let particles = [];
   let particleAnimationId = null;
   let particleCtx = null;
@@ -796,19 +788,13 @@
     const canvas = elements.particlesCanvas;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 获取当前主题的 accent 颜色
     const accentHue = getComputedStyle(document.documentElement).getPropertyValue('--accent-hue').trim() || '200';
-
-    // 绘制粒子
     particles.forEach((p, i) => {
       p.x += p.vx;
       p.y += p.vy;
 
       if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
       if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-
-      // 粒子发光效果
       const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 3);
       gradient.addColorStop(0, `hsla(${accentHue}, 90%, 75%, ${p.opacity})`);
       gradient.addColorStop(0.4, `hsla(${accentHue}, 80%, 65%, ${p.opacity * 0.5})`);
@@ -818,14 +804,10 @@
       ctx.arc(p.x, p.y, p.radius * 3, 0, Math.PI * 2);
       ctx.fillStyle = gradient;
       ctx.fill();
-
-      // 粒子核心
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
       ctx.fillStyle = `hsla(${accentHue}, 100%, 85%, ${p.opacity + 0.2})`;
       ctx.fill();
-
-      // 绘制连接线
       for (let j = i + 1; j < particles.length; j++) {
         const p2 = particles[j];
         const dx = p.x - p2.x;
@@ -860,7 +842,7 @@
       minimalMode: state.minimalMode,
       bg: OpenTabBingCache.describeBackground(),
       tz: state.timezone,
-      tzLabel: tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone,
+      tzLabel: tz ? `${t(tz.name)} (${formatTimezoneOffset(tz.offset)})` : state.timezone,
       clockFormat: state.clockFormat,
       showSeconds: state.showSeconds
     }, window.OpenTabLayout ? OpenTabLayout.bootMirrorSlice() : {}));
@@ -919,8 +901,8 @@
     btn.type = 'button';
     btn.id = 'add-shortcut-tile';
     btn.className = 'icon-widget';
-    btn.setAttribute('aria-label', '添加快捷方式');
-    btn.innerHTML = '<div class="icon-visual">+</div><span class="icon-name">添加</span>';
+    btn.setAttribute('aria-label', t('添加快捷方式'));
+    btn.innerHTML = `<div class="icon-visual">+</div><span class="icon-name">${t('添加')}</span>`;
     return btn;
   }
 
@@ -1027,7 +1009,7 @@
     if (announce) {
       const node = container.querySelector(iconSelector(iconId));
       if (node) node.focus();
-      if (elements.dragLive) elements.dragLive.textContent = `已移动到第 ${position} 位`;
+      if (elements.dragLive) elements.dragLive.textContent = t('已移动到第 {position} 位', { position });
     }
     return true;
   }
@@ -1284,7 +1266,7 @@
     state.icons = next;
     const saved = persistOrRollback(before);
     refreshIconViews();
-    if (await saved) showToast('已恢复', { duration: 1500 });
+    if (await saved) showToast(t('已恢复'), { duration: 1500 });
   }
 
   async function deleteIcon(iconId) {
@@ -1298,8 +1280,8 @@
     const intent = workspace.captureIntent(), saved = persistOrRollback(before);
     refreshIconViews();
     if (!(await saved) || !workspace.isIntentCurrent(intent)) return;
-    showToast(`已删除「${snapshot.icon.name}」`, {
-      actionLabel: '撤销',
+    showToast(t('已删除「{name}」', { name: snapshot.icon.name }), {
+      actionLabel: t('撤销'),
       onAction: () => undoDelete(snapshot), intent,
       duration: 6000
     });
@@ -1307,7 +1289,7 @@
 
   function renderWorkspaceSettings() {
     const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
-    elements.timezoneLabel.textContent = tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
+    elements.timezoneLabel.textContent = tz ? `${t(tz.name)} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
     applyUiOpacitySetting();
     applyUiBlurSetting();
     applyIconFrameSetting();
@@ -1332,7 +1314,7 @@
       renderTodoPanel();
       updateBackground({ fade: false });
     },
-    onError: (error) => showToast(error.message || '保存失败，请重试'),
+    onError: (error) => showToast(error.message || t('保存失败，请重试')),
     onSaved: writeBootMirror
   });
   const saveState = workspace.save;
@@ -1343,12 +1325,13 @@
         window.OpenTabLayout ? OpenTabLayout.STORAGE_KEYS : []
       ),
       (result) => {
+        if (!Object.keys(result).length) state.themeMode = 'light';
         if (window.OpenTabLayout) OpenTabLayout.loadFromStorage(result);
         state.folders = ensureFolders(result.folders).filter(
           (folder) => !LEGACY_PRESET_FOLDER_IDS.has(folder.id)
         );
         if (!state.folders.some((folder) => folder.id === HOME_FOLDER_ID)) {
-          state.folders.unshift({ id: HOME_FOLDER_ID, name: '主页' });
+          state.folders.unshift({ id: HOME_FOLDER_ID, name: t('主页') });
         }
         const validFolderIds = new Set(state.folders.map((folder) => folder.id));
 
@@ -1433,21 +1416,21 @@
     pendingIconUploadDataUrl = '';
 
     elements.iconType.value = ICON_TYPE_SHORTCUT;
-    elements.saveBtn.textContent = '保存';
+    elements.saveBtn.textContent = t('保存');
     elements.addIconModal.classList.remove('hidden');
 
     elements.iconName.value = '';
     elements.iconUrl.value = '';
     elements.iconCustomUrl.value = '';
     elements.iconFile.value = '';
-    elements.iconUploadStatus.textContent = '支持 PNG / JPG / SVG / WebP。';
+    elements.iconUploadStatus.textContent = t('支持 PNG / JPG / SVG / WebP。');
     elements.sshGatewayUrl.value = '';
     elements.sshGatewayToken.value = '';
     elements.sshHost.value = '';
     elements.sshPort.value = '22';
     elements.sshUsername.value = '';
     elements.sshPassword.value = '';
-    elements.sshPassword.placeholder = '留空表示由网关决定认证方式';
+    elements.sshPassword.placeholder = t('留空表示由网关决定认证方式');
     elements.sshSocksHost.value = '';
     elements.sshSocksPort.value = '';
     elements.sshSocksUsername.value = '';
@@ -1468,7 +1451,7 @@
 
     const iconType = normalizeIconType(icon.type);
     elements.iconType.value = iconType;
-    elements.saveBtn.textContent = '更新';
+    elements.saveBtn.textContent = t('更新');
     elements.addIconModal.classList.remove('hidden');
     updateIconModalTypeView();
 
@@ -1482,14 +1465,14 @@
     elements.sshPort.value = String(icon.sshPort || 22);
     elements.sshUsername.value = icon.sshUsername || '';
     elements.sshPassword.value = icon.sshPassword || '';
-    elements.sshPassword.placeholder = '已保存，留空则不修改';
+    elements.sshPassword.placeholder = t('已保存，留空则不修改');
     elements.sshSocksHost.value = icon.sshSocksHost || '';
     elements.sshSocksPort.value = icon.sshSocksHost ? String(icon.sshSocksPort || 1080) : '';
     elements.sshSocksUsername.value = icon.sshSocksUsername || '';
     elements.sshSocksPassword.value = icon.sshSocksPassword || '';
     elements.iconUploadStatus.textContent = icon.uploadedIconDataUrl
-      ? '已保存本地图标，可重新上传覆盖。'
-      : '支持 PNG / JPG / SVG / WebP。';
+      ? t('已保存本地图标，可重新上传覆盖。')
+      : t('支持 PNG / JPG / SVG / WebP。');
     elements.toolSubtype.value = icon.toolSubtype || '';
     elements.iconName.focus();
   }
@@ -1505,7 +1488,7 @@
   async function handleSaveIcon() {
     if (iconSaveGate.has(iconDraftIntent)) return;
     if (!workspace.isIntentCurrent(iconDraftIntent)) {
-      closeAddIconModal(); showToast('内容已变化，请重新编辑。'); return;
+      closeAddIconModal(); showToast(t('内容已变化，请重新编辑。')); return;
     }
     const iconType = normalizeIconType(elements.iconType.value);
     const isSsh = iconType === ICON_TYPE_SSH;
@@ -1546,7 +1529,6 @@
 
     try {
       if (isTool) {
-        // tool 类型不需要额外验证
       } else if (isSsh) {
         if (!rawGatewayUrl) {
           elements.sshGatewayUrl.focus();
@@ -1571,7 +1553,7 @@
         sshPassword = rawSshPassword;
         sshPort = rawSshPort ? Number.parseInt(rawSshPort, 10) : 22;
         if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) {
-          throw new Error('SSH 端口无效');
+          throw new Error(t('SSH 端口无效'));
         }
         sshSocksHost = normalizeOptionalText(rawSshSocksHost);
         sshSocksUsername = normalizeOptionalText(rawSshSocksUsername);
@@ -1579,7 +1561,7 @@
         if (sshSocksHost) {
           sshSocksPort = rawSshSocksPort ? Number.parseInt(rawSshSocksPort, 10) : 1080;
           if (!Number.isInteger(sshSocksPort) || sshSocksPort < 1 || sshSocksPort > 65535) {
-            throw new Error('SOCKS5 端口无效');
+            throw new Error(t('SOCKS5 端口无效'));
           }
         } else {
           sshSocksPort = 1080;
@@ -1594,8 +1576,8 @@
       }
     } catch (error) {
       if (!isTool) {
-        if (isSsh) alert('请输入有效的 SSH 配置。');
-        else showToast('请输入有效的网址。');
+        if (isSsh) alert(t('请输入有效的 SSH 配置。'));
+        else showToast(t('请输入有效的网址。'));
         if (isSsh) elements.sshGatewayUrl.focus();
         else if (rawCustomUrl) elements.iconCustomUrl.focus();
         else elements.iconUrl.focus();
@@ -1617,26 +1599,30 @@
         () => id ? updateIcon(id, payload) : addIcon(payload),
         () => { if (iconDraftIntent === draft) closeAddIconModal(); });
     } catch (error) {
-      showToast('保存失败，请重试。');
+      showToast(t('保存失败，请重试。'));
     }
   }
 
   async function handleIconFileChange() {
+    const generation = ++iconFileGeneration, draft = iconDraftIntent;
+    const current = () => generation === iconFileGeneration && draft === iconDraftIntent && workspace.isIntentCurrent(draft);
     const [file] = elements.iconFile.files || [];
     if (!file) {
       pendingIconUploadDataUrl = '';
-      elements.iconUploadStatus.textContent = '支持 PNG / JPG / SVG / WebP。';
+      elements.iconUploadStatus.textContent = t('支持 PNG / JPG / SVG / WebP。');
       return;
     }
-
     try {
-      pendingIconUploadDataUrl = window.OpenTabIcons
+      const data = window.OpenTabIcons
         ? await OpenTabIcons.readAndCompressFile(file)
         : await readFileAsDataUrl(file);
-      elements.iconUploadStatus.textContent = `已选择：${file.name}`;
+      if (!current()) return;
+      pendingIconUploadDataUrl = data;
+      elements.iconUploadStatus.textContent = t('已选择：{name}', { name: file.name });
     } catch (error) {
+      if (!current()) return;
       pendingIconUploadDataUrl = '';
-      elements.iconUploadStatus.textContent = '读取失败，请重新选择。';
+      elements.iconUploadStatus.textContent = t('读取失败，请重新选择。');
     }
   }
 
@@ -1738,6 +1724,7 @@
   }
 
   function annotateCalendarDay(dayElem, dateObj) {
+    if (window.OpenTabI18n?.locale === 'en') return;
     const solarTerm = getSolarTermForDate(dateObj);
     const holiday = getHolidayLabel(dateObj, solarTerm);
     const metaText = holiday || solarTerm || '';
@@ -1755,7 +1742,7 @@
   function initCalendar() {
     if (calendarPicker || typeof flatpickr === 'undefined') return;
 
-    if (flatpickr.l10ns && flatpickr.l10ns.zh) {
+    if (window.OpenTabI18n?.locale !== 'en' && flatpickr.l10ns && flatpickr.l10ns.zh) {
       flatpickr.localize(flatpickr.l10ns.zh);
     }
 
@@ -1763,7 +1750,7 @@
       inline: true,
       clickOpens: false,
       defaultDate: new Date(),
-      locale: 'zh',
+      locale: window.OpenTabI18n?.locale === 'en' ? 'default' : 'zh',
       onDayCreate: (_dObj, _dStr, _fp, dayElem) => {
         const dateObj = dayElem.dateObj;
         if (dateObj) annotateCalendarDay(dayElem, dateObj);
@@ -1857,43 +1844,12 @@
 
   elements.todoAddBtn.addEventListener('click', handleAddTodo);
 
-  elements.iconUrl.addEventListener('keydown', (event) => {
+  [elements.iconUrl, elements.iconCustomUrl, elements.sshGatewayUrl, elements.sshGatewayToken,
+    elements.sshHost, elements.sshPort, elements.sshUsername, elements.sshPassword,
+    elements.sshSocksHost, elements.sshSocksPort, elements.sshSocksUsername, elements.sshSocksPassword
+  ].forEach((input) => input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') handleSaveIcon();
-  });
-
-  elements.iconCustomUrl.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshGatewayUrl.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshGatewayToken.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshHost.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshPort.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshUsername.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshPassword.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshSocksHost.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshSocksPort.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshSocksUsername.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
-  elements.sshSocksPassword.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  });
+  }));
 
   elements.todoInput.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') handleAddTodo();

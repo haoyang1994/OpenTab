@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenTab</title>
   <link rel="preload" href="boot.js" as="script">
+  <script src="i18n.js"></script>
+  <script src="locales/static-en.js"></script>
+  <script src="locales/core-en.js"></script>
+  <script src="locales/services-en.js"></script>
   <link rel="icon" type="image/svg+xml" href="icons/opentab-icon.svg">
   <link rel="icon" type="image/png" sizes="16x16" href="icons/icon16.png">
   <link rel="stylesheet" href="vendor/flatpickr/flatpickr.min.css">
@@ -19,7 +23,7 @@
 
     <div id="content">
       <div id="clock-widget">
-        <button id="timezone-btn" class="widget-btn" title="切换时区">
+        <button id="timezone-btn" class="widget-btn" title="切换时区" data-i18n-title="切换时区">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"></circle>
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
@@ -38,25 +42,25 @@
         </div>
 
         <div id="welcome-text" aria-live="polite"></div>
-        <button id="date" class="date-btn" title="查看日历"></button>
-        <div id="weather-pill" class="weather-pill" title="天气" hidden>
+        <button id="date" class="date-btn" title="查看日历" data-i18n-title="查看日历"></button>
+        <div id="weather-pill" class="weather-pill" title="天气" data-i18n-title="天气" hidden>
           <span id="weather-icon" class="weather-icon" aria-hidden="true">☁</span>
           <span id="weather-temp"></span>
           <span id="weather-location-inline" class="weather-location-inline"></span>
         </div>
 
         <div id="calendar-popover" class="calendar-popover hidden">
-          <input id="calendar-input" class="calendar-input" type="text" aria-label="日历">
+          <input id="calendar-input" class="calendar-input" type="text" aria-label="日历" data-i18n-aria-label="日历">
           <div class="calendar-legend">
-            <span class="legend-item"><i class="dot holiday"></i>节假日</span>
-            <span class="legend-item"><i class="dot solar-term"></i>节气</span>
+            <span class="legend-item"><i class="dot holiday"></i><span data-i18n="节假日">节假日</span></span>
+            <span class="legend-item"><i class="dot solar-term"></i><span data-i18n="节气">节气</span></span>
           </div>
         </div>
       </div>
 
       <div id="search-widget-wrap">
         <div id="search-widget" class="glass-widget">
-          <div id="search-engine-switch" aria-label="搜索引擎">
+          <div id="search-engine-switch" aria-label="搜索引擎" data-i18n-aria-label="搜索引擎">
             <button class="engine-btn active" data-engine="google" type="button" title="Google" aria-label="Google">
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.56-.2-2.3H12v4.36h6.45a5.51 5.51 0 0 1-2.4 3.62v3h3.88c2.27-2.08 3.56-5.16 3.56-8.68z"/>
@@ -70,7 +74,7 @@
                 <path fill="#008373" d="M6 2v17.5c0 .64.66 1.06 1.24.79l11.2-5.2c.73-.34.73-1.38 0-1.72l-5.1-2.37 2.84-1.35c.74-.35.73-1.4-.02-1.73L8.3 4.53V2H6z"/>
               </svg>
             </button>
-            <button class="engine-btn" data-engine="baidu" type="button" title="百度" aria-label="百度">
+            <button class="engine-btn" data-engine="baidu" type="button" title="百度" data-i18n-title="百度" aria-label="百度" data-i18n-aria-label="百度">
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="11" fill="#2932E1"/>
                 <text x="12" y="16.5" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="system-ui,sans-serif">百</text>
@@ -89,17 +93,17 @@
             </button>
             <span id="search-custom-engines" class="search-custom-engines"></span>
           </div>
-          <input id="search-input" type="text" placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
+          <input id="search-input" type="text" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
         </div>
         <p id="search-hint" class="search-hint hidden" role="status" aria-live="polite"></p>
         <div id="search-history" class="search-history hidden" role="listbox"></div>
       </div>
 
       <aside id="todo-widget" class="glass-widget hidden">
-        <button id="todo-collapse-btn" type="button" title="关闭待办" aria-label="关闭待办">×</button>
+        <button id="todo-collapse-btn" type="button" title="关闭待办" data-i18n-title="关闭待办" aria-label="关闭待办" data-i18n-aria-label="关闭待办">×</button>
         <div class="todo-input-row">
-          <input id="todo-input" type="text" placeholder="输入待办后回车">
-          <button id="todo-add-btn" type="button" title="添加待办" aria-label="添加待办">
+          <input id="todo-input" type="text" placeholder="输入待办后回车" data-i18n-placeholder="输入待办后回车">
+          <button id="todo-add-btn" type="button" title="添加待办" data-i18n-title="添加待办" aria-label="添加待办" data-i18n-aria-label="添加待办">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 5v14M5 12h14"></path>
             </svg>
@@ -111,34 +115,34 @@
             <div id="todo-progress-bar"></div>
           </div>
         </div>
-        <p id="todo-empty" class="todo-empty hidden">当前没有待办，今天从一件小事开始。</p>
+        <p id="todo-empty" class="todo-empty hidden" data-i18n="当前没有待办，今天从一件小事开始。">当前没有待办，今天从一件小事开始。</p>
         <div id="todo-list"></div>
       </aside>
 
       <div id="group-tabs-bar" class="group-tabs-bar">
-        <div id="group-tabs" class="group-tabs" role="tablist" aria-label="分组"></div>
-        <button id="add-group-btn" class="group-add-btn" type="button" title="新建分组" aria-label="新建分组">+</button>
+        <div id="group-tabs" class="group-tabs" role="tablist" aria-label="分组" data-i18n-aria-label="分组"></div>
+        <button id="add-group-btn" class="group-add-btn" type="button" title="新建分组" data-i18n-title="新建分组" aria-label="新建分组" data-i18n-aria-label="新建分组">+</button>
       </div>
       <div id="icons-container"></div>
-      <p id="icons-empty-hint" class="icons-empty-hint hidden">点击 + 添加常用网站，或在空白处右键</p>
+      <p id="icons-empty-hint" class="icons-empty-hint hidden" data-i18n="点击 + 添加常用网站，或在空白处右键">点击 + 添加常用网站，或在空白处右键</p>
       <div id="drag-live" class="sr-only" aria-live="polite"></div>
     </div>
 
-    <button id="todo-toggle-btn" class="floating-btn" title="待办" aria-label="待办">
+    <button id="todo-toggle-btn" class="floating-btn" title="待办" data-i18n-title="待办" aria-label="待办" data-i18n-aria-label="待办">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M9 11l3 3L22 4"></path>
         <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
       </svg>
     </button>
 
-    <button id="refresh-bg-btn" class="floating-btn" title="切换 Bing 壁纸">
+    <button id="refresh-bg-btn" class="floating-btn" title="切换 Bing 壁纸" data-i18n-title="切换 Bing 壁纸">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M23 4v6h-6M1 20v-6h6"></path>
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
       </svg>
     </button>
 
-    <button id="settings-btn" class="floating-btn" title="设置">
+    <button id="settings-btn" class="floating-btn" title="设置" data-i18n-title="设置">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"></circle>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -147,130 +151,130 @@
 
     <div id="add-icon-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="icon-modal-title">
       <div class="modal-content">
-        <h2 id="icon-modal-title">添加快捷图标</h2>
+        <h2 id="icon-modal-title" data-i18n="添加快捷图标">添加快捷图标</h2>
         <div class="form-group">
-          <label for="icon-type">类型</label>
+          <label for="icon-type" data-i18n="类型">类型</label>
           <select id="icon-type">
-            <option value="shortcut">快捷链接</option>
-            <option value="ssh" data-dev-tool="1">SSH 链接</option>
-            <option value="tool" data-dev-tool="1">工具</option>
+            <option value="shortcut" data-i18n="快捷链接">快捷链接</option>
+            <option value="ssh" data-dev-tool="1" data-i18n="SSH 链接">SSH 链接</option>
+            <option value="tool" data-dev-tool="1" data-i18n="工具">工具</option>
           </select>
         </div>
         <div class="form-group">
-          <label for="icon-name">名称</label>
-          <input type="text" id="icon-name" placeholder="例如：GitHub">
+          <label for="icon-name" data-i18n="名称">名称</label>
+          <input type="text" id="icon-name" placeholder="例如：GitHub" data-i18n-placeholder="例如：GitHub">
         </div>
 
         <div id="shortcut-fields" class="form-section">
           <div class="form-group">
-            <label for="icon-url">网址</label>
+            <label for="icon-url" data-i18n="网址">网址</label>
             <input type="url" id="icon-url" placeholder="https://example.com">
-            <p class="form-hint">会自动从网址获取站点 icon。</p>
+            <p class="form-hint" data-i18n="会自动从网址获取站点 icon。">会自动从网址获取站点 icon。</p>
           </div>
           <div class="form-group">
-            <label for="icon-custom-url">自定义图标 URL（可选）</label>
+            <label for="icon-custom-url" data-i18n="自定义图标 URL（可选）">自定义图标 URL（可选）</label>
             <input type="url" id="icon-custom-url" placeholder="https://example.com/logo.png">
-            <p class="form-hint">填写后优先使用这个图标，不填则自动探测。</p>
+            <p class="form-hint" data-i18n="填写后优先使用这个图标，不填则自动探测。">填写后优先使用这个图标，不填则自动探测。</p>
           </div>
           <div class="form-group">
-            <label for="icon-file">本地图标上传（可选）</label>
+            <label for="icon-file" data-i18n="本地图标上传（可选）">本地图标上传（可选）</label>
             <input type="file" id="icon-file" accept="image/*">
-            <p class="form-hint" id="icon-upload-status">支持 PNG / JPG / SVG / WebP。</p>
+            <p class="form-hint" id="icon-upload-status" data-i18n="支持 PNG / JPG / SVG / WebP。">支持 PNG / JPG / SVG / WebP。</p>
           </div>
         </div>
 
         <div id="ssh-fields" class="form-section hidden">
           <div class="form-group">
-            <label for="ssh-gateway-url">SSH 网关 WebSocket 地址</label>
+            <label for="ssh-gateway-url" data-i18n="SSH 网关 WebSocket 地址">SSH 网关 WebSocket 地址</label>
             <input type="url" id="ssh-gateway-url" placeholder="ws://127.0.0.1:8787/ssh">
-            <p class="form-hint">仅本扩展页面可连接本地网关。只支持 127.0.0.1 / localhost。默认：ws://127.0.0.1:8787/ssh</p>
+            <p class="form-hint" data-i18n="仅本扩展页面可连接本地网关。只支持 127.0.0.1 / localhost。默认：ws://127.0.0.1:8787/ssh">仅本扩展页面可连接本地网关。只支持 127.0.0.1 / localhost。默认：ws://127.0.0.1:8787/ssh</p>
           </div>
           <div class="form-group">
-            <label for="ssh-gateway-token">网关访问令牌</label>
-            <input type="password" id="ssh-gateway-token" placeholder="与网关启动时打印的 token 一致" autocomplete="off">
-            <p class="form-hint">从网关终端输出或 SSH_GATEWAY_TOKEN 复制。没有令牌时网关会拒绝连接。</p>
+            <label for="ssh-gateway-token" data-i18n="网关访问令牌">网关访问令牌</label>
+            <input type="password" id="ssh-gateway-token" placeholder="与网关启动时打印的 token 一致" data-i18n-placeholder="与网关启动时打印的 token 一致" autocomplete="off">
+            <p class="form-hint" data-i18n="从网关终端输出或 SSH_GATEWAY_TOKEN 复制。没有令牌时网关会拒绝连接。">从网关终端输出或 SSH_GATEWAY_TOKEN 复制。没有令牌时网关会拒绝连接。</p>
           </div>
           <div class="form-group">
-            <label for="ssh-host">SSH 主机</label>
+            <label for="ssh-host" data-i18n="SSH 主机">SSH 主机</label>
             <input type="text" id="ssh-host" placeholder="192.168.1.10">
           </div>
           <div class="form-group">
-            <label for="ssh-port">SSH 端口</label>
+            <label for="ssh-port" data-i18n="SSH 端口">SSH 端口</label>
             <input type="number" id="ssh-port" min="1" max="65535" placeholder="22">
           </div>
           <div class="form-group">
-            <label for="ssh-username">用户名</label>
+            <label for="ssh-username" data-i18n="用户名">用户名</label>
             <input type="text" id="ssh-username" placeholder="root">
           </div>
           <div class="form-group">
-            <label for="ssh-password">密码（可选）</label>
-            <input type="password" id="ssh-password" placeholder="留空表示由网关决定认证方式" autocomplete="off">
+            <label for="ssh-password" data-i18n="密码（可选）">密码（可选）</label>
+            <input type="password" id="ssh-password" placeholder="留空表示由网关决定认证方式" data-i18n-placeholder="留空表示由网关决定认证方式" autocomplete="off">
           </div>
           <div class="form-group">
-            <label for="ssh-socks-host">SOCKS5 代理主机（可选）</label>
+            <label for="ssh-socks-host" data-i18n="SOCKS5 代理主机（可选）">SOCKS5 代理主机（可选）</label>
             <input type="text" id="ssh-socks-host" placeholder="127.0.0.1">
           </div>
           <div class="form-group">
-            <label for="ssh-socks-port">SOCKS5 代理端口（可选）</label>
+            <label for="ssh-socks-port" data-i18n="SOCKS5 代理端口（可选）">SOCKS5 代理端口（可选）</label>
             <input type="number" id="ssh-socks-port" min="1" max="65535" placeholder="1080">
           </div>
           <div class="form-group">
-            <label for="ssh-socks-username">SOCKS5 用户名（可选）</label>
+            <label for="ssh-socks-username" data-i18n="SOCKS5 用户名（可选）">SOCKS5 用户名（可选）</label>
             <input type="text" id="ssh-socks-username" placeholder="proxy-user">
           </div>
           <div class="form-group">
-            <label for="ssh-socks-password">SOCKS5 密码（可选）</label>
+            <label for="ssh-socks-password" data-i18n="SOCKS5 密码（可选）">SOCKS5 密码（可选）</label>
             <input type="password" id="ssh-socks-password" placeholder="proxy-password" autocomplete="off">
-            <p class="form-hint">不填代理主机/端口则直连 SSH 主机。</p>
+            <p class="form-hint" data-i18n="不填代理主机/端口则直连 SSH 主机。">不填代理主机/端口则直连 SSH 主机。</p>
           </div>
         </div>
 
         <div id="tool-fields" class="form-section hidden">
           <div class="form-group">
-            <label for="tool-subtype">工具类型</label>
+            <label for="tool-subtype" data-i18n="工具类型">工具类型</label>
             <select id="tool-subtype">
-              <option value="json-format">JSON 格式化/压缩</option>
+              <option value="json-format" data-i18n="JSON 格式化/压缩">JSON 格式化/压缩</option>
               <option value="fix-parser">FIX Parser</option>
             </select>
           </div>
         </div>
         <div class="modal-buttons">
-          <button id="cancel-btn" class="btn-secondary">取消</button>
-          <button id="save-btn" class="btn-primary">保存</button>
+          <button id="cancel-btn" class="btn-secondary" data-i18n="取消">取消</button>
+          <button id="save-btn" class="btn-primary" data-i18n="保存">保存</button>
         </div>
       </div>
     </div>
 
     <div id="icon-context-menu" class="icon-context-menu hidden">
-      <button id="open-all-icon-btn" type="button" class="hidden">全部打开</button>
-      <button id="change-icon-btn" type="button">更换图标</button>
-      <button id="edit-icon-btn" type="button">编辑</button>
-      <button id="delete-icon-btn" type="button" class="danger">删除</button>
+      <button id="open-all-icon-btn" type="button" class="hidden" data-i18n="全部打开">全部打开</button>
+      <button id="change-icon-btn" type="button" data-i18n="更换图标">更换图标</button>
+      <button id="edit-icon-btn" type="button" data-i18n="编辑">编辑</button>
+      <button id="delete-icon-btn" type="button" class="danger" data-i18n="删除">删除</button>
     </div>
 
     <div id="change-icon-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="change-icon-title">
       <div class="modal-content change-icon-panel">
-        <h3 id="change-icon-title">更换图标</h3>
+        <h3 id="change-icon-title" data-i18n="更换图标">更换图标</h3>
         <div class="change-icon-preview" aria-hidden="true">
           <img id="change-icon-preview-img" alt="">
           <span id="change-icon-preview-fallback" class="icon-fallback"></span>
         </div>
         <div class="form-group">
-          <label for="change-icon-letter">首字母占位</label>
+          <label for="change-icon-letter" data-i18n="首字母占位">首字母占位</label>
           <div class="change-icon-placeholder-row">
-            <input id="change-icon-letter" type="text" maxlength="1" aria-label="占位字母">
-            <input id="change-icon-color" type="color" value="#4c6fff" aria-label="占位颜色">
-            <button id="change-icon-placeholder" class="btn-secondary" type="button">使用占位</button>
+            <input id="change-icon-letter" type="text" maxlength="1" aria-label="占位字母" data-i18n-aria-label="占位字母">
+            <input id="change-icon-color" type="color" value="#4c6fff" aria-label="占位颜色" data-i18n-aria-label="占位颜色">
+            <button id="change-icon-placeholder" class="btn-secondary" type="button" data-i18n="使用占位">使用占位</button>
           </div>
         </div>
         <p id="change-icon-status" class="form-hint" aria-live="polite"></p>
         <div class="modal-buttons change-icon-actions">
-          <button id="change-icon-refetch" class="btn-secondary" type="button">重新抓取</button>
+          <button id="change-icon-refetch" class="btn-secondary" type="button" data-i18n="重新抓取">重新抓取</button>
           <label class="btn-secondary change-icon-upload">
-            上传本地图片
+            <span data-i18n="上传本地图片">上传本地图片</span>
             <input id="change-icon-file" type="file" accept="image/*" hidden>
           </label>
-          <button id="change-icon-close" class="btn-primary" type="button">关闭</button>
+          <button id="change-icon-close" class="btn-primary" type="button" data-i18n="关闭">关闭</button>
         </div>
       </div>
     </div>
@@ -278,7 +282,7 @@
     <div id="folder-overlay" class="folder-overlay hidden">
       <div id="folder-overlay-backdrop" class="folder-overlay-backdrop"></div>
       <div id="folder-panel" class="folder-panel" role="dialog" aria-modal="true" aria-labelledby="folder-title-input">
-        <input id="folder-title-input" class="folder-title-input" type="text" maxlength="24" aria-label="文件夹名称">
+        <input id="folder-title-input" class="folder-title-input" type="text" maxlength="24" aria-label="文件夹名称" data-i18n-aria-label="文件夹名称">
         <div id="folder-icons-container" class="folder-icons-container"></div>
       </div>
     </div>
@@ -293,100 +297,109 @@
 
     <div id="settings-panel" class="settings-panel hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
       <div class="settings-header">
-        <h2 id="settings-title">设置</h2>
+        <h2 id="settings-title" data-i18n="设置">设置</h2>
         <div class="settings-header-tools">
           <label class="settings-search-label" for="settings-search">
-            <span class="sr-only">搜索设置</span>
-            <input id="settings-search" type="text" placeholder="搜索设置" autocomplete="off" spellcheck="false" aria-label="搜索设置" aria-controls="settings-content">
+            <span class="sr-only" data-i18n="搜索设置">搜索设置</span>
+            <input id="settings-search" type="text" placeholder="搜索设置" data-i18n-placeholder="搜索设置" autocomplete="off" spellcheck="false" aria-label="搜索设置" data-i18n-aria-label="搜索设置" aria-controls="settings-content">
           </label>
-          <button id="close-settings" class="close-btn" type="button" aria-label="关闭设置">&times;</button>
+          <button id="close-settings" class="close-btn" type="button" aria-label="关闭设置" data-i18n-aria-label="关闭设置">&times;</button>
         </div>
       </div>
 
       <div class="settings-shell">
-        <nav id="settings-nav" class="settings-nav" aria-label="设置分区"></nav>
+        <nav id="settings-nav" class="settings-nav" aria-label="设置分区" data-i18n-aria-label="设置分区"></nav>
         <div class="settings-main">
-          <p id="settings-empty" class="settings-empty hidden" role="status">没有找到</p>
+          <p id="settings-empty" class="settings-empty hidden" role="status" data-i18n="没有找到">没有找到</p>
           <div class="settings-content" id="settings-content">
-        <div class="setting-section" id="settings-section-appearance" data-settings-section="appearance" data-settings-search="appearance clock format seconds 外观 时钟 时间 秒">
-          <h3>时钟</h3>
+        <div class="setting-section" id="settings-section-appearance" data-settings-section="appearance" data-settings-search="appearance clock format seconds language locale 语言 外观 时钟 时间 秒">
           <div class="setting-row">
-            <label for="time-format">时间格式</label>
+            <label for="language-preference" data-i18n="语言">语言</label>
+            <select id="language-preference" aria-describedby="language-status">
+              <option value="auto" data-i18n="跟随浏览器">跟随浏览器</option>
+              <option value="zh-CN">中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <p id="language-status" class="form-hint" role="status" aria-live="polite"></p>
+          <h3 data-i18n="时钟">时钟</h3>
+          <div class="setting-row">
+            <label for="time-format" data-i18n="时间格式">时间格式</label>
             <select id="time-format">
-              <option value="12h">12 小时</option>
-              <option value="24h">24 小时</option>
+              <option value="12h" data-i18n="12 小时">12 小时</option>
+              <option value="24h" data-i18n="24 小时">24 小时</option>
             </select>
           </div>
           <div class="setting-row">
-            <label for="show-seconds">显示秒数</label>
+            <label for="show-seconds" data-i18n="显示秒数">显示秒数</label>
             <input type="checkbox" id="show-seconds">
           </div>
         </div>
 
         <div class="setting-section" data-settings-section="appearance" data-settings-search="appearance theme color dark light auto particle gradient minimal 外观 主题 深色 浅色 自动 粒子 渐变 极简">
-          <h3>主题</h3>
+          <h3 data-i18n="主题">主题</h3>
           <div class="theme-mode-tabs">
             <button class="theme-mode-tab active" data-theme="dark" type="button">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
               </svg>
-              深色
+              <span data-i18n="深色">深色</span>
             </button>
             <button class="theme-mode-tab" data-theme="light" type="button">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="5"></circle>
                 <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
               </svg>
-              浅色
+              <span data-i18n="浅色">浅色</span>
             </button>
             <button class="theme-mode-tab" data-theme="auto" type="button">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                 <path d="M16 2v4M8 2v4M3 10h18"></path>
               </svg>
-              自动
+              <span data-i18n="自动">自动</span>
             </button>
           </div>
 
           <div class="setting-row">
-            <label>主题色</label>
+            <label data-i18n="主题色">主题色</label>
           </div>
           <div class="theme-color-presets" id="theme-color-presets">
-            <div class="theme-color-preset active" data-hue="200" style="--preset-color-1: #24b2ff; --preset-color-2: #0ce6b7;" title="极光蓝" role="button" tabindex="0" aria-label="极光蓝"></div>
-            <div class="theme-color-preset" data-hue="260" style="--preset-color-1: #a855f7; --preset-color-2: #ec4899;" title="梦幻紫" role="button" tabindex="0" aria-label="梦幻紫"></div>
-            <div class="theme-color-preset" data-hue="30" style="--preset-color-1: #ff9500; --preset-color-2: #ff3b30;" title="日落橙" role="button" tabindex="0" aria-label="日落橙"></div>
-            <div class="theme-color-preset" data-hue="140" style="--preset-color-1: #34d399; --preset-color-2: #10b981;" title="薄荷绿" role="button" tabindex="0" aria-label="薄荷绿"></div>
-            <div class="theme-color-preset" data-hue="340" style="--preset-color-1: #f472b6; --preset-color-2: #c084fc;" title="樱花粉" role="button" tabindex="0" aria-label="樱花粉"></div>
-            <div class="theme-color-preset" data-hue="210" style="--preset-color-1: #60a5fa; --preset-color-2: #818cf8;" title="星空蓝" role="button" tabindex="0" aria-label="星空蓝"></div>
+            <div class="theme-color-preset active" data-hue="200" style="--preset-color-1: #24b2ff; --preset-color-2: #0ce6b7;" title="极光蓝" data-i18n-title="极光蓝" role="button" tabindex="0" aria-label="极光蓝" data-i18n-aria-label="极光蓝"></div>
+            <div class="theme-color-preset" data-hue="260" style="--preset-color-1: #a855f7; --preset-color-2: #ec4899;" title="梦幻紫" data-i18n-title="梦幻紫" role="button" tabindex="0" aria-label="梦幻紫" data-i18n-aria-label="梦幻紫"></div>
+            <div class="theme-color-preset" data-hue="30" style="--preset-color-1: #ff9500; --preset-color-2: #ff3b30;" title="日落橙" data-i18n-title="日落橙" role="button" tabindex="0" aria-label="日落橙" data-i18n-aria-label="日落橙"></div>
+            <div class="theme-color-preset" data-hue="140" style="--preset-color-1: #34d399; --preset-color-2: #10b981;" title="薄荷绿" data-i18n-title="薄荷绿" role="button" tabindex="0" aria-label="薄荷绿" data-i18n-aria-label="薄荷绿"></div>
+            <div class="theme-color-preset" data-hue="340" style="--preset-color-1: #f472b6; --preset-color-2: #c084fc;" title="樱花粉" data-i18n-title="樱花粉" role="button" tabindex="0" aria-label="樱花粉" data-i18n-aria-label="樱花粉"></div>
+            <div class="theme-color-preset" data-hue="210" style="--preset-color-1: #60a5fa; --preset-color-2: #818cf8;" title="星空蓝" data-i18n-title="星空蓝" role="button" tabindex="0" aria-label="星空蓝" data-i18n-aria-label="星空蓝"></div>
           </div>
 
           <div class="dynamic-effects-row">
             <div class="setting-row">
-              <label for="particles-enabled">粒子背景</label>
+              <label for="particles-enabled" data-i18n="粒子背景">粒子背景</label>
               <input type="checkbox" id="particles-enabled">
             </div>
             <div class="setting-row">
-              <label for="gradient-flow-enabled">渐变流动</label>
+              <label for="gradient-flow-enabled" data-i18n="渐变流动">渐变流动</label>
               <input type="checkbox" id="gradient-flow-enabled">
             </div>
             <div class="setting-row">
-              <label for="minimal-mode-enabled">极简模式</label>
+              <label for="minimal-mode-enabled" data-i18n="极简模式">极简模式</label>
               <input type="checkbox" id="minimal-mode-enabled">
             </div>
           </div>
         </div>
 
         <div class="setting-section" data-settings-section="appearance" data-settings-search="appearance opacity blur interface 外观 界面 不透明 虚化">
-          <h3>界面</h3>
+          <h3 data-i18n="界面">界面</h3>
           <div class="setting-row setting-row-range">
-            <label for="ui-opacity">背景框不透明度</label>
+            <label for="ui-opacity" data-i18n="背景框不透明度">背景框不透明度</label>
             <div class="range-wrap">
               <input type="range" id="ui-opacity" min="12" max="70" step="1" aria-valuemin="12" aria-valuemax="70">
               <span id="ui-opacity-value">32%</span>
             </div>
           </div>
           <div class="setting-row setting-row-range">
-            <label for="ui-blur">虚化程度</label>
+            <label for="ui-blur" data-i18n="虚化程度">虚化程度</label>
             <div class="range-wrap">
               <input type="range" id="ui-blur" min="0" max="20" step="1" aria-valuemin="0" aria-valuemax="20">
               <span id="ui-blur-value">10px</span>
@@ -395,14 +408,14 @@
         </div>
 
         <div class="setting-section" id="settings-section-wallpaper" data-settings-section="wallpaper" data-settings-search="wallpaper background bing gradient image 壁纸 背景 图片 渐变">
-          <h3>壁纸</h3>
+          <h3 data-i18n="壁纸">壁纸</h3>
           <div class="bg-type-tabs">
-            <button class="tab-btn active" data-type="bing" type="button">Bing 每日壁纸</button>
-            <button class="tab-btn" data-type="gradient" type="button">渐变背景</button>
-            <button class="tab-btn" data-type="image" type="button">自定义图片 URL</button>
+            <button class="tab-btn active" data-type="bing" type="button" data-i18n="Bing 每日壁纸">Bing 每日壁纸</button>
+            <button class="tab-btn" data-type="gradient" type="button" data-i18n="渐变背景">渐变背景</button>
+            <button class="tab-btn" data-type="image" type="button" data-i18n="自定义图片 URL">自定义图片 URL</button>
           </div>
           <div id="bing-section" class="bg-section active">
-            <p class="hint-text">点击右下角刷新按钮，可切换 Bing 当日与历史壁纸。</p>
+            <p class="hint-text" data-i18n="点击右下角刷新按钮，可切换 Bing 当日与历史壁纸。">点击右下角刷新按钮，可切换 Bing 当日与历史壁纸。</p>
           </div>
           <div id="gradient-section" class="bg-section">
             <div id="background-presets" class="preset-grid">
@@ -452,59 +465,59 @@
           </div>
           <div id="image-section" class="bg-section">
             <div id="image-presets" class="preset-grid">
-              <div class="preset-item" data-bg="image" data-value="assets/default_background/default.webp" title="默认壁纸" role="button" tabindex="0" aria-label="默认壁纸">
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/default.webp" title="默认壁纸" data-i18n-title="默认壁纸" role="button" tabindex="0" aria-label="默认壁纸" data-i18n-aria-label="默认壁纸">
                 <div class="preset-preview" style="background-image: url('assets/default_background/default.webp'); background-size: cover; background-position: center;"></div>
               </div>
-              <div class="preset-item" data-bg="image" data-value="assets/default_background/bg-mountain-dawn.jpg" title="晨曦雾山湖" role="button" tabindex="0" aria-label="晨曦雾山湖">
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/bg-mountain-dawn.jpg" title="晨曦雾山湖" data-i18n-title="晨曦雾山湖" role="button" tabindex="0" aria-label="晨曦雾山湖" data-i18n-aria-label="晨曦雾山湖">
                 <div class="preset-preview" style="background-image: url('assets/default_background/bg-mountain-dawn.jpg'); background-size: cover; background-position: center;"></div>
               </div>
-              <div class="preset-item" data-bg="image" data-value="assets/default_background/bg-forest-golden.jpg" title="金色松林" role="button" tabindex="0" aria-label="金色松林">
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/bg-forest-golden.jpg" title="金色松林" data-i18n-title="金色松林" role="button" tabindex="0" aria-label="金色松林" data-i18n-aria-label="金色松林">
                 <div class="preset-preview" style="background-image: url('assets/default_background/bg-forest-golden.jpg'); background-size: cover; background-position: center;"></div>
               </div>
-              <div class="preset-item" data-bg="image" data-value="assets/default_background/bg-ocean-night.jpg" title="星空海岸" role="button" tabindex="0" aria-label="星空海岸">
+              <div class="preset-item" data-bg="image" data-value="assets/default_background/bg-ocean-night.jpg" title="星空海岸" data-i18n-title="星空海岸" role="button" tabindex="0" aria-label="星空海岸" data-i18n-aria-label="星空海岸">
                 <div class="preset-preview" style="background-image: url('assets/default_background/bg-ocean-night.jpg'); background-size: cover; background-position: center;"></div>
               </div>
             </div>
             <div class="custom-bg">
-              <input type="url" id="custom-bg-url" placeholder="https://example.com/image.jpg 或 video.mp4" aria-label="自定义壁纸网址">
-              <button id="apply-bg-btn" class="btn-small">应用</button>
+              <input type="url" id="custom-bg-url" placeholder="https://example.com/image.jpg 或 video.mp4" data-i18n-placeholder="https://example.com/image.jpg 或 video.mp4" aria-label="自定义壁纸网址" data-i18n-aria-label="自定义壁纸网址">
+              <button id="apply-bg-btn" class="btn-small" data-i18n="应用">应用</button>
             </div>
             <div class="custom-bg upload-row">
-              <input type="file" id="custom-bg-file" accept="image/*,video/mp4" aria-label="上传本地壁纸">
-              <button id="apply-bg-file-btn" class="btn-small">上传并应用</button>
+              <input type="file" id="custom-bg-file" accept="image/*,video/mp4" aria-label="上传本地壁纸" data-i18n-aria-label="上传本地壁纸">
+              <button id="apply-bg-file-btn" class="btn-small" data-i18n="上传并应用">上传并应用</button>
             </div>
           </div>
         </div>
 
         <div class="setting-section" id="settings-section-shortcuts" data-settings-section="shortcuts" data-settings-search="shortcut layout icon size columns grid name frame 快捷方式 布局 图标 大小 每行 名称 网格 背景框 更换图标 图标库 占位">
-          <h3>快捷方式与布局</h3>
+          <h3 data-i18n="快捷方式与布局">快捷方式与布局</h3>
           <div class="setting-row">
-            <label for="icon-frame-enabled">显示图标背景框</label>
+            <label for="icon-frame-enabled" data-i18n="显示图标背景框">显示图标背景框</label>
             <input type="checkbox" id="icon-frame-enabled">
           </div>
           <div class="setting-row">
-            <label for="open-in-new-tab">在新标签页打开快捷方式</label>
+            <label for="open-in-new-tab" data-i18n="在新标签页打开快捷方式">在新标签页打开快捷方式</label>
             <input type="checkbox" id="open-in-new-tab">
           </div>
           <div class="setting-row">
-            <span id="layout-icon-size-label">图标大小</span>
+            <span id="layout-icon-size-label" data-i18n="图标大小">图标大小</span>
             <div class="layout-size-presets" role="group" aria-labelledby="layout-icon-size-label">
-              <button type="button" class="btn-small ghost layout-size-preset" data-size="48" aria-pressed="false">小</button>
-              <button type="button" class="btn-small ghost layout-size-preset" data-size="56" aria-pressed="true">中</button>
-              <button type="button" class="btn-small ghost layout-size-preset" data-size="80" aria-pressed="false">大</button>
+              <button type="button" class="btn-small ghost layout-size-preset" data-size="48" aria-pressed="false" data-i18n="小">小</button>
+              <button type="button" class="btn-small ghost layout-size-preset" data-size="56" aria-pressed="true" data-i18n="中">中</button>
+              <button type="button" class="btn-small ghost layout-size-preset" data-size="80" aria-pressed="false" data-i18n="大">大</button>
             </div>
           </div>
           <div class="setting-row setting-row-range">
-            <label for="layout-icon-size">大小（48–96px）</label>
+            <label for="layout-icon-size" data-i18n="大小（48–96px）">大小（48–96px）</label>
             <div class="range-wrap">
               <input type="range" id="layout-icon-size" min="48" max="96" step="1" value="56" aria-valuemin="48" aria-valuemax="96">
               <span id="layout-icon-size-value">56px</span>
             </div>
           </div>
           <div class="setting-row">
-            <label for="layout-columns">每行个数</label>
+            <label for="layout-columns" data-i18n="每行个数">每行个数</label>
             <select id="layout-columns">
-              <option value="0">自动</option>
+              <option value="0" data-i18n="自动">自动</option>
               <option value="4">4</option>
               <option value="5">5</option>
               <option value="6">6</option>
@@ -517,11 +530,11 @@
             </select>
           </div>
           <div class="setting-row">
-            <label for="layout-show-names">显示名称</label>
+            <label for="layout-show-names" data-i18n="显示名称">显示名称</label>
             <input type="checkbox" id="layout-show-names" checked>
           </div>
           <div class="setting-row setting-row-range">
-            <label for="layout-max-width">网格最大宽度</label>
+            <label for="layout-max-width" data-i18n="网格最大宽度">网格最大宽度</label>
             <div class="range-wrap">
               <input type="range" id="layout-max-width" min="640" max="1600" step="20" value="900" aria-valuemin="640" aria-valuemax="1600">
               <span id="layout-max-width-value">900px</span>
@@ -530,127 +543,127 @@
         </div>
 
         <div class="setting-section" id="search-settings-section" data-settings-section="search" data-settings-search="search engine history custom 搜索 引擎 历史 自定义">
-          <h3>搜索</h3>
+          <h3 data-i18n="搜索">搜索</h3>
           <div class="setting-row">
-            <label for="search-default-engine">默认引擎</label>
+            <label for="search-default-engine" data-i18n="默认引擎">默认引擎</label>
             <select id="search-default-engine"></select>
           </div>
           <div class="setting-row">
-            <label for="search-open-new-tab">搜索结果在新标签页打开</label>
+            <label for="search-open-new-tab" data-i18n="搜索结果在新标签页打开">搜索结果在新标签页打开</label>
             <input type="checkbox" id="search-open-new-tab">
           </div>
           <div class="setting-row">
-            <label for="search-history-enabled">保存搜索历史</label>
+            <label for="search-history-enabled" data-i18n="保存搜索历史">保存搜索历史</label>
             <input type="checkbox" id="search-history-enabled">
           </div>
           <div class="setting-row">
-            <label>本地历史</label>
-            <button id="search-history-clear" class="btn-small ghost" type="button">清除历史</button>
+            <label data-i18n="本地历史">本地历史</label>
+            <button id="search-history-clear" class="btn-small ghost" type="button" data-i18n="清除历史">清除历史</button>
           </div>
-          <p class="form-hint">最多 20 条，自动去重，仅保存在 chrome.storage.local。没有搜索建议，也不会向外请求联想。</p>
+          <p class="form-hint" data-i18n="最多 20 条，自动去重，仅保存在 chrome.storage.local。没有搜索建议，也不会向外请求联想。">最多 20 条，自动去重，仅保存在 chrome.storage.local。没有搜索建议，也不会向外请求联想。</p>
           <div class="search-custom-block">
-            <p class="search-custom-heading">自定义引擎（名称 + 含 %s 的 URL）</p>
+            <p class="search-custom-heading" data-i18n="自定义引擎（名称 + 含 %s 的 URL）">自定义引擎（名称 + 含 %s 的 URL）</p>
             <ul id="search-custom-list" class="search-custom-list"></ul>
             <div class="search-custom-form">
-              <input type="text" id="search-custom-name" placeholder="名称，例如：维基" maxlength="40" aria-label="自定义引擎名称">
-              <input type="text" id="search-custom-template" placeholder="https://example.com/search?q=%s" aria-label="自定义引擎地址">
-              <button id="search-custom-save" class="btn-small" type="button">添加</button>
+              <input type="text" id="search-custom-name" placeholder="名称，例如：维基" data-i18n-placeholder="名称，例如：维基" maxlength="40" aria-label="自定义引擎名称" data-i18n-aria-label="自定义引擎名称">
+              <input type="text" id="search-custom-template" placeholder="https://example.com/search?q=%s" aria-label="自定义引擎地址" data-i18n-aria-label="自定义引擎地址">
+              <button id="search-custom-save" class="btn-small" type="button" data-i18n="添加">添加</button>
             </div>
             <p id="search-custom-status" class="backup-status"></p>
           </div>
         </div>
 
         <div class="setting-section" id="settings-section-weather" data-settings-section="weather" data-settings-search="weather city location temperature unit 天气 城市 定位 温度">
-          <h3>天气</h3>
+          <h3 data-i18n="天气">天气</h3>
           <div class="setting-row">
-            <label for="weather-enabled">显示天气</label>
+            <label for="weather-enabled" data-i18n="显示天气">显示天气</label>
             <input type="checkbox" id="weather-enabled" aria-describedby="weather-privacy">
           </div>
-          <p id="weather-privacy" class="form-hint">开启后，城市名称和网络 IP 将发送至 wttr.in 获取天气。不读取设备定位；关闭后停止请求。</p>
+          <p id="weather-privacy" class="form-hint" data-i18n="开启后，城市名称和网络 IP 将发送至 wttr.in 获取天气。不读取设备定位；关闭后停止请求。">开启后，城市名称和网络 IP 将发送至 wttr.in 获取天气。不读取设备定位；关闭后停止请求。</p>
           <form id="weather-city-form" class="weather-city-form">
-            <label for="weather-city">城市</label>
+            <label for="weather-city" data-i18n="城市">城市</label>
             <div class="weather-city-controls">
-              <input id="weather-city" type="text" maxlength="80" placeholder="上海 / London" autocomplete="off" aria-describedby="weather-status">
-              <button id="weather-save" class="btn-small" type="submit">保存城市</button>
+              <input id="weather-city" type="text" maxlength="80" placeholder="上海 / London" data-i18n-placeholder="上海 / London" autocomplete="off" aria-describedby="weather-status">
+              <button id="weather-save" class="btn-small" type="submit" data-i18n="保存城市">保存城市</button>
             </div>
           </form>
           <div class="setting-row">
-            <label for="weather-unit">温度单位</label>
-            <select id="weather-unit"><option value="c">摄氏度 °C</option><option value="f">华氏度 °F</option></select>
+            <label for="weather-unit" data-i18n="温度单位">温度单位</label>
+            <select id="weather-unit"><option value="c" data-i18n="摄氏度 °C">摄氏度 °C</option><option value="f" data-i18n="华氏度 °F">华氏度 °F</option></select>
           </div>
-          <button id="weather-refresh" class="btn-small ghost" type="button" disabled>刷新天气</button>
+          <button id="weather-refresh" class="btn-small ghost" type="button" disabled data-i18n="刷新天气">刷新天气</button>
           <p id="weather-status" class="form-hint" role="status" aria-live="polite"></p>
         </div>
 
         <div class="setting-section" data-settings-section="sync" data-settings-search="import sync backup snapshot restore 导入 同步 备份 快照 恢复 数据">
-          <h3>数据</h3>
+          <h3 data-i18n="数据">数据</h3>
           <div class="setting-row backup-row">
-            <label>备份与恢复</label>
+            <label data-i18n="备份与恢复">备份与恢复</label>
             <div class="backup-actions">
-              <button id="backup-download-btn" class="btn-small" type="button">下载备份</button>
-              <button id="backup-import-btn" class="btn-small ghost" type="button">导入备份</button>
-              <button id="backup-save-snapshot-btn" class="btn-small ghost" type="button">保存快照</button>
-              <button id="backup-restore-snapshot-btn" class="btn-small ghost" type="button">恢复最近快照</button>
+              <button id="backup-download-btn" class="btn-small" type="button" data-i18n="下载备份">下载备份</button>
+              <button id="backup-import-btn" class="btn-small ghost" type="button" data-i18n="导入备份">导入备份</button>
+              <button id="backup-save-snapshot-btn" class="btn-small ghost" type="button" data-i18n="保存快照">保存快照</button>
+              <button id="backup-restore-snapshot-btn" class="btn-small ghost" type="button" data-i18n="恢复最近快照">恢复最近快照</button>
             </div>
           </div>
-          <p id="backup-status" class="backup-status">可导出 JSON 备份，或导入历史备份恢复。</p>
+          <p id="backup-status" class="backup-status" data-i18n="可导出 JSON 备份，或导入历史备份恢复。">可导出 JSON 备份，或导入历史备份恢复。</p>
           <input id="backup-import-file" type="file" accept="application/json,.json" hidden>
         </div>
 
         <div class="setting-section" id="import-sync-section" data-settings-section="sync" data-settings-search="import sync backup bookmark topsite 导入 同步 备份 书签 常用网站">
-          <h3>导入与同步</h3>
+          <h3 data-i18n="导入与同步">导入与同步</h3>
           <div class="setting-row backup-row">
-            <label>从其他主页导入</label>
+            <label data-i18n="从其他主页导入">从其他主页导入</label>
             <div class="backup-actions">
-              <button id="import-bookmarks-btn" class="btn-small" type="button">从 Chrome 书签导入</button>
-              <button id="import-topsites-btn" class="btn-small ghost" type="button">导入常用网站</button>
-              <button id="import-file-btn" class="btn-small ghost" type="button">导入备份文件</button>
-              <button id="import-undo-btn" class="btn-small ghost" type="button" disabled>撤销上次导入</button>
+              <button id="import-bookmarks-btn" class="btn-small" type="button" data-i18n="从 Chrome 书签导入">从 Chrome 书签导入</button>
+              <button id="import-topsites-btn" class="btn-small ghost" type="button" data-i18n="导入常用网站">导入常用网站</button>
+              <button id="import-file-btn" class="btn-small ghost" type="button" data-i18n="导入备份文件">导入备份文件</button>
+              <button id="import-undo-btn" class="btn-small ghost" type="button" disabled data-i18n="撤销上次导入">撤销上次导入</button>
             </div>
           </div>
           <div id="bookmark-folder-row" class="setting-row backup-row hidden">
-            <label for="bookmark-folder-select">书签文件夹</label>
+            <label for="bookmark-folder-select" data-i18n="书签文件夹">书签文件夹</label>
             <div class="backup-actions">
-              <select id="bookmark-folder-select" aria-label="选择书签文件夹"></select>
-              <button id="import-bookmarks-confirm-btn" class="btn-small" type="button">导入所选文件夹</button>
+              <select id="bookmark-folder-select" aria-label="选择书签文件夹" data-i18n-aria-label="选择书签文件夹"></select>
+              <button id="import-bookmarks-confirm-btn" class="btn-small" type="button" data-i18n="导入所选文件夹">导入所选文件夹</button>
             </div>
           </div>
           <div class="setting-row">
-            <label for="browser-sync-enabled">浏览器同步</label>
+            <label for="browser-sync-enabled" data-i18n="浏览器同步">浏览器同步</label>
             <input type="checkbox" id="browser-sync-enabled">
           </div>
           <div id="sync-conflict-row" class="setting-row backup-row hidden">
-            <label>同步冲突</label>
+            <label data-i18n="同步冲突">同步冲突</label>
             <div class="backup-actions">
-              <button id="sync-use-remote-btn" class="btn-small" type="button">用云端</button>
-              <button id="sync-use-local-btn" class="btn-small ghost" type="button">用本机</button>
+              <button id="sync-use-remote-btn" class="btn-small" type="button" data-i18n="用云端">用云端</button>
+              <button id="sync-use-local-btn" class="btn-small ghost" type="button" data-i18n="用本机">用本机</button>
             </div>
           </div>
-          <p id="storage-usage" class="backup-status">本地存储用量：计算中…</p>
-          <p id="import-sync-status" class="backup-status">可导入 Chrome 书签、常用网站，或 Infinity / WeTab / iTab 备份。书签和常用网站权限仅在点击时申请。</p>
+          <p id="storage-usage" class="backup-status" data-i18n="本地存储用量：计算中…">本地存储用量：计算中…</p>
+          <p id="import-sync-status" class="backup-status" data-i18n="可导入 Chrome 书签、常用网站，或 Infinity / WeTab / iTab 备份。书签和常用网站权限仅在点击时申请。">可导入 Chrome 书签、常用网站，或 Infinity / WeTab / iTab 备份。书签和常用网站权限仅在点击时申请。</p>
           <input id="import-file-input" type="file" accept="application/json,.json,.infinity,.data,text/json" hidden>
         </div>
 
         <div class="setting-section" id="settings-section-advanced" data-settings-section="advanced" data-settings-search="advanced developer ssh json fix parser 高级 开发者 工具">
-          <h3>高级 / 开发者工具</h3>
+          <h3 data-i18n="高级 / 开发者工具">高级 / 开发者工具</h3>
           <div class="setting-row">
-            <label for="developer-tools-enabled">显示 SSH / JSON / FIX 入口</label>
+            <label for="developer-tools-enabled" data-i18n="显示 SSH / JSON / FIX 入口">显示 SSH / JSON / FIX 入口</label>
             <input type="checkbox" id="developer-tools-enabled">
           </div>
-          <p class="form-hint">默认隐藏添加快捷方式里的 SSH 链接和本地 JSON / FIX 工具。已经在用这些快捷方式的安装会自动保持开启。</p>
+          <p class="form-hint" data-i18n="默认隐藏添加快捷方式里的 SSH 链接和本地 JSON / FIX 工具。已经在用这些快捷方式的安装会自动保持开启。">默认隐藏添加快捷方式里的 SSH 链接和本地 JSON / FIX 工具。已经在用这些快捷方式的安装会自动保持开启。</p>
         </div>
 
         <div class="setting-section" id="settings-section-about" data-settings-section="about" data-settings-search="about version license apache github 关于 版本 许可证">
-          <h3>关于</h3>
+          <h3 data-i18n="关于">关于</h3>
           <p class="about-line">OpenTab <span id="about-version"></span></p>
-          <p class="form-hint">开源、免费，无广告。你的新标签页，由你做主。Apache License 2.0。</p>
-          <p class="form-hint"><a id="about-github" href="https://github.com/haoyang1994/OpenTab" target="_blank" rel="noopener noreferrer">GitHub 仓库</a></p>
+          <p class="form-hint" data-i18n="开源、免费，无广告。你的新标签页，由你做主。Apache License 2.0。">开源、免费，无广告。你的新标签页，由你做主。Apache License 2.0。</p>
+          <p class="form-hint"><a id="about-github" href="https://github.com/haoyang1994/OpenTab" target="_blank" rel="noopener noreferrer" data-i18n="GitHub 仓库">GitHub 仓库</a></p>
         </div>
           </div>
         </div>
       </div>
       <div class="settings-footer">
-        <button id="settings-reset-all" class="btn-small ghost" type="button" aria-label="恢复全部设置为默认">恢复默认</button>
+        <button id="settings-reset-all" class="btn-small ghost" type="button" aria-label="恢复全部设置为默认" data-i18n-aria-label="恢复全部设置为默认" data-i18n="恢复默认">恢复默认</button>
       </div>
     </div>
   </div>

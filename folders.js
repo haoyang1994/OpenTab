@@ -1,6 +1,7 @@
 (function (global) {
+  const t = (s, p) => globalThis.OpenTabI18n ? globalThis.OpenTabI18n.t(s, p) : s.replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
+
   const ICON_TYPE_FOLDER = 'folder';
-  const DEFAULT_FOLDER_NAME = '文件夹';
   const MERGE_HOVER_MS = 500;
   const WHEEL_THROTTLE_MS = 250;
   const OPEN_ALL_CONFIRM_LIMIT = 10;
@@ -28,7 +29,7 @@
         .map((item) => ({ id: String(item.id), name: String(item.name) }))
       : [];
     if (!normalized.some((item) => item.id === HOME_GROUP_ID)) {
-      normalized.unshift({ id: HOME_GROUP_ID, name: '主页' });
+      normalized.unshift({ id: HOME_GROUP_ID, name: t('主页') });
     }
     return normalized;
   }
@@ -41,7 +42,7 @@
     const next = ensureGroups(folders);
     const group = {
       id: id || `folder-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`,
-      name: String(name || '').trim() || '分组'
+      name: String(name || '').trim() || t('分组')
     };
     if (next.some((item) => item.id === group.id)) {
       return { folders: next, group: next.find((item) => item.id === group.id) };
@@ -156,14 +157,14 @@
     });
     if (!saved || !host.isIntentCurrent(intent)) return;
     host.showToast(text, {
-      intent, actionLabel: '撤销',
+      intent, actionLabel: t('撤销'),
       onAction: async () => {
         try { restore(OpenTabWorkspace.merge(after, before, snapshot())); }
-        catch (_) { host.showToast('内容已变化，无法撤销。'); return; }
+        catch (_) { host.showToast(t('内容已变化，无法撤销。')); return; }
         closeOverlay(true);
         const saved = host.saveState();
         host.refreshIconViews();
-        if (await saved) host.showToast('已恢复', { duration: 1500 });
+        if (await saved) host.showToast(t('已恢复'), { duration: 1500 });
       },
       duration: 6000
     });
@@ -296,14 +297,14 @@
     if (isFolder(target)) {
       source.parentId = target.id;
       source.folderId = target.folderId;
-      persistUndo(before, '已加入文件夹');
+      persistUndo(before, t('已加入文件夹'));
       host.refreshIconViews();
       return;
     }
     const folder = {
       id: `icon-folder-${host.generateId()}`,
       type: ICON_TYPE_FOLDER,
-      name: DEFAULT_FOLDER_NAME,
+      name: t('文件夹'),
       folderId: target.folderId,
       parentId: '',
       url: '',
@@ -318,7 +319,7 @@
     target.parentId = folder.id;
     source.folderId = target.folderId;
     state().icons.splice(targetIndex < 0 ? state().icons.length : targetIndex, 0, folder);
-    persistUndo(before, '已创建文件夹');
+    persistUndo(before, t('已创建文件夹'));
     host.refreshIconViews();
   }
 
@@ -329,7 +330,7 @@
     const before = snapshot();
     icon.parentId = folderId;
     icon.folderId = folder.folderId;
-    persistUndo(before, '已加入文件夹');
+    persistUndo(before, t('已加入文件夹'));
     host.refreshIconViews();
   }
 
@@ -346,7 +347,7 @@
     const folderIndex = state().icons.findIndex((item) => item.id === folderId);
     state().icons.splice(folderIndex >= 0 ? folderIndex + 1 : state().icons.length, 0, icon);
     dissolveIfNeeded(folderId);
-    persistUndo(before, '已移出文件夹');
+    persistUndo(before, t('已移出文件夹'));
     host.refreshIconViews();
   }
 
@@ -378,7 +379,7 @@
     el.removeAttribute('aria-disabled');
     el.role = 'button';
     el.tabIndex = 0;
-    el.title = icon.name || DEFAULT_FOLDER_NAME;
+    el.title = icon.name || t('文件夹');
     const visual = el.querySelector('.icon-visual');
     if (visual) {
       visual.innerHTML = '';
@@ -431,7 +432,7 @@
     openFolderId = folderId;
     folderNameIntent = host.captureIntent({ icons: [folderId] });
     host.rememberFocus();
-    if (ui.titleInput) ui.titleInput.value = folder.name || DEFAULT_FOLDER_NAME;
+    if (ui.titleInput) ui.titleInput.value = folder.name || t('文件夹');
     if (ui.overlay) ui.overlay.classList.remove('hidden');
     renderOverlayIcons();
     if (ui.titleInput) {
@@ -456,12 +457,12 @@
     if (!checkIntent(folderNameIntent)) { closeOverlay(true); return; }
     const trimmed = ui.titleInput.value.trim();
     if (!trimmed || trimmed === folder.name) {
-      ui.titleInput.value = folder.name || DEFAULT_FOLDER_NAME;
+      ui.titleInput.value = folder.name || t('文件夹');
       return;
     }
     const before = snapshot();
     folder.name = trimmed;
-    persistUndo(before, '已重命名文件夹');
+    persistUndo(before, t('已重命名文件夹'));
     folderNameIntent = host.captureIntent({ icons: [folder.id] });
     host.refreshIconViews();
   }
@@ -480,7 +481,7 @@
       state().icons = state().icons.filter((item) => item.id !== icon.id);
       dissolveIfNeeded(folderId);
     }
-    persistUndo(before, `已删除「${icon.name}」`);
+    persistUndo(before, t('已删除「{name}」', { name: icon.name }));
     host.refreshIconViews();
     return true;
   }
@@ -505,13 +506,13 @@
     const children = getChildren(folderId);
     const urls = children.map(iconHref).filter(Boolean);
     if (!urls.length) {
-      host.showToast('这个文件夹里没有可打开的链接');
+      host.showToast(t('这个文件夹里没有可打开的链接'));
       return;
     }
     if (urls.length > OPEN_ALL_CONFIRM_LIMIT) {
-      const ok = await showDialog(`将打开 ${urls.length} 个标签页，是否继续？`, [
-        { label: '取消', value: false },
-        { label: '打开', className: 'btn-primary', value: true }
+      const ok = await showDialog(t('将打开 {count} 个标签页，是否继续？', { count: urls.length }), [
+        { label: t('取消'), value: false },
+        { label: t('打开'), className: 'btn-primary', value: true }
       ]);
       if (!ok) return;
     }
@@ -637,7 +638,7 @@
       if (item.id === icon.id) item.parentId = '';
     });
     if (fromParent) dissolveIfNeeded(fromParent);
-    persistUndo(before, '已移动到分组');
+    persistUndo(before, t('已移动到分组'));
     host.refreshIconViews(true);
   }
 
@@ -663,7 +664,7 @@
     const draft = ui.tabs.querySelector('.group-rename-input');
     if (draft) {
       draft.dispatchEvent(new Event('opentab-cancel-edit'));
-      host.showToast('内容已更新，重命名已取消，请重试。');
+      host.showToast(t('内容已更新，重命名已取消，请重试。'));
       return;
     }
     ui.tabs.innerHTML = '';
@@ -719,8 +720,8 @@
     input.type = 'text';
     input.maxLength = 24;
     const intent = host.captureIntent();
-    input.placeholder = '新分组';
-    input.setAttribute('aria-label', '新分组名称');
+    input.placeholder = t('新分组');
+    input.setAttribute('aria-label', t('新分组名称'));
     let committed = false;
     const commit = (save) => {
       if (committed) return;
@@ -731,7 +732,7 @@
       const before = snapshot();
       const folder = { id: `folder-${host.generateId()}`, name };
       state().folders.push(folder);
-      persistUndo(before, '已新建分组');
+      persistUndo(before, t('已新建分组'));
       selectGroup(folder.id, true);
     };
     input.addEventListener('keydown', (event) => {
@@ -752,7 +753,7 @@
 
   function checkIntent(intent) {
     if (host.isIntentCurrent(intent)) return true;
-    host.showToast('内容已变化，请重新操作。');
+    host.showToast(t('内容已变化，请重新操作。'));
     return false;
   }
 
@@ -776,7 +777,7 @@
       if (!save || !next || next === folder.name || !checkIntent(intent)) return;
       const before = snapshot();
       state().folders.find((item) => item.id === folderId).name = next;
-      persistUndo(before, '已重命名分组');
+      persistUndo(before, t('已重命名分组'));
       host.refreshIconViews();
     };
     input.addEventListener('keydown', (event) => {
@@ -800,10 +801,10 @@
     const folder = state().folders.find((item) => item.id === folderId);
     if (!folder || folder.id === host.HOME_FOLDER_ID) return;
     const intent = host.captureIntent({ folders: [folderId], groupMembers: [folderId], icons: state().icons.filter((item) => item.folderId === folderId).map((item) => item.id) });
-    const choice = await showDialog(`删除分组「${folder.name}」？`, [
-      { label: '取消', value: '' },
-      { label: '移到默认分组', value: 'move' },
-      { label: '一起删除', className: 'danger', value: 'delete' }
+    const choice = await showDialog(t('删除分组「{name}」？', { name: folder.name }), [
+      { label: t('取消'), value: '' },
+      { label: t('移到默认分组'), value: 'move' },
+      { label: t('一起删除'), className: 'danger', value: 'delete' }
     ]);
     if ((choice !== 'move' && choice !== 'delete') || !checkIntent(intent)) return;
     const before = snapshot();
@@ -817,7 +818,7 @@
     state().folders = state().folders.filter((item) => item.id !== folderId);
     if (state().currentFolderId === folderId) state().currentFolderId = host.HOME_FOLDER_ID;
     closeOverlay(true);
-    persistUndo(before, `已删除分组「${folder.name}」`);
+    persistUndo(before, t('已删除分组「{name}」', { name: folder.name }));
     host.refreshIconViews(true);
   }
 

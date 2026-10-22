@@ -21,6 +21,10 @@ OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, s
 
 First paint applies the saved theme, clock, and wallpaper from a local boot mirror so placeholder copy never flashes. First install uses a bundled `default.webp` and does not call Bing until you choose Bing wallpaper.
 
+## Interface languages
+
+The main new-tab, settings, import/weather, and add-page popup support English and Simplified Chinese. They follow your browser language; change it in Settings → Language. Existing shortcut titles and other personal content are never translated. New installations start in light appearance; existing themes are preserved. Standalone SSH/JSON/FIX tool pages are not yet fully bilingual. [Coverage and behavior](docs/LOCALIZATION.md).
+
 ## Features
 
 ### Clock and calendar
