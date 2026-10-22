@@ -25,9 +25,38 @@ export async function verifySettingsDismissal(page) {
   let cdp;
   try {
     await open();
-    await page.locator('#add-shortcut-tile').click();
-    assert.equal(await isOpen(), false, 'native outside Add click dismisses settings first');
-    assert.equal(await page.locator('#add-icon-modal').isVisible(), false, 'dismissal never opens underlying Add');
+    const addTile = page.locator('#add-shortcut-tile');
+    const originalAddStyle = await addTile.getAttribute('style');
+    try {
+      // Prior layout cases can leave Add underneath the sidebar. Keep its grid
+      // ancestry and real delegated handler, but give this outside-click fixture
+      // an exposed, stable target without forcing a click through the panel.
+      await addTile.evaluate(el => Object.assign(el.style, {
+        position: 'fixed', left: '8px', top: '460px', width: '150px', height: '80px',
+        zIndex: '99', transform: 'none', transition: 'none'
+      }));
+      const target = await addTile.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        const panel = document.getElementById('settings-panel').getBoundingClientRect();
+        const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+        return {
+          inViewport: rect.width > 0 && rect.height > 0 && x >= 0 && x < innerWidth && y >= 0 && y < innerHeight,
+          outsidePanel: x < panel.left || x >= panel.right || y < panel.top || y >= panel.bottom,
+          receivesPointer: el.contains(document.elementFromPoint(x, y))
+        };
+      });
+      assert.equal(target.inViewport, true, 'native Add click target is inside the viewport');
+      assert.equal(target.outsidePanel, true, 'native Add click target is outside settings');
+      assert.equal(target.receivesPointer, true, 'native Add click target is not clipped or intercepted');
+      await addTile.click();
+      assert.equal(await isOpen(), false, 'native outside Add click dismisses settings first');
+      assert.equal(await page.locator('#add-icon-modal').isVisible(), false, 'dismissal never opens underlying Add');
+    } finally {
+      await addTile.evaluate((el, style) => {
+        if (style === null) el.removeAttribute('style');
+        else el.setAttribute('style', style);
+      }, originalAddStyle);
+    }
     await open();
     await page.locator('#settings-search').fill('sync');
     await page.locator('#site-list-input').fill('https://unfinished.example/draft.png');
