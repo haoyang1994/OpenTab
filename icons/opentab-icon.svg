@@ -1,44 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="opentab-bg" x1="72" y1="40" x2="460" y2="480" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#3DB1FF"/>
-      <stop offset="0.48" stop-color="#5B88FF"/>
-      <stop offset="1" stop-color="#7B6AFF"/>
+    <linearGradient id="surface" x1="16" y1="8" x2="112" y2="124" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#367FF1"/>
+      <stop offset="1" stop-color="#3947C9"/>
     </linearGradient>
-    <clipPath id="opentab-clip">
-      <rect width="512" height="512" rx="112"/>
-    </clipPath>
   </defs>
-
-  <rect width="512" height="512" rx="112" fill="url(#opentab-bg)"/>
-
-  <g clip-path="url(#opentab-clip)" fill="#FFFFFF">
-    <!-- Browser-tab outline with a downward caret -->
-    <path
-      fill="none"
-      stroke="#FFFFFF"
-      stroke-width="22"
-      stroke-linejoin="round"
-      stroke-linecap="round"
-      d="M136 116
-         H376
-         Q404 116 404 144
-         V188
-         Q404 216 376 216
-         H278
-         L256 248
-         L234 216
-         H136
-         Q108 216 108 188
-         V144
-         Q108 116 136 116
-         Z"
-    />
-
-    <!-- 2x2 shortcut grid -->
-    <rect x="181" y="270" width="64" height="64" rx="16"/>
-    <rect x="267" y="270" width="64" height="64" rx="16"/>
-    <rect x="181" y="356" width="64" height="64" rx="16"/>
-    <rect x="267" y="356" width="64" height="64" rx="16"/>
-  </g>
+  <rect width="128" height="128" rx="28" fill="url(#surface)"/>
+  <!-- A browser window with one active tab and an open, uncluttered page. -->
+  <rect x="24" y="32" width="80" height="64" rx="12" fill="#FFF"/>
+  <rect x="32" y="40" width="64" height="48" rx="4" fill="url(#surface)"/>
+  <path d="M40 44H56C58.209 44 60 45.791 60 48V56H36V48C36 45.791 37.791 44 40 44Z" fill="#9EE9F2"/>
+  <path d="M32 56H96" stroke="#FFF" stroke-width="8"/>
 </svg>

@@ -21,6 +21,7 @@
   ];
 
   const OVERLAY_SELECTORS = [
+    '#command-palette:not(.hidden)',
     '#settings-panel:not(.hidden)',
     '#add-icon-modal:not(.hidden)',
     '#timezone-selector:not(.hidden)',
@@ -46,8 +47,6 @@
   };
   let historyHighlight = -1;
   let displayedSuggestions = [];
-  let shortcutSession = false;
-  let shortcutOpener = null;
   let editingCustomId = '';
   let hideHistoryTimer = 0;
   let bound = false;
@@ -65,6 +64,21 @@
     resolve,
     listEngines,
     selectEngine,
+    // Only the current loaded workspace is exposed. The palette never receives
+    // an arbitrary-navigation API or maintains a second search/storage index.
+    commandPalette: {
+      listSites: (query, limit = 20) => matchingSites(query, { includeEmpty: true, includeLocation: true, limit: paletteLimit(limit) }),
+      listGroups: (query, limit = 20) => matchingGroups(query).slice(0, paletteLimit(limit)),
+      validateSite: validatedSite,
+      validateGroup: validatedGroup,
+      openSite(item, forceNewTab) {
+        const fresh = validatedSite(item);
+        if (!fresh) return false;
+        hideHistory();
+        navigate(fresh.url, forceNewTab);
+        return true;
+      }
+    },
     getState: () => ({
       searchEngine: searchState.searchEngine,
       customSearchEngines: searchState.customSearchEngines.map((item) => ({ ...item })),
@@ -326,33 +340,70 @@
     return parts.concat(ancestors).filter(Boolean).join(' / ');
   }
 
-  function savedSiteMatches(query) {
-    const needle = String(query || '').trim().toLowerCase();
-    if (!needle) return [];
+  function paletteLimit(limit) {
+    return Math.max(1, Math.min(100, Math.floor(Number(limit)) || 20));
+  }
+
+  function loadedWorkspace() {
     const icons = callbacks.getIcons();
-    if (!Array.isArray(icons)) return [];
-    const groups = callbacks.getFolders();
-    const folders = Array.isArray(groups) ? groups : [];
-    return icons.map(savedSiteRecord).filter(Boolean).map((site) => {
+    const folders = callbacks.getFolders();
+    return { icons: Array.isArray(icons) ? icons : [], folders: Array.isArray(folders) ? folders : [] };
+  }
+
+  function matchingSites(query, options = {}) {
+    const needle = String(query || '').trim().toLowerCase();
+    if (!needle && !options.includeEmpty) return [];
+    const { icons, folders } = loadedWorkspace();
+    const matches = icons.map(savedSiteRecord).filter(Boolean).map((site) => {
       const name = site.name.toLowerCase();
-      const rank = name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 : site.domain.toLowerCase().includes(needle) ? 3 : -1;
-      return { ...site, rank, query: needle };
-    }).filter((site) => site.rank >= 0)
-      .sort((a, b) => a.rank - b.rank || a.index - b.index)
-      .slice(0, MAX_SAVED_SITES)
-      .map((site) => ({ ...site, location: siteLocation(site, icons, folders) }));
+      const location = siteLocation(site, icons, folders);
+      const rank = !needle || name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 :
+        site.domain.toLowerCase().includes(needle) ? 3 : options.includeLocation && location.toLowerCase().includes(needle) ? 4 : -1;
+      return { ...site, location, rank, query: needle };
+    }).filter((site) => site.rank >= 0).sort((a, b) => a.rank - b.rank || a.index - b.index);
+    return options.limit ? matches.slice(0, options.limit) : matches;
+  }
+
+  function savedSiteMatches(query) {
+    return matchingSites(query, { limit: MAX_SAVED_SITES });
+  }
+
+  function matchingGroups(query) {
+    const needle = String(query || '').trim().toLowerCase();
+    return loadedWorkspace().folders.filter((group) => group && group.id && String(group.name || '').trim())
+      .map((group, index) => {
+        const name = String(group.name);
+        const lower = name.toLowerCase();
+        const rank = !needle || lower === needle ? 0 : lower.startsWith(needle) ? 1 : lower.includes(needle) ? 2 : -1;
+        return { type: 'group', id: group.id, name, rank, index };
+      }).filter((group) => group.rank >= 0).sort((a, b) => a.rank - b.rank || a.index - b.index);
+  }
+
+  function validatedGroup(item) {
+    if (!item || item.type !== 'group' || !item.id) return null;
+    const matches = loadedWorkspace().folders.filter((group) => group && group.id === item.id);
+    if (matches.length !== 1 || String(matches[0].name || '') !== item.name) return null;
+    return { type: 'group', id: item.id, name: item.name };
+  }
+
+  function validatedSite(item) {
+    if (!item || item.type !== 'site') return null;
+    const { icons, folders } = loadedWorkspace();
+    const matches = icons.filter((icon) => icon && (item.id ? icon.id === item.id : icon === item.source));
+    if (matches.length !== 1) return null;
+    const fresh = savedSiteRecord(matches[0], 0);
+    // Revalidate the displayed snapshot separately from the inline input query.
+    // Imports, edits, moves, and deletes cannot redirect a stale selection.
+    if (!fresh || fresh.id !== item.id || fresh.name !== item.name || fresh.url !== item.url ||
+        fresh.folderId !== item.folderId || fresh.parentId !== item.parentId ||
+        siteLocation(fresh, icons, folders) !== item.location) return null;
+    return fresh;
   }
 
   function openSavedSite(item, forceNewTab) {
     const input = inputEl();
-    const icons = callbacks.getIcons();
-    const current = Array.isArray(icons) ? icons.find((icon) => icon && (item.id ? icon.id === item.id : icon === item.source)) : null;
-    const fresh = savedSiteRecord(current, 0);
-    // A visible option may outlive an edit/delete/import. Never redirect to a
-    // different record, changed destination, or a renamed stale selection.
-    if (!input || input.value.trim().toLowerCase() !== item.query || !fresh ||
-        fresh.name !== item.name || fresh.url !== item.url ||
-        fresh.folderId !== item.folderId || fresh.parentId !== item.parentId) {
+    const fresh = validatedSite(item);
+    if (!input || input.value.trim().toLowerCase() !== item.query || !fresh) {
       historyHighlight = -1;
       updateHint();
       renderHistory();
@@ -387,7 +438,6 @@
   }
 
   function navigate(url, forceNewTab) {
-    endSearchShortcut(false);
     const openInNewTab = Boolean(forceNewTab) || searchState.searchOpenInNewTab;
     api.lastNavigation = { url, openInNewTab };
     if (typeof api.navigateHook === 'function') {
@@ -811,7 +861,6 @@
         return;
       }
       if (typeof callbacks.openMatchedIcon === 'function') {
-        endSearchShortcut(false);
         callbacks.openMatchedIcon(result.icon);
       }
       return;
@@ -839,60 +888,8 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  function isMacPlatform() {
-    return /Mac|iPhone|iPad|iPod/i.test(global.navigator?.userAgentData?.platform || global.navigator?.platform || '');
-  }
-
-  function renderShortcutHint() {
-    const mac = isMacPlatform();
-    const hint = $('search-shortcut-hint');
-    if (hint) hint.textContent = mac ? '⌘ K' : 'Ctrl K';
-    const input = inputEl();
-    if (input) input.setAttribute('aria-keyshortcuts', `Alt+ArrowDown Alt+ArrowUp ${mac ? 'Meta' : 'Control'}+K`);
-  }
-
-  function endSearchShortcut(restore) {
-    const opener = shortcutOpener;
-    shortcutSession = false;
-    shortcutOpener = null;
-    document.body.classList.remove('search-shortcut-active');
-    if (!restore) return;
-    const input = inputEl();
-    if (document.activeElement === input) input.blur();
-    if (!opener || opener === document.body || !document.contains(opener) || opener.disabled || opener.getAttribute('aria-disabled') === 'true' ||
-        opener.closest('[hidden], [inert], .hidden') || !opener.getClientRects().length) return;
-    const style = global.getComputedStyle(opener);
-    if (style.visibility !== 'hidden' && style.visibility !== 'collapse') opener.focus();
-  }
-
-  function onSearchShortcut(event) {
-    if (String(event.key).toLowerCase() !== 'k' || event.altKey || event.shiftKey ||
-        event.isComposing || isImeKeydown(event)) return false;
-    const primaryModifier = isMacPlatform() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-    if (!primaryModifier) return false;
-    const input = inputEl();
-    if (!input || isOverlayOpen() ||
-        (isEditable(event.target) && event.target !== input) ||
-        (isEditable(document.activeElement) && document.activeElement !== input)) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    const entering = document.activeElement !== input;
-    if (!shortcutSession) {
-      shortcutOpener = entering ? document.activeElement : null;
-      shortcutSession = true;
-    }
-    document.body.classList.add('search-shortcut-active');
-    input.focus();
-    if (entering) input.select();
-    historyHighlight = -1;
-    updateHint();
-    renderHistory();
-    return true;
-  }
-
   function onGlobalKeydown(event) {
     if (event.defaultPrevented) return;
-    if (onSearchShortcut(event)) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
 
     const input = inputEl();
@@ -940,13 +937,6 @@
       }
       return;
     }
-    if (event.key === 'Escape' && shortcutSession) {
-      event.preventDefault();
-      event.stopPropagation();
-      hideHistory();
-      endSearchShortcut(true);
-      return;
-    }
     if (event.key === 'Escape' && inputEl().getAttribute('aria-expanded') === 'true') {
       event.preventDefault();
       event.stopPropagation();
@@ -991,15 +981,7 @@
       updateHint();
       renderHistory();
     });
-    input.addEventListener('blur', (event) => {
-      const hiddenTarget = shortcutSession && document.body.classList.contains('minimal-mode') &&
-        event.relatedTarget?.closest('#search-widget-wrap') ? event.relatedTarget : null;
-      endSearchShortcut(false);
-      // Native Shift+Tab may target an engine button that the temporary
-      // minimal-mode surface just hid. Never leave focus inside hidden UI.
-      if (hiddenTarget) Promise.resolve().then(() => {
-        if (document.activeElement === hiddenTarget && !hiddenTarget.getClientRects().length) hiddenTarget.blur();
-      });
+    input.addEventListener('blur', () => {
       global.clearTimeout(hideHistoryTimer);
       hideHistoryTimer = global.setTimeout(() => {
         if (document.activeElement !== input) hideHistory();
@@ -1007,14 +989,6 @@
     });
     input.addEventListener('auxclick', onSearchAuxClick);
     input.addEventListener('mousedown', onSearchMouseDown);
-
-    const engineSwitch = $('search-engine-switch');
-    if (engineSwitch) engineSwitch.addEventListener('mousedown', (event) => {
-      // The existing click handler returns focus to search. Keep the temporary
-      // minimal surface alive until that click, as saved-site options do.
-      if (shortcutSession && document.body.classList.contains('minimal-mode') &&
-          event.button === 0 && event.target.closest('.engine-btn')) event.preventDefault();
-    });
 
     document.querySelectorAll('#search-engine-switch > .engine-btn[data-engine]').forEach((btn) => {
       btn.addEventListener('click', () => selectEngine(btn.dataset.engine));
@@ -1066,7 +1040,6 @@
   }
 
   function renderAll() {
-    renderShortcutHint();
     renderCustomEngineButtons();
     renderEngineButtons();
     renderDefaultEngineSelect();

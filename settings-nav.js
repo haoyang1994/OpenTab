@@ -606,6 +606,13 @@
     setActive(activeId);
   }
 
+  function openSection(id) {
+    if (!metaById(id) || (id === 'advanced' && !developerToolsEnabled) || !panel()) return false;
+    open();
+    setActive(id, { scroll: true });
+    return true;
+  }
+
   function close() {
     const el = panel();
     if (!el || el.classList.contains('hidden')) return false;
@@ -935,6 +942,7 @@
     applyFilter,
     setActive,
     open,
+    openSection,
     close,
     handleEscape,
     init,

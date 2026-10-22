@@ -454,3 +454,23 @@ const added = addedFileBytes();
 assert.ok(added <= 300 * 1024, `AC6: added files ${added} bytes exceed 300KB`);
 console.log(`icons library stats count=${stats.count} cn=${stats.cn} intl=${stats.intl} addedBytes=${added}`);
 console.log('icons unit tests passed');
+
+// App identity stays local and every declared raster has its true native size.
+const appManifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+const releaseFiles = JSON.parse(fs.readFileSync(path.join(root, 'scripts/release-files.json'), 'utf8'));
+for (const iconMap of [appManifest.icons, appManifest.action.default_icon]) {
+  for (const [size, file] of Object.entries(iconMap)) {
+    assert.ok(releaseFiles.includes(file), `${file} must be packaged`);
+    const png = fs.readFileSync(path.join(root, file));
+    assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    assert.equal(png.toString('ascii', 12, 16), 'IHDR');
+    assert.equal(png.readUInt32BE(16), Number(size), `${file} width`);
+    assert.equal(png.readUInt32BE(20), Number(size), `${file} height`);
+    assert.equal(png[25], 6, `${file} must retain RGBA transparency`);
+  }
+}
+const appIconSvg = fs.readFileSync(path.join(root, 'icons/opentab-icon.svg'), 'utf8');
+assert.match(appIconSvg, /viewBox="0 0 128 128"/);
+assert.doesNotMatch(appIconSvg, /<(?:script|image|foreignObject)\b|(?:href|onload)=/i,
+  'app icon must remain self-contained vector artwork');
+console.log('App icon asset validation passed.');

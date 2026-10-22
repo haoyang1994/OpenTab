@@ -10,6 +10,7 @@
   "background.js",
   "bing-cache.js",
   "boot.js",
+  "command-palette.js",
   "folders.js",
   "home.css",
   "home.html",
