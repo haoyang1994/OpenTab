@@ -527,7 +527,6 @@
     };
 
     if (state.showSeconds) options.second = '2-digit';
-    // Strip the localized day period; #ampm renders AM/PM separately.
     elements.time.textContent = new Intl.DateTimeFormat(window.OpenTabI18n?.locale || 'zh-CN', options)
       .formatToParts(now)
       .filter((part) => part.type !== 'dayPeriod')
@@ -1139,10 +1138,11 @@
   }
 
   function selectFolder(folderId, animated = false) {
-    if (!getFolderById(folderId)) return;
+    if (!getFolderById(folderId)) return false;
     state.currentFolderId = folderId;
-    saveState();
+    const saved = saveState();
     refreshIconViews(animated);
+    return saved;
   }
 
   function addIcon(payload) {
@@ -1481,7 +1481,6 @@
     const rawSshSocksPort = elements.sshSocksPort.value.trim();
     const rawSshSocksUsername = elements.sshSocksUsername.value.trim();
     const rawSshSocksPassword = elements.sshSocksPassword.value;
-    // Retain removed tool metadata unless the user explicitly selects JSON.
     const toolSubtype = elements.toolSubtype.value || (editingIconId ? state.icons.find(item => item.id === editingIconId)?.toolSubtype : '') || 'json-format';
     const folderId = state.currentFolderId || HOME_FOLDER_ID;
 
@@ -1833,6 +1832,7 @@
       getIconLabel
     });
   }
+  window.OpenTabCommandPalette?.init({ openAddWebsite() { rememberFocus(); openAddIconModal(); } });
   OpenTabSearch.init({
     getState: () => state,
     openMatchedIcon: (icon) => {

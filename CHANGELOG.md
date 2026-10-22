@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Cmd/Ctrl+K now opens a dedicated quick-launch dialog for saved sites, groups, and existing actions, instead of focusing the inline search box. The dialog works in clock-only mode without changing preferences.
+- Refreshed the application icon with a legible browser-tab silhouette at extension icon sizes.
+
+
 ### Security
 
 - Remove the independent FIX parser and its creation entry points. Existing shortcut records remain intact and show an unavailable-tool message instead of navigating to a different tool.

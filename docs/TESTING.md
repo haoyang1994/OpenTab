@@ -32,7 +32,8 @@
 - AC4 历史最多 20、去重、可关、可清，只写 `chrome.storage.local`
 - AC5 快捷方式名称完全匹配（忽略大小写）回车打开并显示提示
 - AC6 新标签页设置、Ctrl+Enter、中键
-- Cmd+K（Mac）/Ctrl+K（Windows/Linux）：当前页内聚焦搜索，重复激活保留查询与选区，Esc恢复有效来源焦点；Tab离开重置会话，不接管其他编辑输入/模态层/IME或多余修饰键，原生MetaK/ControlK回归与平台提示。
+- Cmd+K（Mac）/Ctrl+K（Windows/Linux）：独立 dialog，真实空查询入口与分类；保留普通搜索/选区，重复激活、Esc/背景恢复、Tab焦点循环和背景inert；保护草稿/IME/多余修饰键，网站快照重验，分组保存完成后关闭，设置入口只导航。Linux Chromium 原生Meta/Control事件覆盖平台检测，不代表Mac/Windows实机。
+- command-palette.test.mjs：中英、浅深、1280/360与短屏、极简模式真实截图；原inline站点搜索回归仍保留。
 - 保存网站查找：跨分组/文件夹标题与域名排名、前5条且历史独立、未选择不自动打开部分匹配、旧目标激活重验；真实输入/箭头/Tab/IME/左右中键，查找零网络增量及icons/folders不变，中英1280/360px截图。Node行为回归见 `tests/search-saved-sites-unit.test.mjs`，完整浏览器场景见 `tests/search-saved-sites.mjs`。
 - AC8 记录首屏 DCL 与 `opentab:grid-ready`；DCL 必须 > 0；`grid-ready` 与 DCL 均 ≤ 500ms（与 T8 同类阈值）；无 console error
 

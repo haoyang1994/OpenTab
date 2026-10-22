@@ -643,11 +643,11 @@
   }
 
   function selectGroup(folderId, animated) {
-    if (!state().folders.some((folder) => folder.id === folderId)) return;
+    if (!state().folders.some((folder) => folder.id === folderId)) return false;
     const already = state().currentFolderId === folderId;
     closeOverlay(true);
-    if (already) return;
-    host.selectFolder(folderId, animated);
+    if (already) return true;
+    return host.selectFolder(folderId, animated);
   }
 
   function groupCount(folderId) {
@@ -949,6 +949,7 @@
     showDialog,
     syncContextMenu,
     moveIconToGroup,
+    selectGroup,
     init
   };
 })(window);

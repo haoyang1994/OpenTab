@@ -94,7 +94,7 @@
             <span id="search-custom-engines" class="search-custom-engines"></span>
           </div>
           <input id="search-input" type="text" title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" data-i18n-title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" aria-keyshortcuts="Alt+ArrowDown Alt+ArrowUp" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
-          <kbd id="search-shortcut-hint" class="search-shortcut-hint" aria-hidden="true"></kbd>
+          <kbd id="search-shortcut-hint" class="search-shortcut-hint" title="快捷入口" data-i18n-title="快捷入口" aria-hidden="true"></kbd>
         </div>
         <p id="search-hint" class="search-hint hidden" role="status" aria-live="polite"></p>
         <div id="search-history" class="search-history hidden" role="listbox"></div>
@@ -668,6 +668,29 @@
     </div>
   </div>
 
+  <div id="command-palette" class="command-palette hidden">
+    <section class="command-palette-panel" role="dialog" aria-modal="true" aria-labelledby="command-palette-title">
+      <h2 id="command-palette-title" class="sr-only" data-i18n="快捷入口">快捷入口</h2>
+      <div class="command-palette-search">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <input id="command-palette-input" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="command-palette-results" autocomplete="off" spellcheck="false" aria-label="搜索网站、分组或操作" data-i18n-aria-label="搜索网站、分组或操作" placeholder="搜索网站、分组或操作…" data-i18n-placeholder="搜索网站、分组或操作…">
+        <button id="command-palette-close" type="button" aria-label="关闭快捷入口" data-i18n-aria-label="关闭快捷入口"><kbd>Esc</kbd></button>
+      </div>
+      <div class="command-palette-filters" role="group" aria-label="入口类别" data-i18n-aria-label="入口类别">
+        <button type="button" data-palette-filter="all" aria-pressed="true" data-i18n="全部">全部</button>
+        <button type="button" data-palette-filter="sites" aria-pressed="false" data-i18n="网站">网站</button>
+        <button type="button" data-palette-filter="groups" aria-pressed="false" data-i18n="分组">分组</button>
+        <button type="button" data-palette-filter="actions" aria-pressed="false" data-i18n="操作">操作</button>
+      </div>
+      <div class="command-palette-scroll">
+        <div id="command-palette-results" role="listbox" aria-label="快捷入口" data-i18n-aria-label="快捷入口"></div>
+        <div id="command-palette-empty" class="command-palette-empty hidden"><p data-i18n="没有找到匹配入口">没有找到匹配入口</p><span data-i18n="试试网站名称、域名或分组">试试网站名称、域名或分组</span></div>
+      </div>
+      <div id="command-palette-status" class="sr-only" role="status" aria-live="polite"></div>
+      <footer class="command-palette-footer"><span><kbd>↑</kbd> <kbd>↓</kbd> <span data-i18n="选择">选择</span></span><span><kbd>Enter</kbd> <span data-i18n="打开">打开</span></span><span><kbd>Esc</kbd> <span data-i18n="关闭">关闭</span></span></footer>
+    </section>
+  </div>
+
   <script src="vendor/flatpickr/flatpickr.min.js"></script>
   <script src="vendor/flatpickr/l10n/zh.js"></script>
   <script src="search.js"></script>
@@ -682,6 +705,7 @@
   <script src="icons.js"></script>
   <script src="weather.js"></script>
   <script src="lib/core-accessibility.js"></script>
+  <script src="command-palette.js"></script>
   <script src="home.js"></script>
 </body>
 </html>
