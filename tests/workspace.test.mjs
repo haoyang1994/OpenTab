@@ -68,7 +68,7 @@ try {
     for (const page of pages) {
       if (page.isClosed()) continue;
       await page.reload(); await ready(page);
-      const rendered = await page.locator('#icons-container .icon-name').allTextContents();
+      const rendered = await page.locator('#icons-container .icon-widget[data-id] .icon-name').allTextContents();
       assert.deepEqual(rendered.sort(), names.slice().sort(), 'persisted merge survives reload');
     }
   }
