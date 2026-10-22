@@ -132,15 +132,29 @@ export async function verifySavedSites(page, worker) {
   assert.equal((await log()).length, count + 1, 'middle click must not also submit the input');
   assert.equal((await log()).at(-1).openInNewTab, true);
 
-  // Options participate in the input's active-descendant pattern, not the Tab
-  // sequence. Tab must leave the widget, and delayed blur must not hide focus.
+  // Result choices use active-descendant navigation. The new delete actions
+  // are native Tab stops: visit each exact action, then leave the widget.
+  // A focused delete must not disappear when the input's blur timer runs.
   for (const key of ['Tab', 'Shift+Tab']) {
     await type('doc'); await page.locator('#search-input').press('ArrowDown');
+    const beforeTabNavigation = (await log()).length;
+    if (key === 'Tab') {
+      const actions = page.locator('#search-history .search-history-delete');
+      const actionCount = await actions.count();
+      assert.ok(actionCount > 0, 'fixture includes deletable history');
+      for (let index = 0; index < actionCount; index++) {
+        await page.keyboard.press('Tab');
+        assert.equal(await actions.nth(index).evaluate(node => document.activeElement === node), true,
+          `Tab visits delete action ${index} without opening a result`);
+        assert.equal(await page.locator('#search-history').isVisible(), true);
+      }
+    }
     await page.keyboard.press(key);
     assert.equal(await page.evaluate(() => !!document.activeElement?.closest('#search-history')), false);
     assert.notEqual(await page.evaluate(() => document.activeElement?.id), 'search-input');
     await page.waitForFunction(() => document.getElementById('search-history').classList.contains('hidden'));
     assert.equal(await active(), null);
+    assert.equal((await log()).length, beforeTabNavigation, 'Tab traversal never activates a result');
   }
   await type('doc'); await page.locator('#search-input').press('ArrowDown');
   const beforeIme = await active();
