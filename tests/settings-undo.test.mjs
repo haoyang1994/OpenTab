@@ -8,7 +8,7 @@ const Settings = require('../settings-nav.js');
 const clone = (value) => structuredClone(value);
 const source = fs.readFileSync(new URL('../settings-nav.js', import.meta.url), 'utf8');
 // Exercise the actual confirmation/reset/undo implementation without a browser.
-const resetCode = source.slice(source.indexOf('  function confirmDialog('), source.indexOf('  function open()'));
+const resetCode = source.slice(source.indexOf('  function confirmDialog('), source.indexOf('  function open('));
 function harness(options = {}) {
   const state = {
     ...Settings.DEFAULT_APPEARANCE,

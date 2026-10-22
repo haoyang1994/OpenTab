@@ -54,6 +54,7 @@
   }
 
   function blocked(target) {
+    if (global.OpenTabSiteList?.isBusy?.()) return true;
     if (OVERLAYS.some((id) => { const node = $(id); return node && !node.classList.contains('hidden') && !node.hidden; })) return true;
     const main = $('search-input');
     return (editable(target) && target !== main) || (editable(document.activeElement) && document.activeElement !== main);

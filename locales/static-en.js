@@ -1,5 +1,13 @@
 /* Static shell strings. Keys are the original UI phrases, never user content. */
 OpenTabI18n.register({
+  "批量添加网站": "Batch add websites",
+  "粘贴网址，批量添加": "Paste URLs to add websites",
+  "网址列表": "URL list",
+  "每行一个网址，最多 100 行、32 KiB。预览仅在本机处理，确认前不会访问网站。": "One URL per line, up to 100 lines and 32 KiB. Preview stays on this device and does not visit websites before you confirm.",
+  "添加到分组": "Destination group",
+  "预览网址": "Preview URLs",
+  "确认添加": "Confirm addition",
+  "网址预览结果": "URL preview results",
   "正在切换分组…": "Switching group…",
   "分组切换未保存，请重试。": "Group selection was not saved. Please try again.",
   "显示 {count} 个入口": "Showing {count} entries",

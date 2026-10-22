@@ -13,6 +13,8 @@
 
   const HOME_GROUP_ID = 'folder-home';
   const TOP_SITES_LIMIT = 12;
+  const URL_LIST_MAX_LINES = 100;
+  const URL_LIST_MAX_BYTES = 32768;
   const UNDO_KEY = 'opentab.importUndo';
   const NOTICE_KEY = 'opentab.importNotice';
   const EPOCH_KEY = 'opentab.workspaceEpoch';
@@ -27,6 +29,7 @@
   let workspaceRef = null;
   let idFactory = null;
   let reloader = null;
+  let urlListPreviews = new WeakMap();
 
   function getChrome() {
     if (chromeRef) return chromeRef;
@@ -36,6 +39,7 @@
   function setChrome(api) {
     chromeRef = api || null;
     workspaceRef = null;
+    urlListPreviews = new WeakMap();
   }
 
   function getWorkspace() {
@@ -375,6 +379,7 @@
   }
 
   function noticeMessage(notice) {
+    if (notice.format === 'url-list') return urlListResultMessage(notice.iconCount, notice.targetName, notice.duplicateCount);
     return Number.isFinite(notice.iconCount) && Number.isFinite(notice.groupCount)
       ? importResultMessage(notice.iconCount, notice.groupCount) : t(notice.text);
   }
@@ -455,6 +460,193 @@
     const trimmed = String(raw || '').trim();
     const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : 'https://' + trimmed;
     return new URL(candidate).toString();
+  }
+
+  // This stricter parser is intentionally separate from legacy backup import.
+  // A pasted line is a URL, never a title/search query or permission to repair it.
+  function parseUrlListLine(raw) {
+    const value = raw.trim();
+    if (/[\s\u0000-\u001f\u007f-\u009f\\]/.test(value)) {
+      return { reason: '网址不能包含空白、控制字符或反斜杠。' };
+    }
+    const explicitHttp = /^https?:/i.test(value);
+    const domainPort = /^[^/?#:@]+(?:\.[^/?#:@]+)+:\d{1,5}(?:[/?#]|$)/.test(value);
+    if (!explicitHttp && /^[a-z][a-z\d+.-]*:/i.test(value) && !domainPort) {
+      return { reason: '仅支持 HTTP 或 HTTPS 网址。' };
+    }
+    if (value.startsWith('/') || (explicitHttp && !/^https?:\/\/[^/?#]/i.test(value))) {
+      return { reason: '网址格式无效，请填写完整网址或域名。' };
+    }
+    try {
+      const parsed = new URL(explicitHttp ? value : 'https://' + value);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { reason: '仅支持 HTTP 或 HTTPS 网址。' };
+      }
+      // Even empty userinfo (https://@host) is rejected, not silently removed.
+      const authority = (explicitHttp ? value.replace(/^https?:\/\//i, '') : value).split(/[/?#]/)[0];
+      if (parsed.username || parsed.password || authority.includes('@')) {
+        return { reason: '网址不能包含用户名或密码。' };
+      }
+      if (!explicitHttp) {
+        const hostname = parsed.hostname.replace(/\.$/, '');
+        const labels = hostname.split('.');
+        if (!authority.includes('.') || labels.length < 2 || labels.some((label) => !/^[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/i.test(label))) {
+          return { reason: '请填写完整网址或有效域名，不支持搜索词。' };
+        }
+      }
+      if (!parsed.hostname) throw new Error('Missing hostname');
+      return { url: parsed.href, name: parsed.hostname, reason: '可添加。' };
+    } catch (_) {
+      return { reason: '网址格式无效，请填写完整网址或域名。' };
+    }
+  }
+
+  function urlListCounts(rows) {
+    return rows.reduce((counts, row) => {
+      counts.total += 1;
+      counts[row.status] += 1;
+      return counts;
+    }, { total: 0, ready: 0, duplicate: 0, invalid: 0 });
+  }
+
+  function urlListFailure(error, message) {
+    return { ok: false, format: 'url-list', error, message: t(message), rows: [], counts: urlListCounts([]), acceptedUrls: [] };
+  }
+
+  function parseUrlList(text) {
+    // Keep parsing pure: no storage, IDs, icon preparation, lookup or translation.
+    const failure = (error, message) => ({ ok: false, format: 'url-list', error, message, rows: [], counts: urlListCounts([]), acceptedUrls: [] });
+    if (typeof text !== 'string') return failure('invalid-input', '请粘贴网址文本。');
+    if (text.length > URL_LIST_MAX_BYTES || new TextEncoder().encode(text).length > URL_LIST_MAX_BYTES) {
+      return failure('text-too-long', '网址文本过长，请控制在 32 KiB 以内。');
+    }
+    const lines = text.split(/\r\n|\n|\r/).map((raw, index) => ({ raw, lineNumber: index + 1 })).filter((line) => line.raw.trim());
+    if (lines.length > URL_LIST_MAX_LINES) return failure('too-many-lines', '一次最多添加 100 行网址，请分批导入。');
+    const seen = new Set();
+    const rows = lines.map(({ raw, lineNumber }) => {
+      const parsed = parseUrlListLine(raw);
+      const row = { lineNumber, raw, url: parsed.url || '', name: parsed.name || '', status: parsed.url ? 'ready' : 'invalid', reason: parsed.reason };
+      if (parsed.url && seen.has(parsed.url)) {
+        row.status = 'duplicate';
+        row.reason = '与本次列表中的网址重复。';
+      }
+      if (parsed.url) seen.add(parsed.url);
+      return row;
+    });
+    return { ok: true, format: 'url-list', rows, counts: urlListCounts(rows), acceptedUrls: rows.filter((row) => row.status === 'ready').map((row) => row.url) };
+  }
+
+  function urlListGroups(current) {
+    const groups = Array.isArray(current.folders) ? current.folders : [];
+    const valid = groups.filter((group) => group && typeof group.id === 'string' && group.id && typeof group.name === 'string' && group.name
+      && groups.filter((item) => item && item.id === group.id).length === 1);
+    // Home exists logically even before a fresh profile has saved folders.
+    // Never synthesize an arbitrary destination or replace a malformed record.
+    if (!groups.some((group) => group && group.id === HOME_GROUP_ID)) valid.unshift({ id: HOME_GROUP_ID, name: t('主页') });
+    return valid;
+  }
+
+  function hasStoredUrlListTarget(current, id) {
+    return Array.isArray(current.folders) && current.folders.some((group) => group && group.id === id);
+  }
+
+  function urlListTargetIdentity(target) {
+    return JSON.stringify(Object.fromEntries(Object.keys(target).sort().map((key) => [key, target[key]])));
+  }
+
+  async function readUrlListContext() {
+    const current = await getWorkspace().read(['folders', 'currentFolderId', EPOCH_KEY]);
+    return { groups: urlListGroups(current).map(({ id, name }) => ({ id, name })), currentFolderId: current.currentFolderId || HOME_GROUP_ID, epoch: current[EPOCH_KEY] || 0 };
+  }
+
+  function targetUrlSet(current, targetId) {
+    const urls = new Set();
+    (Array.isArray(current.icons) ? current.icons : []).forEach((icon) => {
+      // Folder children share folderId with their containing group. A folder
+      // tile or developer tool is not a shortcut, even if it has a URL field.
+      if (!icon || ['folder', 'tool', 'ssh'].includes(icon.type) || readIconGroupId(icon) !== targetId || typeof icon.url !== 'string') return;
+      const parsed = parseUrlListLine(icon.url);
+      if (parsed.url) urls.add(parsed.url);
+    });
+    return urls;
+  }
+
+  async function previewUrlList(text, targetGroupId) {
+    const parsed = parseUrlList(text);
+    if (!parsed.ok) return { ...parsed, message: t(parsed.message) };
+    const current = await getWorkspace().read(['icons', 'folders', EPOCH_KEY]);
+    const target = urlListGroups(current).find((group) => group.id === targetGroupId);
+    if (!target) return urlListFailure('target-missing', '目标分组不存在，请重新选择分组并预览。');
+    const existing = targetUrlSet(current, target.id);
+    const rows = parsed.rows.map((row) => row.status === 'ready' && existing.has(row.url)
+      ? { ...row, status: 'duplicate', reason: '目标分组中已存在该网址。' } : row);
+    const preview = { ...parsed, rows, counts: urlListCounts(rows), acceptedUrls: rows.filter((row) => row.status === 'ready').map((row) => row.url), target: { id: target.id, name: target.name }, targetSource: hasStoredUrlListTarget(current, target.id) ? 'stored' : 'builtin', epoch: current[EPOCH_KEY] || 0 };
+    // A preview is an in-memory confirmation receipt, not a new durable store.
+    // Retain its private copy so edits or synthetic objects cannot change what
+    // was reviewed, and an already-confirmed receipt cannot be replayed.
+    urlListPreviews.set(preview, { signature: JSON.stringify(preview), target: urlListTargetIdentity(target), snapshot: JSON.parse(JSON.stringify(preview)) });
+    return preview;
+  }
+
+  function urlListResultMessage(iconCount, groupName, duplicateCount) {
+    return t('已向「{groupName}」添加 {iconCount} 个网站，跳过 {duplicateCount} 个重复网址。', { iconCount, groupName, duplicateCount });
+  }
+
+  async function commitUrlList(preview) {
+    const result = await getWorkspace().transaction(async ({ read, write, merge }) => {
+      const receipt = preview && urlListPreviews.get(preview);
+      if (!receipt || receipt.signature !== JSON.stringify(preview)) {
+        return urlListFailure('invalid-preview', '预览已失效，请重新预览后确认。');
+      }
+      const expected = receipt.snapshot;
+      const current = await read(['icons', 'folders', 'currentFolderId', EPOCH_KEY]);
+      if ((current[EPOCH_KEY] || 0) !== expected.epoch) {
+        return urlListFailure('workspace-changed', '工作区已被替换，请重新预览后确认。');
+      }
+      const groups = urlListGroups(current);
+      const target = groups.find((group) => group.id === expected.target.id);
+      const storedTarget = hasStoredUrlListTarget(current, expected.target.id);
+      if (!target || (expected.targetSource === 'stored' && !storedTarget)) return urlListFailure('target-missing', '目标分组不存在，请重新选择分组并预览。');
+      if (urlListTargetIdentity(target) !== receipt.target) return urlListFailure('target-changed', '目标分组已变化，请重新预览后确认。');
+      const existing = targetUrlSet(current, target.id);
+      const rows = expected.rows.map((row) => row.status === 'ready' && existing.has(row.url)
+        ? { ...row, status: 'duplicate', reason: '目标分组中已存在该网址。' } : row);
+      const counts = urlListCounts(rows);
+      const skippedDuplicateCount = expected.counts.ready - counts.ready;
+      if (!counts.ready) {
+        return { ...urlListFailure('empty', '没有可添加的新网址，现有数据未改动。'), rows, counts, iconCount: 0, groupCount: 0, skippedDuplicateCount };
+      }
+      const icons = Array.isArray(current.icons) ? current.icons : [];
+      const additions = rows.filter((row) => row.status === 'ready').map((row) => withIconGroup(makeShortcut(row.name, row.url), target.id));
+      const folders = Array.isArray(current.folders) ? current.folders : [];
+      // Home is logically present even when importing into another group.
+      // Materialize it only after successful target/duplicate checks, retaining
+      // the latest stored Home (including a newer name) whenever one exists.
+      // Identical before/after folders make this normalization non-destructive
+      // on undo, including when the prior implicit current group was Home.
+      const materializeHome = !hasStoredUrlListTarget(current, HOME_GROUP_ID);
+      const logicalFolders = materializeHome ? [groups.find((group) => group.id === HOME_GROUP_ID), ...folders] : folders;
+      const before = stripSecretsFromState({ icons, folders: logicalFolders, currentFolderId: current.currentFolderId || HOME_GROUP_ID, [EPOCH_KEY]: expected.epoch });
+      const after = stripSecretsFromState({ ...before, icons: icons.concat(additions), currentFolderId: target.id });
+      // Reuse workspace graph validation and the existing storage wrapper. The
+      // lock spans the latest read, validation and single atomic storage write.
+      const merged = merge(before, after, { ...current, folders: logicalFolders, currentFolderId: before.currentFolderId });
+      const message = urlListResultMessage(additions.length, target.name, counts.duplicate);
+      await write({ icons: merged.icons, currentFolderId: target.id, ...(materializeHome ? { folders: logicalFolders } : {}),
+        [UNDO_KEY]: { id: generateId(), format: 'url-list', createdAt: new Date().toISOString(), before, after },
+        [NOTICE_KEY]: { format: 'url-list', text: message, targetName: target.name, iconCount: additions.length, duplicateCount: counts.duplicate, canUndo: true }
+      });
+      urlListPreviews.delete(preview);
+      return { ok: true, format: 'url-list', iconCount: additions.length, groupCount: 0, rows, counts, skippedDuplicateCount, message };
+    });
+    if (result.ok) {
+      // A rendering/reload failure after a successful write is not a failed
+      // import, and must not encourage submitting the same list again.
+      try { setStatus(result.message, false); } catch (_) { /* Already saved. */ }
+      try { Promise.resolve(refreshUndoButton()).catch(() => {}); } catch (_) { /* Already saved. */ }
+      try { reloadPage(); } catch (_) { result.reloadRequired = true; }
+    } else setStatus(result.message, true);
+    return result;
   }
 
   function pickLink(item) {
@@ -888,7 +1080,14 @@
           return { ok: false, error: 'legacy-undo', message: t('该导入记录较旧，无法安全撤销。现有数据未改动。') };
         }
         // Apply only the inverse import delta, preserving later independent edits.
-        const merged = merge(snapshot.after, snapshot.before, current);
+        const before = { ...snapshot.before }, after = { ...snapshot.after };
+        if (snapshot.format === 'url-list' && current.currentFolderId !== after.currentFolderId) {
+          // Later independent navigation wins. Undo the imported records, not
+          // the user's newer group selection, without weakening graph checks.
+          delete before.currentFolderId;
+          delete after.currentFolderId;
+        }
+        const merged = merge(after, before, current);
         const patch = {
           [UNDO_KEY]: null,
           [NOTICE_KEY]: { text: '已撤销上次导入。', canUndo: false }
@@ -1025,6 +1224,8 @@
   return {
     HOME_GROUP_ID,
     TOP_SITES_LIMIT,
+    URL_LIST_MAX_LINES,
+    URL_LIST_MAX_BYTES,
     UNDO_KEY,
     NOTICE_KEY,
     SECRET_FIELDS,
@@ -1042,6 +1243,10 @@
     stripSecretsFromState,
     flattenBookmarkFolders,
     parseBackupFile,
+    parseUrlList,
+    readUrlListContext,
+    previewUrlList,
+    commitUrlList,
     materializeImport,
     parsedFromBookmarkFolder,
     parsedFromTopSites,

@@ -52,6 +52,8 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 
 ### Shortcuts
 
+- **Batch add websites**: paste up to 100 URL lines (32 KiB), choose a group and preview valid, duplicate and invalid rows locally before confirming. Duplicates are skipped only within the target group, including its folders, so the same site can intentionally exist elsewhere. Paths, queries and fragments are preserved. Preview makes no requests or data changes; credentials and non-HTTP(S) schemes are rejected. Undo applies to the latest import only.
+
 - **Add with +**: a persistent + tile at the end of the current group grid (or right-click empty space)
 - **Drag to reorder**: mouse drag on the desktop grid, or Alt+←/→ when a shortcut is focused
 - **Folders**: hover one shortcut on another for about 500ms to make a folder named **Folder** in English (undoable). Drop onto an existing folder to add. Click a folder to open an overlay where you can reorder, drag out, and rename. Middle-click or **Open all** opens every link (confirms in-page above 10). A folder with one leftover icon dissolves.
@@ -151,7 +153,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` runs the Python packaging checks, Node unit/security suites, and nine Playwright extension suites: command palette, accessibility, localization, multi-tab workspace persistence, core extension UI, search, first-run, settings/layout, and weather. On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [testing guide (Chinese)](docs/TESTING.md).
+`npm test` runs the Python packaging checks, Node unit/security suites, and ten Playwright extension suites: pasted URL lists, command palette, accessibility, localization, multi-tab workspace persistence, core extension UI, search, first-run, settings/layout, and weather. On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [testing guide (Chinese)](docs/TESTING.md).
 
 After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
 
