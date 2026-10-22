@@ -11,9 +11,8 @@ import { formatConsoleError, unexpectedErrors } from './console-allow.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const EXTENSION_PATH = path.resolve(__dirname, '..');
-const ARTIFACTS = fs.existsSync('/opt/cursor/artifacts')
-  ? '/opt/cursor/artifacts'
-  : path.join(EXTENSION_PATH, 'artifacts');
+// Keep screenshots in the same directory uploaded by the CI workflow.
+const ARTIFACTS = path.join(EXTENSION_PATH, 'artifacts');
 fs.mkdirSync(ARTIFACTS, { recursive: true });
 const GRID_READY_BUDGET_MS = 500;
 const HOME = 'folder-home';

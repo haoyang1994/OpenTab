@@ -7,9 +7,8 @@ import { formatConsoleError, isAllowedConsoleError } from './console-allow.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, '..');
-const ARTIFACTS = fs.existsSync('/opt/cursor/artifacts')
-  ? '/opt/cursor/artifacts'
-  : path.join(EXTENSION_PATH, 'artifacts');
+// Keep screenshots in the same directory uploaded by the CI workflow.
+const ARTIFACTS = path.join(EXTENSION_PATH, 'artifacts');
 fs.mkdirSync(ARTIFACTS, { recursive: true });
 
 const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64');
