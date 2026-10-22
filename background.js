@@ -2,7 +2,39 @@ importScripts('lib/bing-daily.js', 'workspace-persistence.js');
 
 const BING_CACHE = 'opentab-bing-v1';
 const DEFAULT_LOCAL_BG = 'assets/default_background/default.webp';
+// Keep below the page's 25 s message timeout. This includes response bodies,
+// CacheStorage and metadata work, not just the time to receive HTTP headers.
+const BING_REQUEST_TIMEOUT_MS = 20000;
 let dailyInflight = null;
+
+function withBingDeadline(work) {
+  const controller = new AbortController();
+  const timeoutError = new Error('Bing request timed out');
+  let expired = false;
+  let timer;
+  const request = {
+    signal: controller.signal,
+    async wait(promise) {
+      const value = await promise;
+      // Cache/storage operations cannot be aborted. Do not continue a late
+      // operation into pruning, metadata writes or a successful response.
+      if (expired) throw timeoutError;
+      return value;
+    }
+  };
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      expired = true;
+      controller.abort();
+      reject(timeoutError);
+    }, BING_REQUEST_TIMEOUT_MS);
+  });
+  // Racing is intentional: abort alone does not bound an unresponsive API or
+  // CacheStorage operation. The guards above stop work that settles afterward.
+  return Promise.race([Promise.resolve().then(() => work(request)), timeout])
+    .catch((error) => { throw expired ? timeoutError : error; })
+    .finally(() => clearTimeout(timer));
+}
 
 function absoluteBingUrl(url) {
   if (!url) return '';
@@ -23,12 +55,12 @@ chrome.runtime.onInstalled.addListener((details) => {
   }).catch((error) => console.warn('Initial workspace setup failed:', error));
 });
 
-async function fetchArchive(idx) {
+async function fetchArchive(idx, request) {
   const safeIndex = Math.max(0, Math.min(Number.isInteger(idx) ? idx : 0, 7));
   const apiUrl = `https://www.bing.com/HPImageArchive.aspx?format=js&idx=${safeIndex}&n=1&mkt=zh-CN`;
-  const response = await fetch(apiUrl);
+  const response = await request.wait(fetch(apiUrl, { signal: request.signal }));
   if (!response.ok) throw new Error(`Bing API status ${response.status}`);
-  const data = await response.json();
+  const data = await request.wait(response.json());
   const image = data?.images?.[0];
   if (!image?.url) throw new Error('Bing API response missing image url');
   return {
@@ -40,31 +72,31 @@ async function fetchArchive(idx) {
   };
 }
 
-async function ensureCached(url) {
-  const cache = await caches.open(BING_CACHE);
-  const hit = await cache.match(url);
+async function ensureCached(url, request) {
+  const cache = await request.wait(caches.open(BING_CACHE));
+  const hit = await request.wait(cache.match(url));
   if (hit) return;
-  const imgResp = await fetch(url);
+  const imgResp = await request.wait(fetch(url, { signal: request.signal }));
   if (!imgResp.ok) throw new Error(`Bing image status ${imgResp.status}`);
-  await cache.put(url, imgResp.clone());
+  await request.wait(cache.put(url, imgResp.clone()));
 }
 
-async function pruneCache(meta, extra) {
+async function pruneCache(meta, extra, request) {
   const entries = (Array.isArray(meta) ? meta : []).concat(extra ? [extra] : []);
   const keep = OpenTabBing.keepSet(entries);
   const keepUrls = new Set(keep.map((item) => item.url));
-  const cache = await caches.open(BING_CACHE);
-  const keys = await cache.keys();
+  const cache = await request.wait(caches.open(BING_CACHE));
+  const keys = await request.wait(cache.keys());
   for (const req of keys) {
-    if (!keepUrls.has(req.url)) await cache.delete(req);
+    if (!keepUrls.has(req.url)) await request.wait(cache.delete(req));
   }
   return keep;
 }
 
-async function doRefreshDaily() {
-  const stored = await chrome.storage.local.get(['background', 'bingCacheMeta']);
+async function doRefreshDaily(request) {
+  const stored = await request.wait(chrome.storage.local.get(['background', 'bingCacheMeta']));
   const bg = stored.background || {};
-  const image = await fetchArchive(0);
+  const image = await fetchArchive(0, request);
   const prev = bg.bing || {};
   if (prev.startdate && prev.startdate === image.startdate && bg.value) {
     return {
@@ -77,9 +109,9 @@ async function doRefreshDaily() {
       copyright: image.copyright
     };
   }
-  await ensureCached(image.url);
-  const keep = await pruneCache(stored.bingCacheMeta, { url: image.url, startdate: image.startdate });
-  await chrome.storage.local.set({ bingCacheMeta: keep });
+  await ensureCached(image.url, request);
+  const keep = await pruneCache(stored.bingCacheMeta, { url: image.url, startdate: image.startdate }, request);
+  await request.wait(chrome.storage.local.set({ bingCacheMeta: keep }));
   return {
     success: true,
     unchanged: false,
@@ -92,32 +124,29 @@ async function doRefreshDaily() {
 
 function refreshBingDaily() {
   if (dailyInflight) return dailyInflight;
-  dailyInflight = doRefreshDaily().finally(() => { dailyInflight = null; });
+  dailyInflight = withBingDeadline(doRefreshDaily).finally(() => { dailyInflight = null; });
   return dailyInflight;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchBingImage') {
     const index = Number.isInteger(request.index) ? request.index : 0;
-    fetchArchive(index)
-      .then(async (image) => {
-        try {
-          await ensureCached(image.url);
-          const stored = await chrome.storage.local.get(['bingCacheMeta']);
-          const keep = await pruneCache(stored.bingCacheMeta, { url: image.url, startdate: image.startdate });
-          await chrome.storage.local.set({ bingCacheMeta: keep });
-        } catch (error) {
-          console.warn('Failed to refresh background:', error);
-        }
-        sendResponse({
-          success: true,
-          url: image.url,
-          nextIndex: image.nextIndex,
-          startdate: image.startdate,
-          title: image.title,
-          copyright: image.copyright
-        });
-      })
+    withBingDeadline(async (operation) => {
+      const image = await fetchArchive(index, operation);
+      await ensureCached(image.url, operation);
+      const stored = await operation.wait(chrome.storage.local.get(['bingCacheMeta']));
+      const keep = await pruneCache(stored.bingCacheMeta, { url: image.url, startdate: image.startdate }, operation);
+      await operation.wait(chrome.storage.local.set({ bingCacheMeta: keep }));
+      return {
+        success: true,
+        url: image.url,
+        nextIndex: image.nextIndex,
+        startdate: image.startdate,
+        title: image.title,
+        copyright: image.copyright
+      };
+    })
+      .then((result) => sendResponse(result))
       .catch((error) => {
         sendResponse({ success: false, error: error.message });
       });

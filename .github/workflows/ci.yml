@@ -64,5 +64,6 @@ jobs:
             artifacts/*.png
             artifacts/accessibility-contrast.json
             artifacts/accessibility-chooser.json
+            artifacts/wallpaper-readability.json
           if-no-files-found: ignore
           retention-days: 7
