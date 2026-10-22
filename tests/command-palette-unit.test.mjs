@@ -21,6 +21,7 @@ function harness({ platform = 'Linux', icons = [site('docs', 'Docs')], folders =
   const state = { icons, folders };
   const navigations = [], actions = [], groups = [], writes = [], timers = [];
   const observers = [];
+  const scrollRequests = [];
   const descendant = (node) => node.children.flatMap((child) => [child, ...descendant(child)]);
   function matches(node, selector) {
     if (selector.includes(',')) return selector.split(',').some((part) => matches(node, part.trim()));
@@ -77,7 +78,7 @@ function harness({ platform = 'Linux', icons = [site('docs', 'Docs')], folders =
     }
     blur() { document.activeElement = document.body; this.dispatchEvent(event('blur')); }
     setSelectionRange(start, end, direction = 'none') { this.selectionStart = start; this.selectionEnd = end; this.selectionDirection = direction; }
-    scrollIntoView(options) { assert.equal(options.block, 'nearest'); }
+    scrollIntoView(options) { assert.equal(options.block, 'nearest'); scrollRequests.push({ node: this, options }); }
   }
   const body = new Element('body');
   const main = body.appendChild(new Element('main', 'content'));
@@ -95,8 +96,9 @@ function harness({ platform = 'Linux', icons = [site('docs', 'Docs')], folders =
   const filters = ['all', 'sites', 'groups', 'actions'].map((value) => {
     const button = dialog.appendChild(new Element('button')); button.dataset.paletteFilter = value; return button;
   });
-  const list = dialog.appendChild(new Element('div', 'command-palette-results'));
-  const empty = dialog.appendChild(new Element('div', 'command-palette-empty'));
+  const scroller = dialog.appendChild(new Element('div')); scroller.className = 'command-palette-scroll'; scroller.scrollTop = 0;
+  const list = scroller.appendChild(new Element('div', 'command-palette-results'));
+  const empty = scroller.appendChild(new Element('div', 'command-palette-empty'));
   empty.appendChild(new Element('p')).textContent = 'No matches'; empty.appendChild(new Element('span')).textContent = 'Try another keyword';
   const status = dialog.appendChild(new Element('div', 'command-palette-status'));
   document = {
@@ -133,7 +135,7 @@ function harness({ platform = 'Linux', icons = [site('docs', 'Docs')], folders =
   const rowNodes = () => descendant(list).filter((node) => node.getAttribute('role') === 'option');
   const filterTo = (name) => click(filters.find((node) => node.dataset.paletteFilter === name));
   return { window, state, document, body, main, input, opener, unrelated, palette, paletteInput, close, filters, list, empty, status,
-    preInert, press, click, type, filterTo, rows: rowNodes, navigations, actions, groups, writes, observers,
+    preInert, press, click, type, filterTo, rows: rowNodes, navigations, actions, groups, writes, observers, scrollRequests, scroller,
     api: window.OpenTabCommandPalette, data: window.OpenTabSearch.commandPalette,
     add: (tag, id, parent = main) => parent.appendChild(new Element(tag, id)),
     flush: () => timers.splice(0).forEach((fn) => fn()), setDeveloper: (value) => { developer = value; } };
@@ -209,6 +211,26 @@ for (const [platform, modifier, other] of [['macOS', 'metaKey', 'ctrlKey'], ['Wi
   }
   const backgroundCommand = h.press('1', { altKey: true }); assert.equal(backgroundCommand.immediate, true);
   h.api.close(); assert.equal(added.inert, false); assert.ok(h.observers.every((observer) => !observer.active));
+}
+
+{
+  const h = harness(); h.api.open();
+  assert.equal(h.scrollRequests.at(-1).node, h.rows()[0], 'opening scrolls the initial active row into view');
+  h.scroller.scrollTop = 1000; h.api.close(); h.api.open();
+  assert.equal(h.scrollRequests.at(-1).node, h.rows()[0], 'reopening after scrolling reveals the fresh first selection');
+  const reopened = h.scrollRequests.length;
+  h.filterTo('actions');
+  assert.equal(h.scrollRequests.length, reopened + 1);
+  assert.equal(h.scrollRequests.at(-1).node, h.rows()[0], 'category changes reveal their new first selection');
+  h.type('weather');
+  assert.equal(h.scrollRequests.at(-1).node, h.rows()[0], 'query changes reveal their new first selection');
+  h.scroller.scrollTop = 1000;
+  const beforeEmpty = h.scrollRequests.length;
+  h.type('no-matching-entry');
+  assert.equal(h.rows().length, 0); assert.equal(h.scroller.scrollTop, 0, 'empty results reset the scroll so the explanation is visible');
+  assert.equal(h.scrollRequests.length, beforeEmpty, 'empty results never scroll a nonexistent option');
+  h.type(''); assert.equal(h.scrollRequests.at(-1).node, h.rows()[0]);
+  h.api.close();
 }
 
 for (const unavailable of ['removed', 'hidden', 'disabled', 'inert', 'display', 'visibility']) {

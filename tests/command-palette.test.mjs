@@ -206,7 +206,15 @@ try {
   }
   await store({ ...fixture, minimalMode: true }); await page.reload({ waitUntil: 'domcontentloaded' }); await ready(); await platform('Linux x86_64');
   await page.setViewportSize({ width: 360, height: 420 });
-  await page.locator('#settings-btn').focus(); await open(); await type('docs');
+  await page.locator('#settings-btn').focus(); await open();
+  const scrollBox = await page.locator('.command-palette-scroll').boundingBox();
+  await page.mouse.move(scrollBox.x + scrollBox.width / 2, scrollBox.y + scrollBox.height / 2);
+  await page.mouse.wheel(0, 2000);
+  await page.waitForFunction(() => { const el = document.querySelector('.command-palette-scroll'); return el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1; });
+  await page.keyboard.press('Escape'); await closed(); await open();
+  await assertPanelBounds();
+  assert.equal(await page.locator('[role="option"][aria-selected="true"]').getAttribute('data-entry-id'), 'docs');
+  await type('docs');
   assert.equal(await page.locator('#search-widget-wrap').isVisible(), false, 'palette does not borrow or reveal hidden main search');
   await assertPanelBounds();
   await page.screenshot({ path: path.join(artifacts, 'command-palette-minimal-360.png'), animations: 'disabled' });

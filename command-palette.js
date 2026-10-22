@@ -238,7 +238,11 @@
     }
     list.setAttribute('aria-busy', String(Boolean(pendingActivation)));
     setStatus(status || (pendingActivation ? t('正在切换分组…') : t('显示 {count} 个入口', { count: entries.length })), Boolean(status || pendingActivation));
-    setActive(entries.length ? 0 : -1, false);
+    if (!entries.length) {
+      const scroller = list.closest('.command-palette-scroll');
+      if (scroller) scroller.scrollTop = 0;
+    }
+    setActive(entries.length ? 0 : -1);
   }
 
   function refresh(status = '') {
