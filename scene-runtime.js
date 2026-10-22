@@ -90,6 +90,9 @@
       if (!mount?.ownerDocument || recovery) return;
       recovery = make('dialog', 'scene-recovery'); recovery.id = 'scene-recovery';
       recovery.setAttribute('aria-label', t('场景空间'));
+      // Keep native dialog defaults, but never route portal input into hidden
+      // page shortcuts that could cancel a retained draft or open another editor.
+      ['keydown', 'contextmenu'].forEach(type => recovery.addEventListener(type, event => event.stopPropagation()));
       recovery.addEventListener('cancel', event => { if (blocked) event.preventDefault(); else clearStatus(); });
       status = make('p', 'scene-status scene-status-error');
       status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');

@@ -65,7 +65,7 @@ function harness(initial = seed()) {
     }
   } } };
   const coordinator = Workspace.forChrome(chrome);
-  function tab({ session = memory(), plainSecretMigration, onDiscardDraft, onBusy } = {}) {
+  function tab({ session = memory(), plainSecretMigration, onDiscardDraft, onBusy, beforeSwitch } = {}) {
     const { doc, mount } = documentStub(), loadStatuses = [], state = copy(initial), loads = [], errors = [], mirrors = [], undo = [], bingHost = {}, marks = [];
     let runtime, managerHost, provider, reloader, layoutAdapter, id = 0, dirty = false, invalidations = 0, visibleRenders = 0, opens = 0, reloads = 0, migrations = 0, loadHook;
     const bridge = coordinator.connect({ state, getViewIdentity: () => runtime?.getView(),
@@ -98,7 +98,7 @@ function harness(initial = seed()) {
         g.OpenTabLayout.loadFromStorage(projected); bridge.seed(raw);
         if (loadHook) return loadHook();
       }, showToast(text, options) { errors.push(text); if (options?.onAction) undo.push(options.onAction); },
-      onDiscardDraft, onBusy, onLoadStatus: value => loadStatuses.push(value), beforeSwitch: () => !dirty, onInvalidate: () => invalidations++, renderVisible: () => visibleRenders++
+      onDiscardDraft, onBusy, onLoadStatus: value => loadStatuses.push(value), beforeSwitch: beforeSwitch || (() => !dirty), onInvalidate: () => invalidations++, renderVisible: () => visibleRenders++
     });
     return { runtime, g, state, session, doc, loadStatuses, mount, bridge, bingHost, loads, errors, mirrors, undo, marks,
       get host() { return managerHost; }, get layoutAdapter() { return layoutAdapter; }, get provider() { return provider; }, get reloader() { return reloader; },
@@ -549,6 +549,95 @@ for (const active of [false, true]) {
   allowed = true; discard.click(); discard.click(); await until(() => a.runtime.isActive());
   assert.equal(discarded, 2); assert.equal(portal.open, false); assert.equal(portal.parentElement, null);
   assert.equal(h.writes.length, 0);
+}
+
+// Recovery is a portal, not a second route into the hidden page's handlers.
+// Run the actual folder editor, home capture/escape/contextmenu handlers, and
+// runtime transition. Native focus traversal remains covered by scenes.test.
+{
+  const h = harness(legacy()), elements = { todoInput: { value: '' }, addIconModal: { classList: { contains: () => true } } };
+  const a = h.tab({
+    beforeSwitch: () => a.g.OpenTabSceneHome.canSwitch({ elements, isSaving: false, todoAddPending: false }),
+    onDiscardDraft: () => a.g.OpenTabSceneHome.discardDraft({ canDiscard: () => true, closeAddIconModal() {}, elements })
+  });
+  await a.runtime.load();
+  const doc = a.doc, proto = Object.getPrototypeOf(doc.body), ids = new Map(), handlers = [];
+  const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
+  const matches = (node, selector) => selector.startsWith('.') ? (node.className || '').split(' ').includes(selector.slice(1))
+    : selector.startsWith('#') ? node.id === selector.slice(1) : node.tagName === selector;
+  Object.assign(proto, {
+    querySelector(selector) { return descendants(this).find(node => matches(node, selector)) || null; },
+    replaceWith(node) { const parent = this.parentElement, index = parent.children.indexOf(this); this.remove(); parent.children.splice(index, 0, node); node.parentElement = parent; },
+    dispatchEvent(event) { this.events[event.type]?.forEach(fn => fn(event)); }, select() {},
+    focus() { if (doc.activeElement !== this) doc.activeElement?.dispatchEvent({ type: 'blur' }); doc.activeElement = this; },
+    showModal() { this.open = this.modal = true; this.children.find(node => node.tagName === 'button')?.focus(); },
+    closest(selector) { for (let node = this; node; node = node.parentElement) if (matches(node, selector)) return node; return null; }
+  });
+  Object.defineProperties(proto, {
+    isConnected: { get() { return this === doc.body || !!this.parentElement?.isConnected; } },
+    innerHTML: { set() { [...this.children].forEach(child => child.remove()); } },
+    classList: { get() { return { contains: name => (this.className || '').split(' ').includes(name), add() {}, remove() {}, toggle() {} }; } }
+  });
+  doc.getElementById = id => ids.get(id) || null;
+  doc.querySelector = selector => doc.body.querySelector(selector);
+  doc.querySelectorAll = selector => descendants(doc.body).filter(node => matches(node, selector));
+  doc.addEventListener = (type, fn, capture) => handlers.push({ type, fn, capture });
+  for (const id of ['group-tabs-bar', 'group-tabs', 'settings-panel', 'change-icon-modal']) {
+    const node = doc.createElement('div'); node.id = id; node.className = 'hidden'; ids.set(id, node); doc.body.appendChild(node);
+  }
+  let addOpened = 0;
+  Object.assign(a.g, { document: doc, window: a.g, elements, state: a.state,
+    CustomEvent: class { constructor(type) { this.type = type; } }, Event: class { constructor(type) { this.type = type; } },
+    endDesktopDrag() {}, restoreFocus() {}, hideIconContextMenu() {}, rememberFocus() {}, openAddIconModal() { addOpened++; },
+    closeAddIconModal() {}, toggleTimezoneSelector() {}, toggleCalendar() {},
+    OpenTabIcons: { handleEscape: () => false, closeChanger() {} }, OpenTabSiteList: { isBusy: () => false },
+    OpenTabSiteSelection: { init() {}, isPending: () => false, cancel() {} }, OpenTabSettingsNav: { handleEscape: () => false, close() {} }
+  });
+  vm.runInContext(source('folders.js'), a.g);
+  a.g.OpenTabFolders.init({ ...a.bridge, state: a.state, isEditingBlocked: () => a.loadStatuses.at(-1) === false,
+    getIconsContainer: () => null, showToast() {}, getDraggingIconId: () => null, refreshIconViews: () => a.g.OpenTabFolders.renderChrome() });
+  a.g.OpenTabFolders.renderChrome();
+  function startRename() {
+    const tab = ids.get('group-tabs').children.find(node => node.dataset.groupId === 'work');
+    tab.events.dblclick[0]({ preventDefault() {}, stopPropagation() {} });
+    const input = doc.querySelector('.group-rename-input'); input.value = 'Keep this unsaved rename'; return input;
+  }
+  const input = startRename();
+  vm.runInContext(source('scene-home.js'), a.g);
+  a.g.OpenTabSceneHome.bindInteractionGate(() => ({ readOnly: a.loadStatuses.at(-1) === false, busy: false }), doc);
+  const home = source('home.js');
+  vm.runInContext(home.slice(home.indexOf('  function handleEscape(event)'), home.indexOf('  function formatLunarKey')), a.g);
+  vm.runInContext(home.slice(home.indexOf("  document.addEventListener('contextmenu'"), home.indexOf("  document.addEventListener('dragover'")), a.g);
+  Object.assign(h.store, Schema.migrateLegacy(h.store)); const migrated = copy(h.store);
+  h.emit({ [Schema.SCHEMA_KEY]: {}, scenes: {} }); await until(() => doc.body.find('discard-draft'));
+  const portal = doc.body.find('retry').parentElement;
+  function dispatch(type, key, target = portal.children[0], shiftKey = false) {
+    const event = { type, key, shiftKey, target, defaultPrevented: false, stopped: false,
+      preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, stopImmediatePropagation() { this.stopped = true; } };
+    for (const record of handlers.filter(record => record.type === type && record.capture)) if (!event.stopped) record.fn(event);
+    for (let node = target; node && !event.stopped; node = node.parentElement) node.dispatchEvent(event);
+    for (const record of handlers.filter(record => record.type === type && !record.capture)) if (!event.stopped) record.fn(event);
+    if (type === 'keydown' && key === 'Escape' && !event.defaultPrevented) portal.cancel();
+    return event;
+  }
+  assert.equal(input.isConnected, true, 'recovery focus does not blur-submit the retained rename');
+  assert.equal(a.runtime.getView(), null); assert.equal(a.loadStatuses.at(-1), false);
+  for (const [key, shift] of [['Tab', false], ['Tab', true], ['Enter', false], [' ', false], ['Escape', false]]) {
+    const event = dispatch('keydown', key, undefined, shift);
+    assert.equal(event.defaultPrevented, false, key + ' keeps its native default');
+    assert.equal(event.stopped, true, key + ' cannot enter document shortcuts');
+    assert.equal(input.isConnected, true); assert.equal(input.value, 'Keep this unsaved rename'); assert.equal(portal.open, true);
+  }
+  assert.equal(dispatch('contextmenu').defaultPrevented, false, 'the native context menu is not replaced with an editor');
+  assert.equal(addOpened, 0); assert.deepEqual(h.store, migrated);
+  const reads = h.reads.length; doc.body.find('retry').click(); await until(() => h.reads.length > reads); await flush();
+  assert.equal(a.runtime.getView(), null); assert.equal(input.isConnected, true); assert.equal(portal.open, true);
+  doc.body.find('discard-draft').click(); await until(() => a.runtime.isActive());
+  assert.equal(input.isConnected, false); assert.equal(portal.parentElement, null); assert.equal(a.loadStatuses.at(-1), true);
+  assert.deepEqual(h.store, migrated); assert.equal(h.writes.length, 0, 'only explicit discard cancels the input without saving it');
+  const ordinary = startRename(); dispatch('keydown', 'Escape', ordinary);
+  assert.equal(ordinary.isConnected, false, 'normal page Escape still cancels its own editor');
+  dispatch('contextmenu', undefined, doc.body); assert.equal(addOpened, 1, 'normal page right-click still opens its editor');
 }
 
 // Explicit sync reloads during enable do not re-seed the old protocol mid-transaction.

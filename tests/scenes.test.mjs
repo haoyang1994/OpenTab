@@ -627,6 +627,12 @@ try {
       assert.equal(await editing.evaluate(() => !!document.activeElement.closest('#scene-recovery[open]')), true);
       assert.equal(await editing.inputValue('.group-rename-input'), 'Keep this unsaved rename');
     }
+    await editing.locator('#scene-recovery .scene-status').click({ button: 'right' });
+    assert.equal(await editing.locator('#add-icon-modal').evaluate(node => node.classList.contains('hidden')), true, 'recovery context menu never opens the underlying editor');
+    await editing.keyboard.press('Escape');
+    assert.equal(await editing.locator('#scene-recovery[open]').count(), 1);
+    assert.equal(await editing.inputValue('.group-rename-input'), 'Keep this unsaved rename');
+    assert.deepEqual(await local(graphKeys), originalGraph, 'recovery context menu leaves the graph and retained draft untouched');
     await retryUnchangedRecovery(editing);
     assert.equal(await currentView(editing), null); assert.equal(await editing.inputValue('.group-rename-input'), 'Keep this unsaved rename');
     assert.deepEqual(await local(graphKeys), originalGraph, 'Retry preserves the migrated graph and the unsaved legacy draft');
