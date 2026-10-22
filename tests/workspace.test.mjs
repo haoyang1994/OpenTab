@@ -120,9 +120,71 @@ try {
   console.log('workspace: same-item conflict is reported without overwriting winner');
 
   [a, b] = await pair();
+  await editForm(b, 'x', 'Draft from old record');
+  await editForm(a, 'x', 'New record winner');
+  await a.click('#save-btn'); await expectNames(a, ['New record winner', 'y']);
+  // An unrelated save can also be triggered by async application work while a
+  // modal is open. Exercise the real settings handler without dismissing it.
+  await b.evaluate(() => {
+    const input = document.querySelector('#time-format');
+    input.value = '12h'; input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await b.waitForFunction(async () => (await chrome.storage.local.get('clockFormat')).clockFormat === '12h');
+  await b.waitForFunction(() => document.querySelector('#icons-container .icon-widget[data-id="x"] .icon-name')?.textContent === 'New record winner');
+  assert.equal(await b.inputValue('#icon-name'), 'Draft from old record', 'old draft remains distinct from adopted storage');
+  await b.click('#save-btn');
+  await b.waitForFunction(() => /其他标签页|冲突|重试|已变化|已更新|失效/.test(document.querySelector('#toast')?.textContent || ''));
+  await expectNames(b, ['New record winner', 'y']); await reloadCheck(['New record winner', 'y']);
+  console.log('workspace: intermediate setting rebase cannot bless an old edit draft');
+
+
+  [a, b] = await pair();
+  await b.locator('#icons-container .icon-widget[data-id="x"]').click({ button: 'right' });
+  await b.click('#change-icon-btn');
+  await b.fill('#change-icon-letter', 'Q');
+  await editForm(a, 'x', 'New icon record');
+  await a.click('#save-btn'); await expectNames(a, ['New icon record', 'y']);
+  await b.evaluate(() => {
+    const input = document.querySelector('#time-format');
+    input.value = '12h'; input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await b.waitForFunction(() => document.querySelector('#icons-container .icon-widget[data-id="x"] .icon-name')?.textContent === 'New icon record');
+  await b.click('#change-icon-placeholder');
+  await b.waitForFunction(() => /其他标签页|冲突|重试|已变化|已更新|失效/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal((await stored()).icons.find((item) => item.id === 'x').uploadedIconDataUrl, PIXEL,
+    'old icon-changer draft cannot replace the adopted image');
+  await expectNames(b, ['New icon record', 'y']); await reloadCheck(['New icon record', 'y']);
+  console.log('workspace: icon changer draft cannot overwrite a rebased item');
+
+
+  [a, b] = await pair();
+  await b.locator(`.group-tab[data-group-id="${HOME}"]`).dblclick();
+  await b.fill('.group-rename-input', 'Uncommitted group draft');
+  await add(a, 'New independent item'); await expectNames(a, ['x', 'y', 'New independent item']);
+  await b.evaluate(() => {
+    const input = document.querySelector('#time-format');
+    input.value = '12h'; input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await b.waitForFunction(() => /重命名已取消/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal(await b.locator('.group-rename-input').count(), 0, 'rebuilt tabs explicitly cancel stale inline input');
+  assert.equal((await stored()).folders.find((item) => item.id === HOME).name, '主页');
+  await expectNames(b, ['x', 'y', 'New independent item']); await reloadCheck(['x', 'y', 'New independent item']);
+  console.log('workspace: inline rename cancellation is explicit during merged-view refresh');
+
+  [a, b] = await pair();
   await backup(a, [icon('imported', 'Imported')]);
   await clock12(b); await expectNames(b, ['Imported']); await reloadCheck(['Imported']);
   console.log('workspace: stale setting does not undo explicit backup restore');
+
+  [a, b] = await pair();
+  await remove(a, 'x'); await expectNames(a, ['y']);
+  await backup(b, [icon('imported', 'Imported')]);
+  await clock12(a);
+  await a.waitForFunction(() => document.querySelector('#icons-container .icon-widget[data-id="imported"] .icon-name')?.textContent === 'Imported');
+  await a.locator('#toast button').click();
+  await a.waitForFunction(() => /其他标签页|冲突|重试|已变化|已更新|失效/.test(document.querySelector('#toast')?.textContent || ''));
+  await expectNames(a, ['Imported']); await reloadCheck(['Imported']);
+  console.log('workspace: old undo cannot cross replacement after a setting rebase');
 
   [a, b] = await pair();
   await editForm(b, 'x', 'Old workspace edit');

@@ -423,3 +423,141 @@ for (const conflict of ['same-entity-edit', 'newer-replacement']) {
 }
 
 console.log('workspace persistence tests passed: real home path, parallel writers, normalized state, conflict/epoch protection, inverse undo, failure and vault wrapper');
+
+// Intent tokens outlive session rebase: UI drafts and undo cannot borrow a newer epoch.
+{
+  const h = memory(), state = base(), c = h.api.connect({ state }); c.seed(h.store);
+  state.icons = state.icons.filter((item) => item.id !== 'x'); await c.save();
+  const undo = c.captureIntent();
+  await h.api.replace({ ...base(), icons: [{ id: 'imported', name: 'Imported', folderId: 'folder-home' }] });
+  state.clockFormat = '12h'; assert.equal(await c.save(), true);
+  assert.equal(c.isIntentCurrent(undo), false, 'old undo stays invalid after a settings save adopts replacement');
+  const sameBytes = c.captureIntent(); await h.api.replace(clone(h.store));
+  state.themeMode = 'dark'; await c.save();
+  assert.equal(c.isIntentCurrent(sameBytes), false, 'byte-identical restore still changes intent epoch');
+}
+{
+  const h = memory(), state = base(), c = h.api.connect({ state }); c.seed(h.store);
+  const xDraft = c.captureIntent({ icons: ['x'] }), yDraft = c.captureIntent({ icons: ['y'] });
+  const remote = base(); remote.icons[0].name = 'Remote winner'; await h.api.commit(base(), remote);
+  state.clockFormat = '12h'; await c.save();
+  assert.equal(c.isIntentCurrent(xDraft), false, 'old modal cannot overwrite remote metadata after unrelated rebase');
+  assert.equal(c.isIntentCurrent(yDraft), true, 'different entity draft remains usable');
+  state.icons[1].name = 'Independent'; assert.equal(await c.save(), true);
+  assert.equal(h.store.icons[0].name, 'Remote winner');
+  const reloadDraft = c.captureIntent({ icons: ['y'] });
+  const replacement = await h.api.replace(clone(h.store)); c.seed(replacement);
+  assert.equal(c.isIntentCurrent(reloadDraft), false, 'sync loadState seed also invalidates old epoch');
+}
+{
+  const h = memory(), state = base();
+  Object.assign(state.icons[0], { type: 'shortcut', customIconUrl: '', sshPort: 22, parentId: '' });
+  const c = h.api.connect({ state }); c.seed(h.store); const draft = c.captureIntent({ icons: ['x'] });
+  state.clockFormat = '12h'; await c.save();
+  assert.equal(c.isIntentCurrent(draft), true, 'load defaults are not a remote edit');
+  state.icons[0].resolvedIconUrl = 'local-cache';
+  assert.equal(c.isIntentCurrent(draft), true, 'asynchronous favicon cache does not invalidate user metadata draft');
+}
+{
+  const before = base(); before.icons.splice(1, 0, { id: 'middle', name: 'Middle', folderId: 'folder-home' });
+  const after = clone(before); after.icons.splice(1, 1);
+  assert.deepEqual(Workspace.merge(after, before, after).icons.map((item) => item.id), ['x', 'middle', 'y']);
+  const later = clone(after); later.icons.push({ id: 'remote', folderId: 'folder-home' });
+  assert.deepEqual(Workspace.merge(after, before, later).icons.map((item) => item.id), ['x', 'middle', 'y', 'remote']);
+}
+
+{
+  const h = memory(), state = base(), errors = [], c = h.api.connect({ state, onError: (error) => errors.push(error) }); c.seed(h.store);
+  state.icons.push(clone(state.icons[0]));
+  let saving;
+  assert.doesNotThrow(() => { saving = c.save(); }, 'invalid optimistic duplicate must not throw out of event handler');
+  assert.equal(await saving, false); assert.equal(errors.length, 1);
+  assert.deepEqual(state.icons.map((item) => item.id), ['x', 'y'], 'failure restores current valid graph');
+}
+{
+  const h = memory(), state = base(), c = h.api.connect({ state }); c.seed(h.store);
+  const intent = c.captureIntent({ groupMembers: ['folder-home'] });
+  const remote = base(); remote.icons.push({ id: 'new', folderId: 'folder-home' });
+  await h.api.commit(base(), remote); state.clockFormat = '12h'; await c.save();
+  assert.equal(c.isIntentCurrent(intent), false, 'old destructive group confirmation cannot consume unseen new children');
+}
+// Exercise the actual UI callback bodies, not only token helpers.
+{
+  const h = memory(), state = base(), c = h.api.connect({ state }); c.seed(h.store);
+  const source = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');
+  let button, actions = 0, closed = false, text = '';
+  const toast = { textContent: '', classList: { add() {}, remove() {} }, appendChild(value) { button = value; } };
+  const context = vm.createContext({ workspace: c, elements: { toast }, document: { createElement: () => ({}) }, toastTimer: null, pendingUndo: null, clearTimeout() {}, setTimeout() {}, action: () => { actions++; } });
+  const start = source.indexOf('  function showToast(');
+  vm.runInContext(source.slice(start, source.indexOf('  function isFocusable(', start)) + "\nshowToast('deleted', { actionLabel: 'Undo', onAction: action });", context);
+  const oldButton = button;
+  await h.api.replace({ ...base(), icons: [{ id: 'replacement', folderId: 'folder-home' }] });
+  state.clockFormat = '12h'; await c.save(); oldButton.onclick();
+  assert.equal(actions, 0, 'actual home toast refuses stale undo after rebase');
+  assert.match(toast.textContent, /内容已变化/);
+
+  const modalState = base(), modal = h.api.connect({ state: modalState }); modal.seed(h.store);
+  const draft = modal.captureIntent({ icons: ['x'] }); modalState.icons[0].name = 'remote';
+  const modalStart = source.indexOf('  async function handleSaveIcon(');
+  const modalBody = source.slice(modalStart, source.indexOf('\n  }\n', modalStart) + 5);
+  const modalContext = vm.createContext({ workspace: modal, iconDraftIntent: draft, closeAddIconModal() { closed = true; }, showToast(value) { text = value; } });
+  await vm.runInContext(modalBody + '\nhandleSaveIcon()', modalContext);
+  assert.equal(closed, true); assert.match(text, /内容已变化/);
+}
+function iconChanger(h, state) {
+  const c = h.api.connect({ state }); c.seed(h.store);
+  const nodes = new Map(), messages = [], saves = [];
+  const get = (id) => {
+    if (!nodes.has(id)) nodes.set(id, { value: '', files: [], handlers: {}, classList: { add() {}, remove() {}, contains() { return false; } }, addEventListener(type, fn) { this.handlers[type] = fn; }, removeAttribute() {}, focus() {} });
+    return nodes.get(id);
+  };
+  const ctx = vm.createContext({ URL, document: { getElementById: get }, fetch: async () => { throw new Error('unexpected fetch'); } });
+  vm.runInContext(fs.readFileSync(new URL('../icons.js', import.meta.url), 'utf8'), ctx);
+  ctx.OpenTabIcons.init({ ...c, getIcons: () => state.icons, saveState: () => { const p = c.save(); saves.push(p); return p; }, showToast: (message) => messages.push(message) });
+  return { c, ctx, get, messages, saves, icons: ctx.OpenTabIcons };
+}
+{
+  const h = memory(), state = base(), ui = iconChanger(h, state);
+  ui.icons.openChanger('x'); ui.get('change-icon-letter').value = 'Q';
+  const remote = base(); remote.icons[0].name = 'Remote icon winner'; await h.api.commit(base(), remote);
+  state.clockFormat = '12h'; await ui.c.save();
+  ui.get('change-icon-placeholder').handlers.click();
+  assert.match(ui.messages.at(-1), /内容已变化/);
+  assert.equal(h.store.icons[0].name, 'Remote icon winner');
+  assert.equal(h.store.icons[0].placeholderLetter, undefined);
+}
+{
+  const h = memory(), state = base(), ui = iconChanger(h, state); let release;
+  ui.icons.openChanger('x');
+  ui.get('change-icon-file').files = [{ size: 100, type: 'image/svg+xml', text: () => new Promise((resolve) => { release = resolve; }) }];
+  const uploading = ui.get('change-icon-file').handlers.change();
+  const detached = state.icons[0], remote = base(); remote.icons[1].name = 'Other edit';
+  await h.api.commit(base(), remote); state.clockFormat = '12h'; await ui.c.save();
+  assert.notEqual(state.icons[0], detached, 'settings adoption cloned the object during upload');
+  release('<svg>synthetic local upload</svg>'); await uploading; await Promise.all(ui.saves);
+  assert.match(h.store.icons[0].uploadedIconDataUrl, /^data:image\/svg/);
+  assert.equal(detached.uploadedIconDataUrl, undefined, 'async result applies to current id, not stale object');
+}
+{
+  const h = memory(), state = base(), ui = iconChanger(h, state); let release;
+  ui.icons.openChanger('x');
+  ui.get('change-icon-file').files = [{ size: 100, type: 'image/svg+xml', text: () => new Promise((resolve) => { release = resolve; }) }];
+  const uploading = ui.get('change-icon-file').handlers.change();
+  ui.get('change-icon-letter').value = 'N'; ui.get('change-icon-placeholder').handlers.click(); await Promise.all(ui.saves);
+  release('<svg>old upload</svg>'); await uploading;
+  assert.equal(h.store.icons[0].placeholderLetter, 'N', 'newer placeholder action wins over late upload');
+  assert.equal(h.store.icons[0].uploadedIconDataUrl, '');
+}
+{
+  const h = memory(), state = base(), ui = iconChanger(h, state); let release;
+  state.icons[0].url = 'https://synthetic.example.test'; await ui.c.save();
+  ui.ctx.fetch = async () => ({ ok: true, blob: async () => ({ size: 100, type: 'image/svg+xml', text: () => new Promise((resolve) => { release = resolve; }) }) });
+  ui.icons.openChanger('x'); const original = state.icons[0];
+  const refetching = ui.get('change-icon-refetch').handlers.click();
+  while (!release) await Promise.resolve();
+  await h.api.replace(clone(h.store)); state.clockFormat = '12h'; await ui.c.save();
+  release('<svg>late remote response</svg>'); await refetching;
+  assert.equal(original.resolvedIconUrl, undefined, 'refetch never mutates the captured stale object');
+  assert.equal(h.store.icons[0].resolvedIconUrl, undefined, 'byte-identical replacement invalidates late refetch');
+  assert.match(ui.messages.at(-1), /内容已变化/);
+}

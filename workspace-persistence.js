@@ -51,7 +51,11 @@
       if (check && !equal(liveOrder, retained) && !equal(liveOrder, desired)) throw conflict();
       order = [...after.keys()].filter((id) => current.has(id)).concat(order.filter((id) => !after.has(id)));
     }
-    for (const id of current.keys()) if (!order.includes(id)) order.push(id);
+    const chosenOrder = [...after.keys()];
+    for (const id of current.keys()) if (!order.includes(id)) {
+      const anchor = chosenOrder.slice(chosenOrder.indexOf(id) + 1).find((key) => order.includes(key));
+      if (anchor) order.splice(order.indexOf(anchor), 0, id); else order.push(id);
+    }
     return order.map((id) => current.get(id));
   }
   function merge(base = {}, next = {}, latest = {}) {
@@ -175,9 +179,10 @@
       };
     }
     function connect({ state, onChange, onError, onSaved }) {
-      let session = null, committed = null;
+      let session = null, committed = null, epoch = 0;
       const pick = (value) => Object.fromEntries(KEYS.filter((key) => Object.hasOwn(value, key)).map((key) => [key, clone(value[key])]));
       function apply(saved) {
+        epoch = saved[EPOCH_KEY] || 0;
         let changed = false;
         for (const key of KEYS) {
           if (key === EPOCH_KEY || !Object.hasOwn(saved, key)) continue;
@@ -185,7 +190,7 @@
         }
         if (changed && onChange) onChange();
       }
-      function seed(stored, viewOverrides = {}) { committed = pick(state); session = createSession(pick(stored), { ...committed, ...viewOverrides }); }
+      function seed(stored, viewOverrides = {}) { epoch = stored[EPOCH_KEY] || 0; committed = { ...pick(state), [EPOCH_KEY]: epoch }; session = createSession(pick(stored), { ...committed, ...viewOverrides }); }
       function save(_rollback, onOk) {
         if (!session) {
           if (committed) apply(committed);
@@ -193,7 +198,9 @@
           return Promise.resolve(false);
         }
         const active = session;
-        return active.save(pick(state)).then((result) => {
+        let operation;
+        try { operation = active.save(pick(state)); } catch (error) { operation = Promise.reject(error); }
+        return operation.then((result) => {
           if (active !== session) return false;
           committed = { ...committed, ...pick(result.state) };
           if (result.current) {
@@ -213,7 +220,31 @@
           return false;
         });
       }
-      return { seed, save };
+      function intentRecord(record, key) {
+        if (!record) return null;
+        const fields = key === 'icons'
+          ? ['id', 'name', 'url', 'type', 'folderId', 'parentId', 'customIconUrl', 'emoji', 'uploadedIconDataUrl', 'toolSubtype', 'sshGatewayUrl', 'sshHost', 'sshPort', 'sshUsername', 'sshSocksHost', 'sshSocksPort', 'sshSocksUsername']
+          : key === 'folders' ? ['id', 'name', 'parentId', 'type'] : ['id', 'text', 'done'];
+        return Object.fromEntries(fields.filter((field) => {
+          const value = record[field];
+          return value !== undefined && value !== '' && value !== false
+            && !(field === 'type' && value === 'shortcut') && !(field === 'folderId' && value === 'folder-home')
+            && !(field === 'sshPort' && value === 22) && !(field === 'sshSocksPort' && value === 1080);
+        }).map((field) => [field, clone(record[field])]));
+      }
+      function captureIntent(targets = {}) {
+        const records = {};
+        for (const key of ENTITIES) if (targets[key]) {
+          records[key] = Object.fromEntries(targets[key].map((id) => [id, intentRecord((state[key] || []).find((item) => item.id === id), key)]));
+        }
+        const groups = Object.fromEntries((targets.groupMembers || []).map((id) => [id, (state.icons || []).filter((item) => item.folderId === id).map((item) => item.id).sort()]));
+        return { epoch, records, groups };
+      }
+      function isIntentCurrent(intent) {
+        return !!intent && intent.epoch === epoch && Object.entries(intent.groups).every(([id, ids]) => equal(ids, (state.icons || []).filter((item) => item.folderId === id).map((item) => item.id).sort())) && Object.entries(intent.records).every(([key, entries]) =>
+          Object.entries(entries).every(([id, before]) => equal(before, intentRecord((state[key] || []).find((item) => item.id === id), key))));
+      }
+      return { seed, save, captureIntent, isIntentCurrent };
     }
     return { transaction, read, commit, replace, createSession, connect, merge, migrationOverrides, LOCK_NAME, EPOCH_KEY, KEYS };
   }

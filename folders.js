@@ -82,6 +82,7 @@
   let mergeSourceId = null;
   let lastWheelAt = 0;
   let openFolderId = null;
+  let folderNameIntent = null;
   let activeRoot = null;
   let dialogResolver = null;
   let uiBound = false;
@@ -427,6 +428,7 @@
     if (!isFolder(folder)) return;
     const ui = els();
     openFolderId = folderId;
+    folderNameIntent = host.captureIntent({ icons: [folderId] });
     host.rememberFocus();
     if (ui.titleInput) ui.titleInput.value = folder.name || DEFAULT_FOLDER_NAME;
     if (ui.overlay) ui.overlay.classList.remove('hidden');
@@ -450,6 +452,7 @@
     const ui = els();
     const folder = find(openFolderId);
     if (!folder || !ui.titleInput) return;
+    if (!checkIntent(folderNameIntent)) { closeOverlay(true); return; }
     const trimmed = ui.titleInput.value.trim();
     if (!trimmed || trimmed === folder.name) {
       ui.titleInput.value = folder.name || DEFAULT_FOLDER_NAME;
@@ -458,6 +461,7 @@
     const before = snapshot();
     folder.name = trimmed;
     persistUndo(before, '已重命名文件夹');
+    folderNameIntent = host.captureIntent({ icons: [folder.id] });
     host.refreshIconViews();
   }
 
@@ -655,6 +659,12 @@
   function renderGroupTabs() {
     const ui = els();
     if (!ui.tabs) return;
+    const draft = ui.tabs.querySelector('.group-rename-input');
+    if (draft) {
+      draft.dispatchEvent(new Event('opentab-cancel-edit'));
+      host.showToast('内容已更新，重命名已取消，请重试。');
+      return;
+    }
     ui.tabs.innerHTML = '';
     state().folders.forEach((folder, index) => {
       const tab = document.createElement('button');
@@ -707,6 +717,7 @@
     input.className = 'group-inline-input';
     input.type = 'text';
     input.maxLength = 24;
+    const intent = host.captureIntent();
     input.placeholder = '新分组';
     input.setAttribute('aria-label', '新分组名称');
     let committed = false;
@@ -715,7 +726,7 @@
       committed = true;
       const name = save ? input.value.trim() : '';
       if (input.isConnected) input.remove();
-      if (!name) return;
+      if (!name || !checkIntent(intent)) return;
       const before = snapshot();
       const folder = { id: `folder-${host.generateId()}`, name };
       state().folders.push(folder);
@@ -738,9 +749,16 @@
     input.focus();
   }
 
+  function checkIntent(intent) {
+    if (host.isIntentCurrent(intent)) return true;
+    host.showToast('内容已变化，请重新操作。');
+    return false;
+  }
+
   function startRenameGroup(folderId, tab) {
     const folder = state().folders.find((item) => item.id === folderId);
     if (!folder || !tab) return;
+    const intent = host.captureIntent({ folders: [folderId] });
     stopEditingInputs();
     const input = document.createElement('input');
     input.className = 'group-inline-input group-rename-input';
@@ -754,9 +772,9 @@
       const next = input.value.trim();
       if (input.isConnected) input.remove();
       renderGroupTabs();
-      if (!save || !next || next === folder.name) return;
+      if (!save || !next || next === folder.name || !checkIntent(intent)) return;
       const before = snapshot();
-      folder.name = next;
+      state().folders.find((item) => item.id === folderId).name = next;
       persistUndo(before, '已重命名分组');
       host.refreshIconViews();
     };
@@ -780,12 +798,13 @@
   async function handleDeleteGroup(folderId) {
     const folder = state().folders.find((item) => item.id === folderId);
     if (!folder || folder.id === host.HOME_FOLDER_ID) return;
+    const intent = host.captureIntent({ folders: [folderId], groupMembers: [folderId], icons: state().icons.filter((item) => item.folderId === folderId).map((item) => item.id) });
     const choice = await showDialog(`删除分组「${folder.name}」？`, [
       { label: '取消', value: '' },
       { label: '移到默认分组', value: 'move' },
       { label: '一起删除', className: 'danger', value: 'delete' }
     ]);
-    if (choice !== 'move' && choice !== 'delete') return;
+    if ((choice !== 'move' && choice !== 'delete') || !checkIntent(intent)) return;
     const before = snapshot();
     if (choice === 'move') {
       state().icons.forEach((icon) => {

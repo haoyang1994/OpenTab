@@ -256,6 +256,7 @@
 
   let calendarPicker = null;
   let editingIconId = null;
+  let iconDraftIntent = null;
   let contextMenuIconId = null;
   let pendingIconUploadDataUrl = '';
   let iconSwitchToken = 0;
@@ -380,6 +381,7 @@
     const opts = options || {};
     toast.textContent = text;
     if (opts.actionLabel && opts.onAction) {
+      const actionIntent = workspace.captureIntent();
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = opts.actionLabel;
@@ -387,6 +389,7 @@
         clearTimeout(toastTimer);
         toast.classList.add('hidden');
         pendingUndo = null;
+        if (!workspace.isIntentCurrent(actionIntent)) { showToast('内容已变化，无法执行旧操作。'); return; }
         opts.onAction();
       };
       toast.appendChild(btn);
@@ -1276,6 +1279,7 @@
   }
 
   function undoDelete(snapshot) {
+    if (state.icons.some((item) => item.id === snapshot.icon.id)) return;
     const before = state.icons.slice();
     const next = before.slice();
     next.splice(Math.min(snapshot.index, next.length), 0, snapshot.icon);
@@ -1424,6 +1428,7 @@
   }
 
   function openAddIconModal() {
+    iconDraftIntent = workspace.captureIntent();
     editingIconId = null;
     pendingIconUploadDataUrl = '';
 
@@ -1457,6 +1462,7 @@
     if (!icon) return;
 
     editingIconId = iconId;
+    iconDraftIntent = workspace.captureIntent({ icons: [iconId], folders: [icon.folderId] });
     pendingIconUploadDataUrl = '';
 
     const iconType = normalizeIconType(icon.type);
@@ -1494,6 +1500,9 @@
   }
 
   async function handleSaveIcon() {
+    if (!workspace.isIntentCurrent(iconDraftIntent)) {
+      closeAddIconModal(); showToast('内容已变化，请重新编辑。'); return;
+    }
     const iconType = normalizeIconType(elements.iconType.value);
     const isSsh = iconType === ICON_TYPE_SSH;
     const isTool = iconType === ICON_TYPE_TOOL;
@@ -1580,9 +1589,7 @@
         customIconUrl = normalizeOptionalUrl(rawCustomUrl);
       }
     } catch (error) {
-      if (isTool) {
-        // tool 类型不需要验证
-      } else {
+      if (!isTool) {
         if (isSsh) alert('请输入有效的 SSH 配置。');
         else showToast('请输入有效的网址。');
         if (isSsh) elements.sshGatewayUrl.focus();
@@ -1920,6 +1927,7 @@
 
   if (window.OpenTabIcons) {
     OpenTabIcons.init({
+      ...workspace,
       getIcons: () => state.icons,
       saveState,
       refreshIconViews,
@@ -1951,6 +1959,7 @@
   });
   if (window.OpenTabSettingsNav) {
     OpenTabSettingsNav.init({
+      ...workspace,
       state,
       saveState,
       showToast,
@@ -1976,6 +1985,7 @@
   }
   if (window.OpenTabFolders) {
     OpenTabFolders.init({
+      ...workspace,
       state,
       HOME_FOLDER_ID,
       ICON_DND_TYPE,

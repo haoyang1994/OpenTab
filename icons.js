@@ -72,6 +72,7 @@
   };
   let hostIndex = null;
   let changerIconId = null;
+  let changerIntent = null;
   let resolveChain = Promise.resolve();
   let bound = false;
 
@@ -742,14 +743,40 @@
   function closeChanger() {
     const ui = changerEls();
     changerIconId = null;
+    changerIntent = null;
     if (ui.modal) ui.modal.classList.add('hidden');
     if (typeof host.restoreFocus === 'function') host.restoreFocus();
+  }
+
+  const IMAGE_FIELDS = ['uploadedIconDataUrl', 'customIconUrl', 'resolvedIconUrl', 'iconSource', 'iconCacheState', 'librarySlug', 'placeholderLetter', 'placeholderColor', 'iconCandidates'];
+  function imageSignature(icon) {
+    return JSON.stringify([icon.uploadedIconDataUrl || '', icon.customIconUrl || '',
+      icon.iconSource === 'remote' ? icon.resolvedIconUrl || '' : '',
+      userChosePlaceholder(icon) ? [icon.placeholderLetter || '', icon.placeholderColor || ''] : null]);
+  }
+  function renewChangerIntent(icon) {
+    changerIntent = { id: icon.id, token: host.captureIntent({ icons: [icon.id] }), image: imageSignature(icon) };
+  }
+  function currentChanger(intent) {
+    if (!intent || intent !== changerIntent) return null;
+    const icon = findIcon(intent.id);
+    if (icon && host.isIntentCurrent(intent.token) && imageSignature(icon) === intent.image) return icon;
+    closeChanger();
+    if (host.showToast) host.showToast('内容已变化，请重新编辑。');
+    return null;
+  }
+  function beginChangerAction() {
+    if (!currentChanger(changerIntent)) return null;
+    // A newer user action or a newly opened modal invalidates older async work.
+    changerIntent = { ...changerIntent };
+    return changerIntent;
   }
 
   function openChanger(iconId) {
     const icon = findIcon(iconId);
     if (!icon || skipAutoIcon(icon)) return;
     changerIconId = iconId;
+    renewChangerIntent(icon);
     const ui = changerEls();
     if (!ui.modal) return;
     if (typeof host.hideIconContextMenu === 'function') host.hideIconContextMenu();
@@ -802,18 +829,26 @@
     });
     if (ui.refetch) {
       ui.refetch.addEventListener('click', async () => {
-        const icon = findIcon(changerIconId);
+        const action = beginChangerAction();
+        const icon = currentChanger(action);
         if (!icon) return;
         ui.refetch.disabled = true;
         setChangerStatus('');
         try {
-          const ok = await resolveIcon(icon, { force: true, fetchRemote: true });
-          persist(ok);
-          refreshChangerPreview(icon);
+          const working = JSON.parse(JSON.stringify(icon));
+          const ok = await resolveIcon(working, { force: true, fetchRemote: true });
+          const current = currentChanger(action);
+          if (!current) return;
+          if (ok) {
+            IMAGE_FIELDS.forEach((key) => { if (Object.hasOwn(working, key)) current[key] = working[key]; });
+            renewChangerIntent(current);
+            persist(true);
+          }
+          refreshChangerPreview(current);
           setChangerStatus(ok ? '已重新抓取图标' : MSG_REFETCH_BLOCKED);
         } catch (error) {
-          setChangerStatus(MSG_REFETCH_BLOCKED);
-          refreshChangerPreview(icon);
+          const current = currentChanger(action);
+          if (current) { setChangerStatus(MSG_REFETCH_BLOCKED); refreshChangerPreview(current); }
         } finally {
           ui.refetch.disabled = false;
         }
@@ -821,15 +856,19 @@
     }
     if (ui.file) {
       ui.file.addEventListener('change', async () => {
-        const icon = findIcon(changerIconId);
+        const action = beginChangerAction();
+        let icon = currentChanger(action);
         const file = (ui.file.files || [])[0];
         if (!icon || !file) return;
         try {
           const data = await readAndCompressFile(file);
+          icon = currentChanger(action);
+          if (!icon) return;
           icon.uploadedIconDataUrl = data;
           icon.resolvedIconUrl = data;
           icon.iconSource = 'upload';
           icon.iconCacheState = 'local';
+          renewChangerIntent(icon);
           persist(true);
           refreshChangerPreview(icon);
           if (typeof host.showToast === 'function') host.showToast('已使用本地图片');
@@ -841,11 +880,13 @@
     }
     if (ui.placeholder) {
       ui.placeholder.addEventListener('click', () => {
-        const icon = findIcon(changerIconId);
+        const action = beginChangerAction();
+        const icon = currentChanger(action);
         if (!icon) return;
         const letter = (ui.letter && ui.letter.value) || letterFrom(icon);
         const color = (ui.color && ui.color.value) || icon.placeholderColor;
         applyPlaceholder(icon, letter, color);
+        renewChangerIntent(icon);
         persist(true);
         refreshChangerPreview(icon);
         if (typeof host.showToast === 'function') host.showToast('已使用首字母占位');

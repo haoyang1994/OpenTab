@@ -13,6 +13,7 @@ Workspace read/merge/write operations use one same-origin [Web Lock](https://www
 - Different item IDs can be changed in different tabs without dropping each other's changes.
 - Two incompatible edits to the same workspace item’s metadata are rejected rather than silently choosing an older copy. The page reports the conflict; refresh and retry against the current content.
 - An old edit cannot resurrect an item deleted in another tab.
+- Edit dialogs and undo actions retain their original item/generation intent. Saving an unrelated setting does not make an older draft valid again. If a merged-view refresh rebuilds an active inline group rename, it is cancelled with a notice rather than silently committed.
 - Explicit backup or cloud replacement establishes a new workspace generation. A still-open tab cannot replay an old shortcut edit into it. An unrelated setting can still be saved without restoring the old shortcuts.
 - Undo applies the inverse of its own changes, not an old full-workspace snapshot. Unrelated later additions are retained; incompatible changes to the affected content cause undo to be refused. A pre-upgrade import-undo record without the matching after-state cannot be safely replayed: it is retained in storage but refused instead of overwriting newer data.
 
@@ -20,6 +21,6 @@ No new extension permission or remote service is required. Existing storage data
 
 ## Regression coverage
 
-`tests/workspace-persistence.test.mjs` exercises merge rules and failure behavior without a browser. `tests/workspace.test.mjs` uses real extension pages and persistent Chromium storage: concurrent additions/renames, stale settings, deletion, same-item conflicts, explicit restore, delete/import/sync undo, popup/home additions and closing a lock owner. Assertions check persisted data and reload, not only optimistic UI state. All URLs and data in these tests are synthetic.
+`tests/workspace-persistence.test.mjs` exercises merge rules and failure behavior without a browser. `tests/workspace.test.mjs` uses real extension pages and persistent Chromium storage: concurrent additions/renames, stale settings, deletion, same-item conflicts, explicit restore, stale dialogs and undo after an intermediate setting save, explicit inline-rename cancellation, delete/import/sync undo, popup/home additions and closing a lock owner. Assertions check persisted data and reload, not only optimistic UI state. All URLs and data in these tests are synthetic.
 
 These tests do not certify simultaneous multi-device editing or recovery after arbitrary external modification of extension storage. Chrome sync continues to have its separately documented device-level conflict policy.
