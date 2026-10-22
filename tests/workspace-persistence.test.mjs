@@ -97,7 +97,9 @@ function installHarness() {
   const get = h.chrome.storage.local.get;
   h.chrome.storage.local.get = async (keys) => {
     const snapshot = await get(keys);
-    if (pauseRead) {
+    // Pause the actual installer's initial read, not a coordinator schema
+    // preflight performed by an earlier fixture transaction.
+    if (pauseRead && Array.isArray(keys) && keys.includes('clockFormat') && keys.includes('timezone')) {
       pauseRead = false;
       captured = clone(snapshot);
       await gate;
@@ -246,9 +248,9 @@ function installHarness() {
 {
   // Exercise the actual home adapter, not a reimplementation of its save path.
   const h = memory(), source = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');
-  const adapter = source.slice(source.indexOf('  const workspace = '), source.indexOf('  function loadState()'));
+  const adapter = source.slice(source.indexOf('  function renderCurrentWorkspace()'), source.indexOf('  const applyLoadedState ='));
   function tab() {
-    const context = { state: base(), OpenTabWorkspace: h.api, window: {}, refreshIconViews() {}, renderTodos() {}, updateClock() {}, applyThemeMode() {}, renderWorkspaceSettings() {}, renderTodoPanel() {}, updateBackground() {}, writeBootMirror() {}, showToast() {} };
+    const context = { sceneRuntime: null, state: base(), OpenTabWorkspace: h.api, window: {}, refreshIconViews() {}, renderTodos() {}, updateClock() {}, applyThemeMode() {}, renderWorkspaceSettings() {}, renderTodoPanel() {}, updateBackground() {}, writeBootMirror() {}, showToast() {} };
     context.t ||= (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(context); vm.runInContext(adapter + '\nworkspace.seed(state);', context);
     return { context, save: () => vm.runInContext('saveState()', context) };
   }
@@ -728,7 +730,7 @@ function homeIconEditor(h, state, editId = null) {
   elements.saveBtn = { disabled: false }; elements.addIconModal = { querySelectorAll: () => Object.values(elements).filter((node) => node !== elements.addIconModal), classList: { contains() { return hidden; }, add() { hidden = true; } } };
   const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  state, elements, window: {}, workspace: c, saveState: c.save,
     editingIconId: editId, iconUploadGate: require('../icons.js').createUploadGate(), iconSaveGate: require('../icons.js').createSaveGate(), iconDraftIntent: c.captureIntent(editId ? { icons: [editId] } : {}), pendingIconUploadDataUrl: '',
-    ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'folder-home',
+    ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'folder-home', activeHomeId: () => 'folder-home',
     normalizeIconType: (value) => value || 'shortcut', normalizeUrl: (value) => value, normalizeOptionalUrl: (value) => value,
     generateId: () => `submitted-${++ids}`, getFolderById: (id) => state.folders.find((item) => item.id === id), refreshIconViews() {}, restoreFocus() {}, showToast() {} });
   const source = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');

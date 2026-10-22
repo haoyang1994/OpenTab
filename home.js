@@ -3,6 +3,10 @@
   const t = (s, p) => globalThis.OpenTabI18n ? globalThis.OpenTabI18n.t(s, p) : s.replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
 
   const HOME_FOLDER_ID = 'folder-home';
+  let sceneRuntime = null, sceneReadOnly = false, sceneInteractionBusy = false;
+  OpenTabSceneHome.bindInteractionGate(() => ({ readOnly: sceneReadOnly, busy: sceneInteractionBusy }));
+  const activeHomeId = () => sceneRuntime?.getView()?.homeGroupId || HOME_FOLDER_ID;
+  const sceneViewAdapter = () => sceneRuntime?.isActive() ? () => sceneRuntime.getView() : undefined;
   const ICON_TYPE_SHORTCUT = 'shortcut';
   const ICON_TYPE_SSH = 'ssh';
   const ICON_TYPE_TOOL = 'tool';
@@ -257,6 +261,7 @@
   };
 
   let calendarPicker = null;
+  let todoAddPending = false;
   let editingIconId = null;
   let iconDraftIntent = null;
   const iconSaveGate = OpenTabIcons.createSaveGate();
@@ -603,16 +608,31 @@
     setTodoPanelOpen(false);
   }
 
-  function handleAddTodo() {
-    const text = elements.todoInput.value.trim();
-    if (!text) {
-      elements.todoInput.focus();
-      return;
+  async function handleAddTodo() {
+    if (todoAddPending) return;
+    const draft = elements.todoInput.value, text = draft.trim();
+    if (!text) { elements.todoInput.focus(); return; }
+    const record = OpenTabClockDeck.createTodoRecord(clockHost, { id: generateId(), text, done: false });
+    if (!record) { showToast(t('内容已变化，请重新编辑。')); return; }
+    state.todos.unshift(record);
+    if (!sceneRuntime?.isActive()) {
+      elements.todoInput.value = ''; saveState(); renderTodos(); return;
     }
-    state.todos.unshift({ id: generateId(), text, done: false });
-    elements.todoInput.value = '';
-    saveState();
-    renderTodos();
+    // A scene cannot change underneath a pending task draft. Only acknowledge
+    // insertion after the ordinary workspace transaction has committed.
+    todoAddPending = true;
+    const controls = [elements.todoInput, elements.todoAddBtn].map(node => [node, node.disabled]);
+    controls.forEach(([node]) => { node.disabled = true; });
+    try {
+      const saved = await saveState();
+      if (saved === true && elements.todoInput.value === draft) elements.todoInput.value = '';
+    } catch (_) {
+      showToast(t('保存失败，请重试。'));
+    } finally {
+      todoAddPending = false;
+      controls.forEach(([node, disabled]) => { node.disabled = disabled; });
+      renderTodos();
+    }
   }
 
   function updateBackground(opts) {
@@ -760,6 +780,7 @@
   function writeBootMirror() {
     const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
     OpenTabBoot.writeMirror(Object.assign({
+      ...(sceneRuntime?.getView() ? { sceneId: sceneRuntime.getView().sceneId } : {}),
       theme: state.themeMode || 'dark',
       accentHue: state.accentHue,
       uiOpacity: state.uiOpacity,
@@ -1095,6 +1116,7 @@
 
   function selectFolder(folderId, animated = false) {
     if (!getFolderById(folderId)) return false;
+    if (sceneRuntime?.isActive()) return window.OpenTabSceneNavigation.selectGroup(folderId);
     state.currentFolderId = folderId;
     const saved = saveState();
     refreshIconViews(animated);
@@ -1108,7 +1130,7 @@
     const customIconUrl = payload.customIconUrl || '';
     const emoji = payload.emoji || '';
     const uploadedIconDataUrl = payload.uploadedIconDataUrl || '';
-    const folderId = getFolderById(payload.folderId) ? payload.folderId : HOME_FOLDER_ID;
+    const folderId = getFolderById(payload.folderId) ? payload.folderId : activeHomeId();
     const safePort = Number.isInteger(payload.sshPort) ? payload.sshPort : 22;
     const safeSocksPort = Number.isInteger(payload.sshSocksPort) ? payload.sshSocksPort : 1080;
 
@@ -1168,7 +1190,7 @@
     icon.sshSocksPort = isSsh ? safeSocksPort : 1080;
     icon.sshSocksUsername = isSsh ? normalizeOptionalText(payload.sshSocksUsername) : '';
     icon.sshSocksPassword = isSsh ? (payload.sshSocksPassword || '') : '';
-    icon.folderId = getFolderById(payload.folderId) ? payload.folderId : HOME_FOLDER_ID;
+    icon.folderId = getFolderById(payload.folderId) ? payload.folderId : activeHomeId();
     icon.customIconUrl = isSsh ? '' : payload.customIconUrl;
     icon.emoji = isSsh ? '>_' : (isTool ? '{ }' : payload.emoji);
     icon.uploadedIconDataUrl = isSsh ? '' : payload.uploadedIconDataUrl;
@@ -1230,110 +1252,24 @@
     }
   }
 
+  function renderCurrentWorkspace() {
+    sceneRuntime?.syncVisibleAppearance();
+    refreshIconViews(false); renderTodos(); updateClock();
+    renderWorkspaceSettings(); renderTodoPanel(); updateBackground({ fade: false });
+  }
   const workspace = OpenTabWorkspace.connect({
     state,
-    onChange: () => {
-      refreshIconViews(false);
-      renderTodos();
-      updateClock();
-      renderWorkspaceSettings();
-      renderTodoPanel();
-      updateBackground({ fade: false });
-    },
+    getViewIdentity: () => sceneRuntime?.getView(),
+    onChange: renderCurrentWorkspace,
     onError: (error) => showToast(error.message || t('保存失败，请重试')),
-    onSaved: writeBootMirror
+    onSaved: raw => { sceneRuntime?.noteCommitted(raw); writeBootMirror(); }
   });
-  const saveState = workspace.save;
+  const saveState = (...args) => sceneRuntime ? sceneRuntime.saveState(...args) : workspace.save(...args);
 
-  function loadState() {
-    chrome.storage.local.get(
-      OpenTabWorkspace.KEYS.concat(
-        window.OpenTabLayout ? OpenTabLayout.STORAGE_KEYS : []
-      ),
-      (result) => {
-        if (!Object.keys(result).length) state.themeMode = 'light';
-        if (window.OpenTabLayout) OpenTabLayout.loadFromStorage(result);
-        state.folders = ensureFolders(result.folders).filter(
-          (folder) => !LEGACY_PRESET_FOLDER_IDS.has(folder.id)
-        );
-        if (!state.folders.some((folder) => folder.id === HOME_FOLDER_ID)) {
-          state.folders.unshift({ id: HOME_FOLDER_ID, name: t('主页') });
-        }
-        const validFolderIds = new Set(state.folders.map((folder) => folder.id));
-
-        state.icons = Array.isArray(result.icons)
-          ? result.icons.map((icon) => ({
-            ...icon,
-            type: icon.type === 'folder' ? 'folder' : normalizeIconType(icon.type),
-            parentId: typeof icon.parentId === 'string' ? icon.parentId : '',
-            folderId: validFolderIds.has(icon.folderId) ? icon.folderId : HOME_FOLDER_ID,
-            customIconUrl: icon.customIconUrl || '',
-            emoji: icon.emoji || '',
-            uploadedIconDataUrl: icon.uploadedIconDataUrl || '',
-            resolvedIconUrl: icon.resolvedIconUrl || '',
-            sshGatewayUrl: icon.sshGatewayUrl || '',
-            sshGatewayToken: icon.sshGatewayToken || '',
-            sshHost: icon.sshHost || '',
-            sshPort: Number.isInteger(icon.sshPort) ? icon.sshPort : 22,
-            sshUsername: icon.sshUsername || '',
-            sshPassword: icon.sshPassword || '',
-            sshSocksHost: icon.sshSocksHost || '',
-            sshSocksPort: Number.isInteger(icon.sshSocksPort) ? icon.sshSocksPort : 1080,
-            sshSocksUsername: icon.sshSocksUsername || '',
-            sshSocksPassword: icon.sshSocksPassword || ''
-          }))
-          : [];
-
-        let backgroundChanged = false;
-        if (result.background) {
-          const migratedBackground = migrateBackground(result.background);
-          backgroundChanged = !backgroundsEqual(migratedBackground, result.background);
-          state.background = migratedBackground;
-        }
-        if (Array.isArray(result.todos)) {
-          state.todos = result.todos
-            .filter((item) => item && item.id && typeof item.text === 'string')
-            .map((item) => ({ id: item.id, text: item.text, done: Boolean(item.done) }));
-        }
-        if (result.todoPanelOpen !== undefined) {
-          state.todoPanelOpen = Boolean(result.todoPanelOpen);
-        }
-        if (result.clockFormat) state.clockFormat = result.clockFormat;
-        if (result.showSeconds !== undefined) state.showSeconds = result.showSeconds;
-        if (result.uiOpacity !== undefined) state.uiOpacity = Number(result.uiOpacity);
-        if (result.uiBlur !== undefined) state.uiBlur = Number(result.uiBlur);
-        if (result.iconFrameEnabled !== undefined) state.iconFrameEnabled = Boolean(result.iconFrameEnabled);
-        state.openInNewTab = Boolean(result.openInNewTab);
-        if (result.timezone) state.timezone = result.timezone;
-        if (result.bingIndex !== undefined) state.bingIndex = result.bingIndex;
-        if (result.themeMode) state.themeMode = result.themeMode;
-        if (result.accentHue !== undefined) state.accentHue = Number(result.accentHue);
-        if (result.particlesEnabled !== undefined) state.particlesEnabled = Boolean(result.particlesEnabled);
-        if (result.gradientFlow !== undefined) state.gradientFlow = Boolean(result.gradientFlow);
-        if (result.minimalMode !== undefined) state.minimalMode = Boolean(result.minimalMode);
-
-        if (window.OpenTabFolders) OpenTabFolders.repairIconGraph(state.icons);
-        if (window.OpenTabIcons) state.icons.forEach((icon) => OpenTabIcons.prepareRecord(icon));
-        const requestedFolderId = result.currentFolderId || HOME_FOLDER_ID;
-        state.currentFolderId = getFolderById(requestedFolderId) ? requestedFolderId : HOME_FOLDER_ID;
-
-        updateClock();
-        renderTimezoneList();
-        initCalendar();
-
-        renderWorkspaceSettings();
-        workspace.seed(result, { ...OpenTabWorkspace.migrationOverrides(result, state), ...(backgroundChanged ? { background: result.background } : {}) });
-        refreshIconViews(false);
-        renderTodos();
-        setTodoPanelOpen(state.todoPanelOpen);
-        if (window.OpenTabIcons) OpenTabIcons.scheduleIdleMigration();
-
-        if (backgroundChanged) saveState();
-        OpenTabBingCache.afterStateLoaded();
-        writeBootMirror();
-      }
-    );
-  }
+  const applyLoadedState = OpenTabSceneHome.create({
+    state, HOME_FOLDER_ID, LEGACY_PRESET_FOLDER_IDS, activeHomeId, t, ensureFolders, normalizeIconType, migrateBackground, backgroundsEqual, getFolderById, updateClock, renderTimezoneList, initCalendar, renderWorkspaceSettings, workspace, refreshIconViews, renderTodos, setTodoPanelOpen, saveState, writeBootMirror
+  });
+  function loadState() { return sceneRuntime.load(); }
 
   function openAddIconModal() {
     iconSaveGate.release();
@@ -1438,7 +1374,7 @@
     const rawSshSocksUsername = elements.sshSocksUsername.value.trim();
     const rawSshSocksPassword = elements.sshSocksPassword.value;
     const toolSubtype = elements.toolSubtype.value || (editingIconId ? state.icons.find(item => item.id === editingIconId)?.toolSubtype : '') || 'json-format';
-    const folderId = state.currentFolderId || HOME_FOLDER_ID;
+    const folderId = state.currentFolderId || activeHomeId();
 
     if (!name) {
       elements.iconName.focus();
@@ -1788,29 +1724,36 @@
       getIconLabel
     });
   }
-  OpenTabClockDeck.init({ state, elements, workspace, saveState, renderTodos,
+  const clockHost = { state, elements, workspace, saveState, renderTodos,
+    get getSceneView() { return sceneViewAdapter(); },
     closeClockPopovers() { toggleTimezoneSelector(false); toggleCalendar(false); },
     openTodoList(opener) { setTodoPanelOpen(true); rememberFocus(opener); elements.todoInput.focus(); }
-  });
+  };
+  OpenTabClockDeck.init(clockHost);
   window.OpenTabCommandPalette?.init({ openAddWebsite() { rememberFocus(); openAddIconModal(); } });
   OpenTabSearch.init({
     getState: () => state,
-    openMatchedIcon: (icon) => {
+    openMatchedIcon: async (icon) => {
       if (window.OpenTabFolders && OpenTabFolders.isFolder(icon)) {
-        OpenTabFolders.openOverlay(icon.id);
+        if (sceneRuntime?.isActive() && icon.folderId !== state.currentFolderId) {
+          try { if (!await window.OpenTabSceneNavigation.selectGroup(icon.folderId)) return; } catch (_) { showToast(t('内容已变化，请重新编辑。')); return; }
+        }
+        const current = state.icons.find(item => item.id === icon.id && item.type === 'folder' && item.folderId === state.currentFolderId);
+        if (current) OpenTabFolders.openOverlay(current.id);
         return;
       }
       openIconTarget(icon);
     }
   });
-  OpenTabBingCache.init({
+  const bingHost = {
     state,
     elements,
     showToast,
     writeBootMirror,
     DEFAULT_GRADIENT,
     isVideoBackground
-  });
+  };
+  OpenTabBingCache.init(bingHost);
   if (window.OpenTabSettingsNav) {
     OpenTabSettingsNav.init({
       ...workspace,
@@ -1839,9 +1782,11 @@
   }
   if (window.OpenTabFolders) {
     OpenTabFolders.init({
+      isEditingBlocked: () => sceneReadOnly || sceneInteractionBusy,
       ...workspace,
       state,
-      HOME_FOLDER_ID,
+      get HOME_FOLDER_ID() { return activeHomeId(); },
+      get getSceneView() { return sceneViewAdapter(); },
       ICON_DND_TYPE,
       generateId,
       saveState,
@@ -1867,6 +1812,28 @@
       getIconsContainer: () => elements.iconsContainer
     });
   }
+
+  sceneRuntime = OpenTabSceneRuntime.create({
+    state, workspace, applyLoadedState, renderVisible: renderCurrentWorkspace,
+    showToast, writeBootMirror, bingHost, mount: document.getElementById('scene-switcher'),
+    onLoadStatus(ready) {
+      sceneReadOnly = !ready; document.getElementById('homepage').inert = sceneReadOnly || sceneInteractionBusy;
+    },
+    onBusy(busy) {
+      sceneInteractionBusy = busy; document.getElementById('homepage').inert = sceneReadOnly || sceneInteractionBusy;
+    },
+    onDiscardDraft: () => OpenTabSceneHome.discardDraft({
+      canDiscard: () => OpenTabSceneHome.canDiscard({ isSaving: iconSaveGate.has(iconDraftIntent), todoAddPending }),
+      closeAddIconModal, elements
+    }),
+    onViewDeferred() { showToast(t('场景已保存，请完成或取消当前编辑后重新选择。')); },
+    beforeSwitch: () => OpenTabSceneHome.canSwitch({ isSaving: iconSaveGate.has(iconDraftIntent), todoAddPending, elements }),
+    onInvalidate() {
+      OpenTabBingCache.invalidatePending(); OpenTabSiteSelection.cancel(false);
+      OpenTabFolders.closeOverlay(); hideIconContextMenu();
+      toggleTimezoneSelector(false); toggleCalendar(false);
+    }
+  });
 
   document.addEventListener('opentab-sync-applied', () => {
     if (window.OpenTabFolders && OpenTabFolders.closeOverlay) OpenTabFolders.closeOverlay();

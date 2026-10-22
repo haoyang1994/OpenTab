@@ -249,7 +249,7 @@ const homeJs = read('home.js');
 assert.match(homeJs, /function applyBootMirror/, 'home.js must apply the boot mirror before loadState');
 assert.match(homeJs, /showSeconds: state\.showSeconds/, 'boot mirror must include showSeconds');
 assert.match(homeJs, /OpenTabLayout\.bootMirrorSlice\(\)/, 'boot mirror must include layout keys');
-assert.match(homeJs, /OpenTabLayout\.loadFromStorage\(result\)/, 'BUG-030 loadState must apply layout before the grid');
+assert.match(read('scene-home.js'), /OpenTabLayout\.loadFromStorage\(result\)/, 'BUG-030 loadState must apply layout before the grid');
 const nativeDialogs = [...homeJs.matchAll(/\b(prompt|confirm|alert)\s*\(/g)].map((match) => match[0]);
 assert.ok(
   nativeDialogs.every((call) => call.startsWith('alert')),

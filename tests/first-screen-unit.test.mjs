@@ -118,7 +118,7 @@ function addDays(date, days) {
   assert.match(homeJs, /function applyBootMirror/);
   assert.match(homeJs, /showSeconds: state\.showSeconds/);
   assert.match(homeJs, /OpenTabLayout\.bootMirrorSlice\(\)/);
-  assert.match(homeJs, /OpenTabLayout\.loadFromStorage\(result\)/);
+  assert.match(fs.readFileSync(path.join(root, 'scene-home.js'), 'utf8'), /OpenTabLayout\.loadFromStorage\(result\)/);
   const layoutJs = fs.readFileSync(path.join(root, 'layout.js'), 'utf8');
   assert.match(layoutJs, /applyFromMirror\(\);\s*readAndApply\(\);/);
   console.log('U5 passed');

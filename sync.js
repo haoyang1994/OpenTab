@@ -19,6 +19,9 @@
   const ENABLED_KEY = 'browserSyncEnabled';
   const DEVICE_KEY = 'opentab.syncDeviceId';
   const META_KEY = 'ot.s.meta';
+  const SCENE_META_KEY = 'ot.s2.meta';
+  const SCENE_SCHEMA_KEY = 'opentab.sceneSchemaVersion';
+  const MAX_CHUNKS = 32;
   const QUOTA_BYTES = 102400;
   const QUOTA_BYTES_PER_ITEM = 8192;
   const CHUNK_SIZE = 7800;
@@ -62,6 +65,7 @@
   let pendingVault = {};
   let flushChain = Promise.resolve();
   let enabled = false;
+  let desiredEnabled = null;
   let applyingRemote = false;
   let pushTimer = 0;
   let syncBound = false;
@@ -71,6 +75,7 @@
   let writeCount = 0;
   let cryptoKeyPromise = null;
   let pendingConflict = null;
+  let remoteReadChain = Promise.resolve();
 
   function getChrome() {
     if (chromeRef) return chromeRef;
@@ -84,8 +89,10 @@
     lastPushedHash = '';
     lastAppliedHash = '';
     enabled = false;
+    desiredEnabled = null;
     applyingRemote = false;
     pendingConflict = null;
+    remoteReadChain = Promise.resolve();
     writeCount = 0;
     pendingVault = {};
     syncBound = false;
@@ -94,6 +101,34 @@
       pushTimer = 0;
     }
     wrapLocalSet();
+  }
+
+  function sceneSync() {
+    const api = typeof module === 'object' && module.exports ? require('./scene-sync.js') : globalThis.OpenTabSceneSync;
+    if (!api) throw syncError('SCENE_SYNC_UNAVAILABLE');
+    return api;
+  }
+
+  function syncError(code) {
+    const error = new Error(code === 'SYNC_SCHEMA_MISMATCH'
+      ? t('此设备使用不同的场景同步版本，现有数据未改动。')
+      : t('同步数据版本不受支持或数据损坏，现有数据未改动。'));
+    error.code = code;
+    error.recoverable = true;
+    return error;
+  }
+
+  function localProtocol(local) {
+    if (Object.prototype.hasOwnProperty.call(local, SCENE_SCHEMA_KEY)) return sceneSync().protocol(local);
+    if (Object.prototype.hasOwnProperty.call(local, 'scenes') || Object.prototype.hasOwnProperty.call(local, 'sceneProfiles')
+      || ['icons', 'folders', 'todos'].some(key => Array.isArray(local[key]) && local[key].some(item => item && Object.prototype.hasOwnProperty.call(item, 'sceneId')))) throw syncError('UNSUPPORTED_SCENE_SCHEMA');
+    return 1;
+  }
+
+  function payloadProtocol(payload) {
+    if (!payload || (payload.v !== undefined && payload.v !== 1 && payload.v !== 2)) throw syncError('UNSUPPORTED_SYNC_SCHEMA');
+    if (payload.v !== 2 && ([SCENE_SCHEMA_KEY, 'scenes', 'sceneProfiles', 'sceneLayouts'].some(key => Object.prototype.hasOwnProperty.call(payload, key)) || ['icons', 'folders', 'todos'].some(key => Array.isArray(payload[key]) && payload[key].some(item => item && Object.prototype.hasOwnProperty.call(item, 'sceneId'))))) throw syncError('UNSUPPORTED_SYNC_SCHEMA');
+    return payload.v === 2 ? 2 : 1;
   }
 
   function getWorkspace() {
@@ -470,7 +505,8 @@
     return Array.isArray(groups) ? groups : [];
   }
 
-  function buildSyncPayload(local) {
+  function buildSyncPayload(local = {}) {
+    if (localProtocol(local) === 2) return sceneSync().project(local, SYNC_SETTING_KEYS);
     const settings = {};
     SYNC_SETTING_KEYS.forEach((key) => {
       if (local && local[key] !== undefined) settings[key] = local[key];
@@ -480,13 +516,14 @@
       v: 1,
       updatedAt: Date.now(),
       icons: (local && Array.isArray(local.icons) ? local.icons : []).map(sanitizeIconForSync),
-      folders: groupsToFolders(foldersToGroups(local && local.folders)),
+      folders: groupsToFolders(foldersToGroups(local && local.folders)).map(folder => Object.fromEntries(['id', 'name', 'parentId', 'type'].filter(key => folder[key] !== undefined).map(key => [key, folder[key]]))),
       settings
     };
   }
 
   async function hashPayload(payload) {
     const body = JSON.stringify({
+      ...(payload && payload.v === 2 ? { v: 2, [SCENE_SCHEMA_KEY]: 2, scenes: payload.scenes, sceneLayouts: payload.sceneLayouts } : {}),
       icons: payload && payload.icons,
       folders: payload && payload.folders,
       settings: payload && payload.settings
@@ -504,7 +541,8 @@
   async function getDeviceId() {
     if (deviceId) return deviceId;
     return getWorkspace().transaction(async ({ read, write }) => {
-      const stored = await read([DEVICE_KEY]);
+      const stored = await read(null);
+      localProtocol(stored);
       if (stored[DEVICE_KEY]) {
         deviceId = stored[DEVICE_KEY];
         return deviceId;
@@ -516,8 +554,8 @@
     });
   }
 
-  function chunkKey(index) {
-    return 'ot.s.c' + index;
+  function chunkKey(index, version = 1) {
+    return (version === 2 ? 'ot.s2.c' : 'ot.s.c') + index;
   }
 
   function isSurrogateSplit(text, index) {
@@ -560,7 +598,7 @@
     const chunks = [];
     let offset = 0;
     while (offset < json.length) {
-      const end = maxStoredSliceEnd(json, offset, chunkKey(chunks.length));
+      const end = maxStoredSliceEnd(json, offset, chunkKey(chunks.length, payload.v));
       chunks.push(json.slice(offset, end));
       offset = end;
     }
@@ -571,12 +609,14 @@
     return JSON.parse((chunks || []).join(''));
   }
 
-  function planSyncWrite(payload) {
+  function planSyncWrite(payload, existing = {}) {
+    const version = payloadProtocol(payload);
+    if (version === 2) sceneSync().validatePayload(payload, SYNC_SETTING_KEYS);
     const sharded = shardSyncPayload(payload);
     const items = [{
-      key: META_KEY,
+      key: version === 2 ? SCENE_META_KEY : META_KEY,
       value: {
-        v: 1,
+        v: version,
         n: sharded.chunks.length,
         updatedAt: payload.updatedAt,
         hash: payload.hash || '',
@@ -585,9 +625,12 @@
       }
     }];
     sharded.chunks.forEach((chunk, index) => {
-      items.push({ key: chunkKey(index), value: chunk });
+      items.push({ key: chunkKey(index, version), value: chunk });
     });
-    let total = 0;
+    const replacing = new Set(items.map(item => item.key));
+    // chrome.storage.sync quota is shared with the retained v1 stream and all
+    // unrelated keys, including stale chunks until the successful cleanup.
+    let total = Object.entries(existing).reduce((bytes, [key, value]) => bytes + (replacing.has(key) ? 0 : storedItemBytes(key, value)), 0);
     for (let i = 0; i < items.length; i += 1) {
       const size = storedItemBytes(items[i].key, items[i].value);
       if (size > QUOTA_BYTES_PER_ITEM) {
@@ -678,100 +721,145 @@
     document.dispatchEvent(new CustomEvent(APPLIED_EVENT));
   }
 
-  async function readRemotePayload() {
-    const metaResult = await areaGet('sync', [META_KEY]);
-    const meta = metaResult[META_KEY];
-    if (!meta || !meta.n) return null;
-    const keys = [];
-    for (let i = 0; i < meta.n; i += 1) keys.push(chunkKey(i));
-    const chunkResult = await areaGet('sync', keys);
-    const chunks = [];
-    for (let i = 0; i < meta.n; i += 1) {
-      if (typeof chunkResult[chunkKey(i)] !== 'string') return null;
-      chunks.push(chunkResult[chunkKey(i)]);
-    }
-    try {
-      return unshardSyncPayload(chunks);
-    } catch (error) {
+  function validHash(value) {
+    return typeof value === 'string' && /^(?:[A-Za-z0-9+/]{43}=|x[0-9a-f]{1,8})$/.test(value);
+  }
+
+  async function validateSceneEnvelope(payload, meta) {
+    sceneSync().validatePayload(payload, SYNC_SETTING_KEYS);
+    if (utf8Length(JSON.stringify(payload)) > QUOTA_BYTES || !validHash(payload.hash) || typeof payload.deviceId !== 'string' || !payload.deviceId || payload.deviceId.length > 256
+      || payload.hash !== await hashPayload(payload)) throw syncError('CORRUPT_SYNC_PAYLOAD');
+    if (meta && (payload.hash !== meta.hash || payload.deviceId !== meta.deviceId || payload.updatedAt !== meta.updatedAt)) throw syncError('CORRUPT_SYNC_PAYLOAD');
+  }
+
+  async function readRemotePayload(local, stored) {
+    local = local || await areaGet('local', null);
+    const version = localProtocol(local), metaKey = version === 2 ? SCENE_META_KEY : META_KEY;
+    stored = stored || await areaGet('sync', null);
+    const meta = stored[metaKey], prefix = version === 2 ? 'ot.s2.' : 'ot.s.';
+    if (version === 2 && Object.keys(stored).some(key => key.startsWith(prefix) && key !== metaKey && !Array.from({ length: MAX_CHUNKS }, (_, i) => chunkKey(i, 2)).includes(key))) throw syncError('CORRUPT_SYNC_META');
+    if (!Object.prototype.hasOwnProperty.call(stored, metaKey)) {
+      if (Object.keys(stored).some(key => key.startsWith(prefix))) throw syncError('CORRUPT_SYNC_META');
       return null;
     }
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta) || meta.v !== version
+      || !Number.isSafeInteger(meta.n) || meta.n < 1 || meta.n > MAX_CHUNKS) throw syncError('CORRUPT_SYNC_META');
+    if (version === 2 && (Object.keys(meta).some(key => !['v', 'n', 'updatedAt', 'hash', 'deviceId', 'bytes'].includes(key))
+      || !validHash(meta.hash) || typeof meta.deviceId !== 'string' || !meta.deviceId || meta.deviceId.length > 256
+      || !Number.isSafeInteger(meta.updatedAt) || meta.updatedAt < 0 || !Number.isSafeInteger(meta.bytes) || meta.bytes < 1 || meta.bytes > QUOTA_BYTES)) throw syncError('CORRUPT_SYNC_META');
+    const chunks = [];
+    let bytes = storedItemBytes(metaKey, meta);
+    for (let i = 0; i < meta.n; i += 1) {
+      const key = chunkKey(i, version), value = stored[key];
+      if (typeof value !== 'string' || !value || storedItemBytes(key, value) > QUOTA_BYTES_PER_ITEM) throw syncError('CORRUPT_SYNC_CHUNK');
+      bytes += storedItemBytes(key, value);
+      if (bytes > QUOTA_BYTES) throw syncError('CORRUPT_SYNC_CHUNK');
+      chunks.push(value);
+    }
+    let payload;
+    try { payload = unshardSyncPayload(chunks); } catch (_) { throw syncError('CORRUPT_SYNC_PAYLOAD'); }
+    if (payloadProtocol(payload) !== version) throw syncError('UNSUPPORTED_SYNC_SCHEMA');
+    if (version === 2) {
+      if (utf8Length(chunks.join('')) !== meta.bytes) throw syncError('CORRUPT_SYNC_PAYLOAD');
+      await validateSceneEnvelope(payload, meta);
+    }
+    return payload;
   }
 
   async function pushLocalToSync() {
     if (!enabled) return { ok: false, skipped: true };
-    const local = await areaGet('local', ['icons', 'folders'].concat(SYNC_SETTING_KEYS));
-    const payload = buildSyncPayload(local);
-    payload.deviceId = await getDeviceId();
-    payload.hash = await hashPayload(payload);
-    if (payload.hash && payload.hash === lastPushedHash) {
-      return { ok: true, skipped: true, reason: 'unchanged' };
-    }
-    const plan = planSyncWrite(payload);
-    if (!plan.ok) {
-      enabled = false;
-      await areaSet('local', { [ENABLED_KEY]: false });
-      const checkbox = typeof document !== 'undefined' ? document.getElementById('browser-sync-enabled') : null;
-      if (checkbox) checkbox.checked = false;
-      setSyncStatus(plan.message, true);
-      await refreshUsage();
-      return plan;
-    }
-    const currentMeta = await areaGet('sync', [META_KEY]);
-    const previous = currentMeta[META_KEY];
-    const stale = [];
-    if (previous && previous.n > plan.chunkCount) {
-      for (let i = plan.chunkCount; i < previous.n; i += 1) stale.push(chunkKey(i));
-    }
-    const toSet = {};
-    plan.items.forEach((item) => {
-      toSet[item.key] = item.value;
-    });
-    try {
-      applyingRemote = true;
-      await areaSet('sync', toSet);
-      if (stale.length) await areaRemove('sync', stale);
-      writeCount += 1;
-      lastPushedHash = payload.hash;
-      lastAppliedHash = payload.hash;
-      if (plan.near) {
-        setSyncStatus(t('同步已接近 100KB 配额，数据已分片保存。'), false);
+    return getWorkspace().transaction(async ({ read, write }) => {
+      const local = await read(null);
+      if (!enabled || desiredEnabled === false || !local[ENABLED_KEY]) return { ok: false, skipped: true };
+      const version = localProtocol(local);
+      const existing = await areaGet('sync', null);
+      // A damaged stream is never interpreted as empty, including explicit
+      // "use local" resolution. Recovery must be an intentional separate action.
+      await readRemotePayload(local, existing);
+      const payload = buildSyncPayload(local);
+      payload.hash = await hashPayload(payload);
+      if (payload.hash && payload.hash === lastPushedHash) return { ok: true, skipped: true, reason: 'unchanged' };
+      const nextDeviceId = local[DEVICE_KEY] || deviceId || 'dev-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      payload.deviceId = nextDeviceId;
+      const plan = planSyncWrite(payload, existing);
+      if (!plan.ok) {
+        enabled = false;
+        await write({ [ENABLED_KEY]: false });
+        const checkbox = typeof document !== 'undefined' ? document.getElementById('browser-sync-enabled') : null;
+        if (checkbox) checkbox.checked = false;
+        setSyncStatus(plan.message, true);
+        await refreshUsage();
+        return plan;
       }
-      await refreshUsage();
-      return plan;
-    } catch (error) {
-      enabled = false;
-      await areaSet('local', { [ENABLED_KEY]: false });
-      const checkbox = typeof document !== 'undefined' ? document.getElementById('browser-sync-enabled') : null;
-      if (checkbox) checkbox.checked = false;
-      setSyncStatus(t('同步写入失败，已改为仅保存在本地。'), true);
-      await refreshUsage();
-      return { ok: false, fallback: 'local', message: error && error.message };
-    } finally {
-      applyingRemote = false;
-    }
+      const metaKey = version === 2 ? SCENE_META_KEY : META_KEY;
+      const previous = existing[metaKey], stale = [];
+      if (previous && previous.n > plan.chunkCount) {
+        for (let i = plan.chunkCount; i < previous.n; i += 1) stale.push(chunkKey(i, version));
+      }
+      const toSet = Object.fromEntries(plan.items.map(item => [item.key, item.value]));
+      if (!enabled || desiredEnabled === false || !(await read([ENABLED_KEY]))[ENABLED_KEY]) return { ok: false, skipped: true };
+      try {
+        applyingRemote = true;
+        if (!local[DEVICE_KEY]) await write({ [DEVICE_KEY]: nextDeviceId });
+        deviceId = nextDeviceId;
+        if (!enabled || desiredEnabled === false || !(await read([ENABLED_KEY]))[ENABLED_KEY]) return { ok: false, skipped: true };
+        await areaSet('sync', toSet);
+        if (stale.length) await areaRemove('sync', stale);
+        writeCount += 1;
+        lastPushedHash = payload.hash;
+        lastAppliedHash = payload.hash;
+        if (plan.near) setSyncStatus(t('同步已接近 100KB 配额，数据已分片保存。'), false);
+        await refreshUsage();
+        return plan;
+      } catch (error) {
+        enabled = false;
+        await write({ [ENABLED_KEY]: false });
+        const checkbox = typeof document !== 'undefined' ? document.getElementById('browser-sync-enabled') : null;
+        if (checkbox) checkbox.checked = false;
+        setSyncStatus(t('同步写入失败，已改为仅保存在本地。'), true);
+        await refreshUsage();
+        return { ok: false, fallback: 'local', message: error && error.message };
+      } finally { applyingRemote = false; }
+    });
   }
 
   async function applyRemotePayload(payload, options) {
     if (!payload) return false;
-    await getDeviceId();
-    if (payload.deviceId && payload.deviceId === deviceId) return false;
+    const observed = await areaGet('local', null), version = localProtocol(observed);
+    if (payloadProtocol(payload) !== version) throw syncError('SYNC_SCHEMA_MISMATCH');
+    if (version === 2) await validateSceneEnvelope(payload);
+    if (payload.deviceId && payload.deviceId === (observed[DEVICE_KEY] || deviceId)) return false;
     if (payload.hash && payload.hash === lastAppliedHash) return false;
     applyingRemote = true;
     try {
       let snapshot = null;
       let undoBefore = null;
+      let sceneUndo = null;
+      let scenePatch = null;
+      let recoveredSceneIds = [];
       const workspace = getWorkspace();
-      const applied = await workspace.replace((local) => {
-        const toSet = {
+      const applied = await workspace.replace(async (local) => {
+        if (options && options.automatic && (!enabled || desiredEnabled === false || !local[ENABLED_KEY])) throw syncError('SYNC_DISABLED');
+        if (localProtocol(local) !== version) throw syncError('SYNC_SCHEMA_MISMATCH');
+        if (options && options.automatic) {
+          const currentRemote = await readRemotePayload(local);
+          if (!currentRemote || await hashPayload(currentRemote) !== await hashPayload(payload)) throw syncError('SYNC_REMOTE_CHANGED');
+          if (!enabled || desiredEnabled === false || !local[ENABLED_KEY]) throw syncError('SYNC_DISABLED');
+        }
+        if (version === 2 && options && options.snapshotReason && (typeof OpenTabImport === 'undefined' || typeof OpenTabImport.prepareSnapshotRecord !== 'function')) throw syncError('SCENE_RECOVERY_UNAVAILABLE');
+        const scenePlan = version === 2 ? sceneSync().planRemote(local, payload, SYNC_SETTING_KEYS) : null;
+        const toSet = scenePlan ? scenePlan.patch : {
           icons: mergeRemoteIcons(payload.icons, local.icons),
           folders: groupsToFolders(foldersToGroups(payload.folders))
         };
+        if (scenePlan) { sceneUndo = local; scenePatch = { ...toSet }; recoveredSceneIds = scenePlan.recoveredSceneIds; }
         const settings = payload.settings || {};
-        SYNC_SETTING_KEYS.forEach((key) => {
+        (version === 2 ? [] : SYNC_SETTING_KEYS).forEach((key) => {
           if (settings[key] !== undefined) toSet[key] = settings[key];
         });
         if (options && options.snapshotReason && typeof OpenTabImport !== 'undefined' && OpenTabImport.prepareSnapshotRecord) {
-          const prepared = OpenTabImport.prepareSnapshotRecord(options.snapshotReason, local);
+          const prepared = OpenTabImport.prepareSnapshotRecord(options.snapshotReason, local, version === 2 ? { completeness: 'full' } : undefined);
+          if (version === 2 && (!prepared.record || prepared.record.completeness !== 'full')) throw syncError('SCENE_RECOVERY_UNAVAILABLE');
           toSet[OpenTabImport.BACKUP_SNAPSHOTS_KEY] = prepared.records;
           snapshot = prepared.record;
           // The compact backup drops local icon data. Keep a separate, bounded
@@ -788,14 +876,23 @@
       });
       lastAppliedHash = payload.hash || lastAppliedHash;
       if (snapshot && options && typeof options.onSnapshot === 'function') {
-        const after = {};
-        Object.keys(undoBefore).forEach((key) => { after[key] = applied[key]; });
-        after[workspace.EPOCH_KEY] = applied[workspace.EPOCH_KEY];
-        undoBefore[workspace.EPOCH_KEY] = applied[workspace.EPOCH_KEY];
-        options.onSnapshot(snapshot, JSON.parse(JSON.stringify({ before: undoBefore, after })));
+        if (version === 2) {
+          options.onSnapshot(snapshot, sceneSync().inverse(sceneUndo, applied, scenePatch, workspace.EPOCH_KEY));
+        } else {
+          const after = {};
+          Object.keys(undoBefore).forEach((key) => { after[key] = applied[key]; });
+          after[workspace.EPOCH_KEY] = applied[workspace.EPOCH_KEY];
+          undoBefore[workspace.EPOCH_KEY] = applied[workspace.EPOCH_KEY];
+          options.onSnapshot(snapshot, JSON.parse(JSON.stringify({ before: undoBefore, after })));
+        }
       }
+      if (version === 2 && !snapshot && options && typeof options.onSnapshot === 'function') options.onSnapshot(null, sceneSync().inverse(sceneUndo, applied, scenePatch, workspace.EPOCH_KEY));
+      if (recoveredSceneIds.length) setSyncStatus(t('未在云端找到的本机场景已归档保留，本地内容未删除。'), false);
       notifyApplied();
       return true;
+    } catch (error) {
+      if (error && ['SYNC_DISABLED', 'SYNC_REMOTE_CHANGED'].includes(error.code)) return false;
+      throw error;
     } finally {
       applyingRemote = false;
     }
@@ -806,7 +903,7 @@
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(() => {
       pushTimer = 0;
-      pushLocalToSync();
+      pushLocalToSync().catch(() => setSyncStatus(t('读取或保存云端数据失败，请重试。'), true));
     }, PUSH_DEBOUNCE_MS);
   }
 
@@ -826,14 +923,21 @@
 
   async function undoRemotePayload(undo) {
     if (!undo || !undo.before || !undo.after) throw new Error(t('没有可安全撤销的同步记录。'));
-    const saved = await getWorkspace().commit(undo.after, undo.before);
+    const workspace = getWorkspace();
+    const saved = undo.v === 2 ? await workspace.transaction(async ({ read, write }) => {
+      const local = await read(null);
+      const patch = sceneSync().planUndo(local, undo, workspace.EPOCH_KEY, SYNC_SETTING_KEYS);
+      if (Object.values(patch).some(value => value === undefined)) throw syncError('WORKSPACE_CONFLICT');
+      if (Object.keys(patch).length) await write(patch);
+      return { ...local, ...patch };
+    }) : await workspace.commit(undo.after, undo.before, local => localProtocol(local) === 1);
     setSyncStatus(t('已撤销云端替换，保留了之后的其他修改。'), false);
     notifyApplied();
     return saved;
   }
 
   function showSyncUndoToast(undo) {
-    if (typeof document === 'undefined' || !undo) return;
+    if (typeof document === 'undefined' || !undo || undo.undoable === false) return;
     const toast = document.getElementById('toast');
     if (!toast) return;
     toast.textContent = t('已用云端数据替换本机。');
@@ -873,11 +977,17 @@
         onSnapshot: (record, inverse) => { snapshot = record; undo = inverse; }
       });
       if (pulled) {
-        setSyncStatus(t('已用云端数据替换本机快捷方式，可撤销。'), false);
-        showSyncUndoToast(undo);
+        if (undo && undo.undoable === false) {
+          setSyncStatus(snapshot
+            ? t('已使用云端数据，新增设置无法直接撤销。需要恢复场景和网站时，请在“备份与恢复”中选择“恢复最近快照”；新增设置请手动调整。')
+            : t('已使用云端数据，新增设置无法直接撤销。'), false);
+        } else {
+          setSyncStatus(t('已用云端数据替换本机快捷方式，可撤销。'), false);
+          showSyncUndoToast(undo);
+        }
       }
       await refreshUsage();
-      return { ok: true, pulled: !!pulled, snapshotId: snapshot && snapshot.id };
+      return { ok: true, pulled: !!pulled, snapshotId: snapshot && snapshot.id, undoable: !!undo && undo.undoable !== false };
     }
     const pushed = await pushLocalToSync();
     if (pushed.ok) setSyncStatus(t('已用本机数据覆盖云端。'), false);
@@ -887,12 +997,83 @@
 
   async function migratePlaintextSecrets() {
     return getWorkspace().transaction(async ({ read, write }) => {
-      const local = await read(['icons']);
+      const local = await read(null);
+      localProtocol(local);
       if (!iconsHavePlaintextSecrets(local.icons)) return false;
       applyingRemote = true;
       try {
-        await write({ icons: local.icons });
+        // This migration must not use the normal wrapper's clear-then-flush
+        // path. Keep originals intact until durable encrypted recovery has
+        // been read back and verified. A previous rejected flush is a barrier,
+        // not a permanently poisoned queue for a safe retry.
+        flushChain = flushChain.catch(() => null);
+        await flushChain;
+        // A prepared but not yet flushed edit is not represented by that
+        // chain. Do not let either migration write trigger the normal
+        // wrapper's replace-record flush and discard existing vault fields.
+        if (Object.keys(pendingVault).length) throw new Error();
+        const expected = new Map(), ids = new Set();
+        const icons = local.icons.map(icon => {
+          if (!icon || typeof icon.id !== 'string' || !icon.id || ids.has(icon.id)) throw new Error();
+          ids.add(icon.id);
+          const next = { ...icon }, secrets = {};
+          for (const field of SECRET_FIELDS) if (icon[field]) {
+            if (typeof icon[field] !== 'string') throw new Error();
+            secrets[field] = icon[field];
+            next[field] = '';
+          }
+          if (Object.keys(secrets).length) expected.set(icon.id, secrets);
+          return next;
+        });
+        const stored = await read([VAULT_STORE, CRYPTO_KEY]);
+        const priorVault = stored[VAULT_STORE];
+        if (priorVault && (typeof priorVault !== 'object' || Array.isArray(priorVault) || priorVault.v !== 1
+          || (priorVault.empty ? priorVault.data !== '' || priorVault.iv !== ''
+            : typeof priorVault.data !== 'string' || !priorVault.data || typeof priorVault.iv !== 'string' || !priorVault.iv))) throw new Error();
+        // Do not interpret a failed key-store read as permission to replace an
+        // existing key. Existing key format, storage and legacy import stay as
+        // they are; an unavailable key simply leaves plaintext untouched.
+        const persistedKey = await idbGetKey();
+        if (!persistedKey && stored[VAULT_STORE] && stored[VAULT_STORE].data && !stored[CRYPTO_KEY]) throw new Error();
+        const key = persistedKey || await getCryptoKey();
+        if (!key) throw new Error();
+        cryptoKeyPromise = Promise.resolve(key);
+        const opened = await unsealVault(stored[VAULT_STORE], key);
+        if (!opened.ok || !opened.vault || typeof opened.vault !== 'object' || Array.isArray(opened.vault)) throw new Error();
+        const merged = JSON.parse(JSON.stringify(opened.vault));
+        for (const [id, secrets] of expected) {
+          const previous = Object.prototype.hasOwnProperty.call(merged, id) ? merged[id] : {};
+          if (!previous || typeof previous !== 'object' || Array.isArray(previous)) throw new Error();
+          Object.defineProperty(merged, id, { value: { ...previous, ...secrets }, enumerable: true, writable: true, configurable: true });
+        }
+        const sealed = await sealVault(merged, key);
+        if (!sealed || sealed.empty || !sealed.data || !sealed.iv) throw new Error();
+        if (Object.keys(pendingVault).length) throw new Error();
+        await write({ [VAULT_STORE]: sealed });
+        const saved = await read([VAULT_STORE]);
+        // Decrypt with the persisted key, not merely a cached in-memory key.
+        const durableKey = await idbGetKey();
+        if (!durableKey) throw new Error();
+        const verified = await unsealVault(saved[VAULT_STORE], durableKey);
+        if (!verified.ok || JSON.stringify(verified.vault) !== JSON.stringify(merged)
+          || [...expected].some(([id, secrets]) => !verified.vault[id] || Object.entries(secrets).some(([field, value]) => verified.vault[id][field] !== value))) throw new Error();
+        const latest = await read(null);
+        localProtocol(latest);
+        if (JSON.stringify(latest.icons) !== JSON.stringify(local.icons)
+          || latest[SCENE_SCHEMA_KEY] !== local[SCENE_SCHEMA_KEY]
+          || latest[getWorkspace().EPOCH_KEY] !== local[getWorkspace().EPOCH_KEY]) throw new Error();
+        if (Object.keys(pendingVault).length) throw new Error();
+        await write({ icons });
+        // Some callback-only adapters can mask a failed underlying write.
+        // Never report success unless the scrub itself is observable, too.
+        const cleared = await read(['icons']);
+        if (JSON.stringify(cleared.icons) !== JSON.stringify(icons)) throw new Error();
         return true;
+      } catch (_) {
+        cryptoKeyPromise = null;
+        const error = new Error(t('保护本地凭据时保存失败，请重试。'));
+        error.code = 'SECRET_MIGRATION_FAILED';
+        throw error;
       } finally {
         applyingRemote = false;
       }
@@ -900,8 +1081,15 @@
   }
 
   async function setEnabled(next) {
-    enabled = !!next;
-    await areaSet('local', { [ENABLED_KEY]: enabled });
+    desiredEnabled = !!next;
+    if (!next) enabled = false;
+    const { local, version, remote } = await getWorkspace().transaction(async ({ read, write }) => {
+      const local = await read(null), version = localProtocol(local);
+      const remote = next ? await readRemotePayload(local) : null;
+      await write({ [ENABLED_KEY]: !!next });
+      return { local, version, remote };
+    });
+    enabled = !!next && desiredEnabled !== false;
     const checkbox = typeof document !== 'undefined' ? document.getElementById('browser-sync-enabled') : null;
     if (checkbox) checkbox.checked = enabled;
     if (!enabled) {
@@ -911,8 +1099,17 @@
       return { ok: true, enabled: false };
     }
     await getDeviceId();
-    const remote = await readRemotePayload();
-    const local = await areaGet('local', ['icons']);
+    if (version === 2 && remote && remote.deviceId !== deviceId && remote.hash !== await hashPayload(buildSyncPayload(local))) {
+      pendingConflict = remote;
+      showSyncConflict();
+      await refreshUsage();
+      return { ok: true, enabled: true, conflict: true, localCount: local.icons.length, remoteCount: remote.icons.length };
+    }
+    if (version === 2) {
+      const pushed = await pushLocalToSync();
+      if (pushed.ok) setSyncStatus(t('已开启浏览器同步（仅快捷方式、分组和设置）。'), false);
+      return { ok: pushed.ok, enabled, pushed };
+    }
     const localCount = Array.isArray(local.icons) ? local.icons.length : 0;
     const remoteFromOther = !!(remote && remote.deviceId && remote.deviceId !== deviceId);
     const remoteHasIcons = !!(remote && Array.isArray(remote.icons) && remote.icons.length);
@@ -941,18 +1138,33 @@
     syncBound = true;
     api.storage.onChanged.addListener((changes, area) => {
       if (area === 'sync') {
-        if (!enabled || applyingRemote || pendingConflict) return;
-        if (changes[META_KEY]) {
-          readRemotePayload().then((payload) => {
-            if (!payload) return;
-            return applyRemotePayload(payload);
+        if (!enabled || pendingConflict) return;
+        const keys = Object.keys(changes || {});
+        if (keys.some(key => key === META_KEY || key.startsWith('ot.s2.'))) {
+          // Sync may deliver metadata and chunks in separate notifications and
+          // either order. Each current-namespace change revalidates the entire
+          // stream; serialize reads so simultaneous events apply only once.
+          remoteReadChain = remoteReadChain.then(async () => {
+            const local = await areaGet('local', null);
+            if (!enabled || desiredEnabled === false || !local[ENABLED_KEY]) return;
+            const version = localProtocol(local);
+            const sceneChanged = keys.some(key => key.startsWith('ot.s2.'));
+            if (version === 2 && changes[META_KEY] && !sceneChanged) {
+              setSyncStatus(t('已忽略旧版设备的同步更新，场景数据未改动。'), false);
+              return;
+            }
+            if (!(version === 2 ? sceneChanged : changes[META_KEY])) return;
+            const payload = await readRemotePayload(local);
+            if (payload && await applyRemotePayload(payload, { automatic: true })) {
+              setSyncStatus(t('已从浏览器同步恢复快捷方式、分组和设置。'), false);
+            }
           }).catch(() => setSyncStatus(t('读取或保存云端数据失败，请重试。'), true));
         }
         return;
       }
       if (area !== 'local' || applyingRemote || !enabled) return;
       const keys = Object.keys(changes || {});
-      if (keys.some((key) => SYNC_TRIGGERS.has(key))) schedulePush();
+      if (keys.some((key) => SYNC_TRIGGERS.has(key) || ['scenes', 'sceneProfiles', SCENE_SCHEMA_KEY].includes(key))) schedulePush();
     });
   }
 
@@ -1013,6 +1225,8 @@
     ENABLED_KEY,
     DEVICE_KEY,
     META_KEY,
+    SCENE_META_KEY,
+    MAX_CHUNKS,
     QUOTA_BYTES,
     QUOTA_BYTES_PER_ITEM,
     CHUNK_SIZE,
@@ -1028,6 +1242,9 @@
     hydrateIcons,
     getCryptoKey,
     buildSyncPayload,
+    hashPayload,
+    readRemotePayload,
+    watchStorage,
     shardSyncPayload,
     unshardSyncPayload,
     planSyncWrite,

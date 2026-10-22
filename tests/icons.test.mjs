@@ -3,8 +3,9 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { checkAddedRuntimeBudget } from '../scripts/release-size-budget.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -315,7 +316,7 @@ assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
       iconDraftIntent: {}, editingIconId: existing ? 'existing' : null, pendingIconUploadDataUrl: '',
       state: { icons: existing ? [{ id: 'existing', uploadedIconDataUrl: existing }] : [] },
       workspace: { isIntentCurrent: (draft) => !!draft },
-      ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'home',
+      ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'home', activeHomeId: () => 'home',
       normalizeIconType: (v) => v, normalizeUrl: (v) => v, normalizeOptionalUrl: (v) => v,
       t: (s, params) => s.replace(/\{(\w+)\}/g, (match, key) => params?.[key] ?? match),
       showToast() {}, restoreFocus() {}, window: { OpenTabIcons: true },
@@ -333,6 +334,11 @@ assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
         context.iconUploadGate.reset();
       }
     };
+  }
+  {
+    const f = fixture(); f.context.activeHomeId = () => 'scene-study-home';
+    await f.context.handleSaveIcon();
+    assert.equal(f.writes[0].folderId, 'scene-study-home', 'actual Add handler uses the active scene Home when no group is selected');
   }
   for (const existing of ['', 'image-A']) {
     const f = fixture(existing);
@@ -429,35 +435,32 @@ assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
   }
 }
 
-function addedFileBytes() {
-  const names = new Set();
-  const git = (args) => {
-    try {
-      return execSync(args, {
-        cwd: root,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore']
-      }).trim().split('\n').filter(Boolean);
-    } catch {
-      return [];
-    }
-  };
-  git('git diff --name-only --diff-filter=A origin/master').forEach((name) => names.add(name));
-  git('git ls-files --others --exclude-standard').forEach((name) => names.add(name));
-  return [...names].reduce((sum, rel) => {
-    const abs = path.join(root, rel);
-    return sum + (fs.existsSync(abs) && fs.statSync(abs).isFile() ? fs.statSync(abs).size : 0);
-  }, 0);
+const releaseFiles = JSON.parse(fs.readFileSync(path.join(root, 'scripts/release-files.json'), 'utf8'));
+function addedRuntimeBytes() {
+  // Keep committed/staged additions and untracked files, including names with spaces.
+  // Git failures must not silently turn a missing baseline into a zero-byte pass.
+  const git = (args) => execFileSync('git', args, {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
+  }).split('\0').filter(Boolean);
+  const addedNames = [
+    ...git(['diff', '--name-only', '--diff-filter=A', '-z', 'origin/master']),
+    ...git(['ls-files', '--others', '--exclude-standard', '-z'])
+  ];
+  const fileSizes = new Map(releaseFiles.map((name) => {
+    const absolute = path.resolve(root, name);
+    assert.ok(absolute.startsWith(root + path.sep), `Release path escapes repository: ${name}`);
+    const stat = fs.lstatSync(absolute, { throwIfNoEntry: false });
+    return [name, stat?.isFile() ? stat.size : undefined];
+  }));
+  return checkAddedRuntimeBudget({ addedNames, releaseFiles, fileSizes });
 }
 
-const added = addedFileBytes();
-assert.ok(added <= 300 * 1024, `AC6: added files ${added} bytes exceed 300KB`);
-console.log(`icons library stats count=${stats.count} cn=${stats.cn} intl=${stats.intl} addedBytes=${added}`);
+const added = addedRuntimeBytes();
+console.log(`icons library stats count=${stats.count} cn=${stats.cn} intl=${stats.intl} addedRuntimeBytes=${added}`);
 console.log('icons unit tests passed');
 
 // App identity stays local and every declared raster has its true native size.
 const appManifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-const releaseFiles = JSON.parse(fs.readFileSync(path.join(root, 'scripts/release-files.json'), 'utf8'));
 for (const iconMap of [appManifest.icons, appManifest.action.default_icon]) {
   for (const [size, file] of Object.entries(iconMap)) {
     assert.ok(releaseFiles.includes(file), `${file} must be packaged`);

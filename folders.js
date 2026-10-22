@@ -25,11 +25,11 @@
   function ensureGroups(folders) {
     const normalized = Array.isArray(folders)
       ? folders
-        .filter((item) => item && item.id && item.name && !LEGACY_PRESET_GROUP_IDS.includes(item.id))
-        .map((item) => ({ id: String(item.id), name: String(item.name) }))
+        .filter((item) => item && item.id && item.name && (item.sceneId || !LEGACY_PRESET_GROUP_IDS.includes(item.id)))
+        .map((item) => ({ ...item, id: String(item.id), name: String(item.name) }))
       : [];
     if (!normalized.some((item) => item.id === HOME_GROUP_ID)) {
-      normalized.unshift({ id: HOME_GROUP_ID, name: t('主页') });
+      normalized.unshift({ id: HOME_GROUP_ID, name: t('主页'), ...(normalized.some(item => item.sceneId) ? { sceneId: 'scene-default' } : {}) });
     }
     return normalized;
   }
@@ -38,11 +38,12 @@
     return ensureGroups(folders).find((item) => item.id === groupId) || null;
   }
 
-  function addGroupRecord(folders, name, id) {
+  function addGroupRecord(folders, name, id, view = null) {
     const next = ensureGroups(folders);
     const group = {
       id: id || `folder-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`,
-      name: String(name || '').trim() || t('分组')
+      name: String(name || '').trim() || t('分组'),
+      ...(view ? { sceneId: view.sceneId } : {})
     };
     if (next.some((item) => item.id === group.id)) {
       return { folders: next, group: next.find((item) => item.id === group.id) };
@@ -50,14 +51,18 @@
     return { folders: next.concat(group), group };
   }
 
-  function removeGroupRecord(folders, icons, groupId, mode) {
-    const nextFolders = ensureGroups(folders).filter((item) => item.id !== groupId);
+  function removeGroupRecord(folders, icons, groupId, mode, view = null) {
+    const groups = ensureGroups(folders);
+    if (view && (groupId === view.homeGroupId || !groups.some(group => group.id === groupId && group.sceneId === view.sceneId))) {
+      return { folders: groups, icons: Array.isArray(icons) ? icons.map(icon => ({ ...icon })) : [] };
+    }
+    const nextFolders = groups.filter((item) => item.id !== groupId);
     let nextIcons = Array.isArray(icons) ? icons.map((icon) => ({ ...icon })) : [];
     if (mode === 'delete') {
       nextIcons = nextIcons.filter((icon) => icon.folderId !== groupId);
     } else {
       nextIcons.forEach((icon) => {
-        if (icon.folderId === groupId) icon.folderId = HOME_GROUP_ID;
+        if (icon.folderId === groupId) icon.folderId = view?.homeGroupId || HOME_GROUP_ID;
       });
     }
     return { folders: nextFolders, icons: nextIcons };
@@ -90,6 +95,55 @@
 
   function state() {
     return host.state;
+  }
+
+  // A scene is a projection of the full graph. Never persist a visible subset.
+  // The absent adapter preserves the pre-scenes module contract.
+  function sceneView() {
+    if (!host?.getSceneView) return null;
+    const view = host.getSceneView();
+    return { sceneId: view?.sceneId, homeGroupId: view?.homeGroupId, generation: view?.generation };
+  }
+
+  function sceneActive(view, data = state()) {
+    if (!view) return true;
+    const scene = (data.scenes || []).find(item => item.id === view.sceneId);
+    return !!scene && scene.archivedAt === null && scene.homeGroupId === view.homeGroupId;
+  }
+
+  function sameView(view) {
+    const current = sceneView();
+    return !view ? !current : !!current && view.sceneId === current.sceneId
+      && view.homeGroupId === current.homeGroupId && view.generation === current.generation;
+  }
+
+  function groupInView(groupId, view = sceneView(), data = state()) {
+    if (!view) return true;
+    return sceneActive(view, data) && (data.folders || []).some(group => group.id === groupId && group.sceneId === view.sceneId);
+  }
+
+  function visibleGroups() {
+    const view = sceneView();
+    return !view ? state().folders : sceneActive(view) ? state().folders.filter(group => group.sceneId === view.sceneId) : [];
+  }
+
+  function activeHomeId() { return sceneView()?.homeGroupId || host.HOME_FOLDER_ID || HOME_GROUP_ID; }
+  function iconInView(icon) { return !!icon && groupInView(icon.folderId); }
+
+  const intentViews = new WeakMap();
+  function captureIntent(targets) {
+    const intent = host.captureIntent(targets);
+    intentViews.set(intent, sceneView());
+    return intent;
+  }
+  function isIntentCurrent(intent) {
+    const view = intentViews.get(intent);
+    return host.isIntentCurrent(intent) && sameView(view) && sceneActive(view);
+  }
+
+  function sceneGuard(view, groupIds = []) {
+    return latest => sameView(view) && sceneActive(view, latest)
+      && groupIds.every(id => groupInView(id, view, latest));
   }
 
   function els() {
@@ -129,6 +183,7 @@
 
   function visibleIcons(groupId) {
     const gid = groupId || state().currentFolderId;
+    if (!groupInView(gid)) return [];
     return state().icons.filter((icon) => (
       icon.folderId === gid && !(icon.parentId)
     ));
@@ -138,7 +193,13 @@
     return {
       icons: state().icons.map((icon) => ({ ...icon })),
       folders: state().folders.map((folder) => ({ ...folder })),
-      currentFolderId: state().currentFolderId
+      currentFolderId: state().currentFolderId,
+      ...(state()['opentab.sceneSchemaVersion'] ? {
+        'opentab.sceneSchemaVersion': state()['opentab.sceneSchemaVersion'],
+        scenes: state().scenes.map(scene => ({ ...scene })),
+        sceneProfiles: state().sceneProfiles.map(profile => ({ ...profile })),
+        todos: state().todos.map(todo => ({ ...todo }))
+      } : {})
     };
   }
 
@@ -146,21 +207,47 @@
     state().icons = before.icons.map((icon) => ({ ...icon }));
     state().folders = before.folders.map((folder) => ({ ...folder }));
     state().currentFolderId = before.currentFolderId;
+    if (sceneView() && (!state().folders.some(group => group.id === state().currentFolderId) || !groupInView(state().currentFolderId))) {
+      state().currentFolderId = activeHomeId();
+    }
+  }
+
+  function sceneUndoGuards(before, after, view, options) {
+    // Only affected memberships are dependencies, not independent group labels.
+    const changedGroups = new Set();
+    for (const key of ['icons', 'folders']) {
+      const old = new Map(before[key].map(item => [item.id, item]));
+      const next = new Map(after[key].map(item => [item.id, item]));
+      for (const id of new Set([...old.keys(), ...next.keys()])) {
+        if (JSON.stringify(old.get(id)) === JSON.stringify(next.get(id))) continue;
+        if (key === 'folders') changedGroups.add(id);
+        else for (const item of [old.get(id), next.get(id)]) if (item) changedGroups.add(item.folderId);
+      }
+    }
+    const protect = (snapshot, supplied) => {
+      const groupIds = new Set(snapshot.folders.map(group => group.id));
+      const guard = sceneGuard(view, [...changedGroups].filter(id => groupIds.has(id)));
+      return latest => (!supplied || supplied(latest)) && guard(latest);
+    };
+    return { guard: protect(before, options.guard), undoGuard: protect(after, options.undoGuard) };
   }
 
   async function persistUndo(before, text, options = {}) {
     const after = snapshot(), intent = host.captureIntent();
+    const view = host.getSceneView ? sceneView() : null;
+    const current = () => host.isIntentCurrent(intent) && (!view || sameView(view) && sceneActive(view));
+    const { guard, undoGuard } = view ? sceneUndoGuards(before, after, view, options) : options;
     // Workspace owns failure recovery and rehydrates the latest durable state.
-    const saved = await host.saveState(undefined, undefined, options.guard);
-    if (!saved || !host.isIntentCurrent(intent)) return false;
+    const saved = await host.saveState(undefined, undefined, guard);
+    if (!saved || !current()) return false;
     host.showToast(text, {
       intent, actionLabel: t('撤销'),
       onAction: async () => {
-        if (!host.isIntentCurrent(intent)) return false;
+        if (!current()) return false;
         try { restore(OpenTabWorkspace.merge(after, before, snapshot())); }
         catch (_) { host.showToast(t('内容已变化，无法撤销。')); return; }
         closeOverlay(true);
-        const saved = host.saveState(undefined, undefined, options.undoGuard);
+        const saved = host.saveState(undefined, undefined, undoGuard);
         host.refreshIconViews();
         if (await saved) host.showToast(t('已恢复'), { duration: 1500 });
       },
@@ -241,7 +328,7 @@
   }
 
   function canMerge(source, target) {
-    if (!source || !target || source.id === target.id) return false;
+    if (!source || !target || source.id === target.id || !iconInView(source) || !iconInView(target)) return false;
     if (isFolder(source)) return false;
     if (source.parentId) return false;
     if (target.parentId) return false;
@@ -325,7 +412,7 @@
   function addToFolder(iconId, folderId) {
     const icon = find(iconId);
     const folder = find(folderId);
-    if (!icon || !isFolder(folder) || isFolder(icon) || icon.parentId === folderId) return;
+    if (!icon || !isFolder(folder) || !iconInView(icon) || !iconInView(folder) || isFolder(icon) || icon.parentId === folderId) return;
     const before = snapshot();
     icon.parentId = folderId;
     icon.folderId = folder.folderId;
@@ -335,7 +422,7 @@
 
   function extractToDesktop(iconId) {
     const icon = find(iconId);
-    if (!icon || !icon.parentId) return;
+    if (!icon || !icon.parentId || !iconInView(icon)) return;
     const before = snapshot();
     const folderId = icon.parentId;
     const folder = find(folderId);
@@ -409,7 +496,7 @@
     const ui = els();
     if (!ui.overlayIcons || !openFolderId) return;
     const folder = find(openFolderId);
-    if (!isFolder(folder)) {
+    if (!isFolder(folder) || !iconInView(folder)) {
       closeOverlay(true);
       return;
     }
@@ -426,10 +513,10 @@
 
   function openOverlay(folderId) {
     const folder = find(folderId);
-    if (!isFolder(folder)) return;
+    if (!isFolder(folder) || !iconInView(folder)) return;
     const ui = els();
     openFolderId = folderId;
-    folderNameIntent = host.captureIntent({ icons: [folderId] });
+    folderNameIntent = captureIntent({ icons: [folderId] });
     host.rememberFocus();
     if (ui.titleInput) ui.titleInput.value = folder.name || t('文件夹');
     if (ui.overlay) ui.overlay.classList.remove('hidden');
@@ -452,7 +539,7 @@
   function saveOpenFolderName() {
     const ui = els();
     const folder = find(openFolderId);
-    if (!folder || !ui.titleInput) return;
+    if (!folder || !ui.titleInput || !iconInView(folder)) return;
     if (!checkIntent(folderNameIntent)) { closeOverlay(true); return; }
     const trimmed = ui.titleInput.value.trim();
     if (!trimmed || trimmed === folder.name) {
@@ -462,13 +549,13 @@
     const before = snapshot();
     folder.name = trimmed;
     persistUndo(before, t('已重命名文件夹'));
-    folderNameIntent = host.captureIntent({ icons: [folder.id] });
+    folderNameIntent = captureIntent({ icons: [folder.id] });
     host.refreshIconViews();
   }
 
   function handleDeleteIcon(iconId) {
     const icon = find(iconId);
-    if (!icon) return false;
+    if (!icon || !iconInView(icon)) return false;
     if (!isFolder(icon) && !icon.parentId) return false;
     const before = snapshot();
     if (isFolder(icon)) {
@@ -501,7 +588,7 @@
 
   async function openAll(folderId) {
     const folder = find(folderId);
-    if (!isFolder(folder)) return;
+    if (!isFolder(folder) || !iconInView(folder)) return;
     const children = getChildren(folderId);
     const urls = children.map(iconHref).filter(Boolean);
     if (!urls.length) {
@@ -623,9 +710,9 @@
   }
 
   function moveIconToGroup(iconId, groupId) {
-    if (!state().folders.some((folder) => folder.id === groupId)) return;
+    if (!state().folders.some((folder) => folder.id === groupId) || !groupInView(groupId)) return;
     const icon = find(iconId);
-    if (!icon) return;
+    if (!icon || !iconInView(icon)) return;
     if (icon.folderId === groupId && !icon.parentId) return;
     const before = snapshot();
     const fromParent = icon.parentId || '';
@@ -666,13 +753,14 @@
   }
 
   function bulkMoveContext() {
-    const groupId = state().currentFolderId, parentId = openFolderId || '';
+    const groupId = state().currentFolderId, parentId = openFolderId || '', view = sceneView();
+    const groups = visibleGroups(), groupIds = new Set(groups.map(group => group.id));
     return {
-      scope: { groupId, parentId },
-      sites: state().icons.filter((icon) => icon.folderId === groupId && (icon.parentId || '') === parentId && isBulkWebsite(icon)).map(copyBulk),
+      scope: { groupId, parentId, ...(view ? { view } : {}) },
+      sites: state().icons.filter((icon) => groupIds.has(groupId) && icon.folderId === groupId && (icon.parentId || '') === parentId && isBulkWebsite(icon)).map(copyBulk),
       destinations: [
-        ...state().folders.map((group) => ({ kind: 'group', id: group.id, name: group.name, groupId: group.id })),
-        ...state().icons.filter(isFolder).map((folder) => ({ kind: 'folder', id: folder.id, name: folder.name, groupId: folder.folderId, groupName: state().folders.find(group => group.id === folder.folderId)?.name }))
+        ...groups.map((group) => ({ kind: 'group', id: group.id, name: group.name, groupId: group.id, ...(view ? { view: { ...view } } : {}) })),
+        ...state().icons.filter(icon => isFolder(icon) && groupIds.has(icon.folderId)).map((folder) => ({ kind: 'folder', id: folder.id, name: folder.name, groupId: folder.folderId, groupName: groups.find(group => group.id === folder.folderId)?.name, ...(view ? { view: { ...view } } : {}) }))
       ]
     };
   }
@@ -681,12 +769,14 @@
     const context = bulkMoveContext(), token = {};
     const icons = context.sites.map((icon) => icon.id);
     if (context.scope.parentId) icons.push(context.scope.parentId, ...getChildren(context.scope.parentId).map((icon) => icon.id));
-    bulkSelections.set(token, { ...context, before: snapshot(), intent: host.captureIntent({ icons, folders: [context.scope.groupId] }) });
+    bulkSelections.set(token, { ...context, before: snapshot(), intent: captureIntent({ icons, folders: context.scope.view ? [] : [context.scope.groupId] }) });
     return token;
   }
 
   function captureBulkDestination(destination) {
     if (!destination || !['group', 'folder'].includes(destination.kind)) return null;
+    const view = sceneView();
+    if (!sceneActive(view) || destination.view && !sameView(destination.view)) return null;
     const record = destination.kind === 'group'
       ? state().folders.find((group) => group.id === destination.id) : find(destination.id);
     if (!record || (destination.kind === 'folder' && !isFolder(record))) return null;
@@ -694,23 +784,24 @@
     if (destination.name !== undefined && destination.name !== record.name
       || destination.groupId !== undefined && destination.groupId !== groupId) return null;
     const group = state().folders.find((item) => item.id === groupId);
-    if (!group || destination.groupName !== undefined && destination.groupName !== group.name) return null;
-    bulkDestinations.set(token, { kind: destination.kind, id: record.id, groupId, record: copyBulk(record),
+    if (!group || !groupInView(groupId, view) || destination.groupName !== undefined && destination.groupName !== group.name) return null;
+    bulkDestinations.set(token, { view, kind: destination.kind, id: record.id, groupId, record: copyBulk(record),
       group: copyBulk(group),
-      intent: host.captureIntent({ icons: destination.kind === 'folder' ? [record.id] : [], folders: [groupId] }) });
+      intent: captureIntent({ icons: destination.kind === 'folder' ? [record.id] : [], folders: [groupId] }) });
     return token;
   }
 
   // Runs again on the latest durable state under the workspace lock. In particular,
   // unchanged destination records and source membership are read dependencies.
-  function bulkGuard(before, ids, sourceParent, destination, epoch) {
+  function bulkGuard(before, ids, sourceParent, destination, epoch, sourceGroupId) {
     const watched = new Set(ids);
     if (sourceParent) {
       watched.add(sourceParent);
       before.icons.filter((icon) => icon.parentId === sourceParent).forEach((icon) => watched.add(icon.id));
     }
     return (latest) => {
-      if ((latest['opentab.workspaceEpoch'] || 0) !== epoch) return false;
+      if ((latest['opentab.workspaceEpoch'] || 0) !== epoch
+        || !sceneGuard(destination.view, [sourceGroupId, destination.groupId])(latest)) return false;
       const currentIcons = latest.icons || [];
       // Legacy workspaces omit folders entirely; hydration supplies the Home group.
       // A present array remains authoritative, including an explicitly deleted Home.
@@ -728,21 +819,22 @@
     if (!selection || !destination || !Array.isArray(selectedIds) || !selectedIds.length
       || selectedIds.length > selection.sites.length || new Set(selectedIds).size !== selectedIds.length
       || !selectedIds.every((id) => selection.sites.some((icon) => icon.id === id))) return { ok: false, reason: 'invalid' };
-    if (!host.isIntentCurrent(selection.intent) || !host.isIntentCurrent(destination.intent)
+    if (!sameView(destination.view) || !sceneActive(destination.view)
+      || !isIntentCurrent(selection.intent) || !isIntentCurrent(destination.intent)
       || !bulkEqual(selection.scope, bulkMoveContext().scope)) return { ok: false, reason: 'stale' };
     const before = snapshot(), parentId = destination.kind === 'folder' ? destination.id : '';
     const ids = new Set(selectedIds), moving = state().icons.filter((icon) => ids.has(icon.id));
     if (moving.length !== ids.size || !moving.every(isBulkWebsite)) return { ok: false, reason: 'stale' };
     if (moving.every((icon) => icon.folderId === destination.groupId && (icon.parentId || '') === parentId)) return { ok: true, moved: 0 };
-    const guard = bulkGuard(selection.before, selectedIds, selection.scope.parentId, destination, selection.intent.epoch);
-    if (!guard({ ...before, 'opentab.workspaceEpoch': selection.intent.epoch })) return { ok: false, reason: 'stale' };
+    const guard = bulkGuard(selection.before, selectedIds, selection.scope.parentId, destination, selection.intent.epoch, selection.scope.groupId);
+    if (!guard({ ...state(), ...before, 'opentab.workspaceEpoch': selection.intent.epoch })) return { ok: false, reason: 'stale' };
     bulkMovePending = true;
     try {
       moving.forEach((icon) => { icon.folderId = destination.groupId; icon.parentId = parentId; });
       if (selection.scope.parentId && selection.scope.parentId !== parentId) dissolveIfNeeded(selection.scope.parentId);
       const after = snapshot();
       const affectedIds = selectedIds.concat(before.icons.filter((icon) => icon.parentId === selection.scope.parentId && selection.scope.parentId).map((icon) => icon.id));
-      const undoGuard = bulkGuard(after, affectedIds, selection.scope.parentId, destination, selection.intent.epoch);
+      const undoGuard = bulkGuard(after, affectedIds, selection.scope.parentId, destination, selection.intent.epoch, selection.scope.groupId);
       let stale = false;
       const checkedGuard = latest => { const accepted = guard(latest); if (!accepted) stale = true; return accepted; };
       const saving = persistUndo(before, t('已移动 {count} 个网站', { count: moving.length }), { guard: checkedGuard, undoGuard });
@@ -754,7 +846,7 @@
   }
 
   function selectGroup(folderId, animated) {
-    if (!state().folders.some((folder) => folder.id === folderId)) return false;
+    if (!state().folders.some((folder) => folder.id === folderId) || (host.getSceneView && !groupInView(folderId))) return false;
     const already = state().currentFolderId === folderId;
     closeOverlay(true);
     if (already) return true;
@@ -779,7 +871,7 @@
       return;
     }
     ui.tabs.innerHTML = '';
-    state().folders.forEach((folder, index) => {
+    visibleGroups().forEach((folder, index) => {
       const tab = document.createElement('button');
       tab.type = 'button';
       tab.className = `group-tab${folder.id === state().currentFolderId ? ' active' : ''}`;
@@ -814,7 +906,7 @@
       tab.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (folder.id === host.HOME_FOLDER_ID) return;
+        if (folder.id === activeHomeId()) return;
         handleDeleteGroup(folder.id);
       });
       ui.tabs.appendChild(tab);
@@ -823,14 +915,14 @@
 
   function startAddGroup() {
     const ui = els();
-    if (!ui.tabsBar || document.getElementById('new-group-input')) return;
+    if (!ui.tabsBar || document.getElementById('new-group-input') || !sceneActive(sceneView())) return;
     stopEditingInputs();
     const input = document.createElement('input');
     input.id = 'new-group-input';
     input.className = 'group-inline-input';
     input.type = 'text';
     input.maxLength = 24;
-    const intent = host.captureIntent();
+    const intent = captureIntent(), view = sceneView();
     input.placeholder = t('新分组');
     input.setAttribute('aria-label', t('新分组名称'));
     let committed = false;
@@ -839,9 +931,9 @@
       committed = true;
       const name = save ? input.value.trim() : '';
       if (input.isConnected) input.remove();
-      if (!name || !checkIntent(intent)) return;
+      if (!name || !checkIntent(intent) || !sameView(view) || !sceneActive(view)) return;
       const before = snapshot();
-      const folder = { id: `folder-${host.generateId()}`, name };
+      const folder = { id: `folder-${host.generateId()}`, name, ...(view ? { sceneId: view.sceneId } : {}) };
       state().folders.push(folder);
       persistUndo(before, t('已新建分组'));
       selectGroup(folder.id, true);
@@ -857,21 +949,21 @@
       }
     });
     input.addEventListener('opentab-cancel-edit', () => commit(false));
-    input.addEventListener('blur', () => commit(true));
+    input.addEventListener('blur', () => { if (host.isEditingBlocked?.() !== true) commit(true); });
     ui.tabsBar.insertBefore(input, ui.addGroupBtn || null);
     input.focus();
   }
 
   function checkIntent(intent) {
-    if (host.isIntentCurrent(intent)) return true;
+    if (isIntentCurrent(intent)) return true;
     host.showToast(t('内容已变化，请重新操作。'));
     return false;
   }
 
   function startRenameGroup(folderId, tab) {
     const folder = state().folders.find((item) => item.id === folderId);
-    if (!folder || !tab) return;
-    const intent = host.captureIntent({ folders: [folderId] });
+    if (!folder || !tab || !groupInView(folderId)) return;
+    const intent = captureIntent({ folders: [folderId] });
     stopEditingInputs();
     const input = document.createElement('input');
     input.className = 'group-inline-input group-rename-input';
@@ -902,7 +994,7 @@
       }
     });
     input.addEventListener('opentab-cancel-edit', () => finish(false));
-    input.addEventListener('blur', () => finish(true));
+    input.addEventListener('blur', () => { if (host.isEditingBlocked?.() !== true) finish(true); });
     tab.replaceWith(input);
     input.focus();
     input.select();
@@ -910,8 +1002,8 @@
 
   async function handleDeleteGroup(folderId) {
     const folder = state().folders.find((item) => item.id === folderId);
-    if (!folder || folder.id === host.HOME_FOLDER_ID) return;
-    const intent = host.captureIntent({ folders: [folderId], groupMembers: [folderId], icons: state().icons.filter((item) => item.folderId === folderId).map((item) => item.id) });
+    if (!folder || !groupInView(folderId) || folder.id === activeHomeId()) return;
+    const intent = captureIntent({ folders: [folderId], groupMembers: [folderId], icons: state().icons.filter((item) => item.folderId === folderId).map((item) => item.id) });
     const choice = await showDialog(t('删除分组「{name}」？', { name: folder.name }), [
       { label: t('取消'), value: '' },
       { label: t('移到默认分组'), value: 'move' },
@@ -921,20 +1013,20 @@
     const before = snapshot();
     if (choice === 'move') {
       state().icons.forEach((icon) => {
-        if (icon.folderId === folderId) icon.folderId = host.HOME_FOLDER_ID;
+        if (icon.folderId === folderId) icon.folderId = activeHomeId();
       });
     } else {
       state().icons = state().icons.filter((icon) => icon.folderId !== folderId);
     }
     state().folders = state().folders.filter((item) => item.id !== folderId);
-    if (state().currentFolderId === folderId) state().currentFolderId = host.HOME_FOLDER_ID;
+    if (state().currentFolderId === folderId) state().currentFolderId = activeHomeId();
     closeOverlay(true);
     persistUndo(before, t('已删除分组「{name}」', { name: folder.name }));
     host.refreshIconViews(true);
   }
 
   function switchGroupByOffset(delta) {
-    const list = state().folders;
+    const list = visibleGroups();
     const index = list.findIndex((folder) => folder.id === state().currentFolderId);
     const next = index + delta;
     if (next < 0 || next >= list.length) return;
@@ -1007,7 +1099,7 @@
       if (event.target.closest('input, textarea, [contenteditable]')) return;
       const match = event.code && event.code.match(/^Digit([1-9])$/);
       if (!match) return;
-      const folder = state().folders[Number(match[1]) - 1];
+      const folder = visibleGroups()[Number(match[1]) - 1];
       if (!folder) return;
       event.preventDefault();
       selectGroup(folder.id, true);
@@ -1043,6 +1135,7 @@
     isFolder,
     isFolderId,
     visibleIcons,
+    visibleGroups,
     decorateWidget,
     handleGridDragOver,
     handleGridDrop,

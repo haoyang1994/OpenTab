@@ -21,6 +21,7 @@
   ];
 
   const OVERLAY_SELECTORS = [
+    'dialog[open]',
     '#command-palette:not(.hidden)',
     '#settings-panel:not(.hidden)',
     '#add-icon-modal:not(.hidden)',
@@ -41,6 +42,7 @@
   };
 
   let callbacks = {
+    getState: null,
     getIcons: () => [],
     getFolders: () => [],
     openMatchedIcon: null
@@ -66,8 +68,8 @@
     resolve,
     listEngines,
     selectEngine,
-    // Only the current loaded workspace is exposed. The palette never receives
-    // an arbitrary-navigation API or maintains a second search/storage index.
+    // Read the full live workspace, never a separately persisted search index.
+    // The palette receives validated saved records, not arbitrary navigation.
     commandPalette: {
       listSites: (query, limit = 20) => matchingSites(query, { includeEmpty: true, includeLocation: true, limit: paletteLimit(limit) }),
       listGroups: (query, limit = 20) => matchingGroups(query).slice(0, paletteLimit(limit)),
@@ -305,9 +307,9 @@
   function findShortcut(query) {
     const needle = String(query || '').trim().toLowerCase();
     if (!needle) return null;
-    const icons = typeof callbacks.getIcons === 'function' ? callbacks.getIcons() : [];
-    if (!Array.isArray(icons)) return null;
-    return icons.find((icon) => icon && String(icon.name || '').trim().toLowerCase() === needle) || null;
+    const workspace = loadedWorkspace();
+    return workspace.icons.find((icon) => icon && String(icon.name || '').trim().toLowerCase() === needle &&
+      (!workspace.sceneAware || iconContext(icon, workspace))) || null;
   }
 
   function savedSiteRecord(icon, index) {
@@ -346,23 +348,91 @@
     return Math.max(1, Math.min(100, Math.floor(Number(limit)) || 20));
   }
 
+  function uniqueRecords(items) {
+    const records = new Map();
+    for (const item of items) {
+      if (!item || typeof item.id !== 'string' || !item.id.trim()) continue;
+      // Ambiguous IDs are unsafe even when the duplicated records look alike.
+      records.set(item.id, records.has(item.id) ? null : item);
+    }
+    return records;
+  }
+
   function loadedWorkspace() {
-    const icons = callbacks.getIcons();
-    const folders = callbacks.getFolders();
-    return { icons: Array.isArray(icons) ? icons : [], folders: Array.isArray(folders) ? folders : [] };
+    const state = callbacks.getState?.();
+    const sceneAware = Boolean(state && Object.prototype.hasOwnProperty.call(state, 'opentab.sceneSchemaVersion'));
+    const icons = sceneAware ? state.icons : callbacks.getIcons();
+    const folders = sceneAware ? state.folders : callbacks.getFolders();
+    const workspace = { sceneAware, icons: Array.isArray(icons) ? icons : [], folders: Array.isArray(folders) ? folders : [] };
+    if (sceneAware) {
+      // An unsupported or incomplete scene snapshot must not downgrade to the
+      // legacy path and accidentally expose an archived or orphaned record.
+      const scenes = state['opentab.sceneSchemaVersion'] === 2 && Array.isArray(state.scenes) ? state.scenes : [];
+      workspace.sceneMap = uniqueRecords(scenes);
+      workspace.groupMap = uniqueRecords(workspace.folders);
+      workspace.iconMap = uniqueRecords(workspace.icons);
+    }
+    return workspace;
+  }
+
+  function groupContext(group, workspace) {
+    if (!group || workspace.groupMap.get(group.id) !== group) return null;
+    const scene = workspace.sceneMap.get(group.sceneId);
+    if (!scene || scene.archivedAt !== null || typeof scene.name !== 'string' || !scene.name.trim()) return null;
+    const path = [];
+    const seen = new Set();
+    let current = group;
+    while (current) {
+      if (seen.has(current.id) || current.sceneId !== scene.id || typeof current.name !== 'string' || !current.name.trim() ||
+          (current.parentId != null && typeof current.parentId !== 'string')) return null;
+      seen.add(current.id);
+      path.unshift({ id: current.id, name: current.name, sceneId: current.sceneId, parentId: current.parentId || '' });
+      if (!current.parentId) break;
+      current = workspace.groupMap.get(current.parentId);
+      if (!current) return null;
+    }
+    const identity = { id: scene.id, name: scene.name, archivedAt: null };
+    return { scene: identity, group: { id: group.id, name: group.name, sceneId: scene.id },
+      location: [scene.name, ...path.map((part) => part.name)].join(' / '),
+      affiliation: JSON.stringify([identity, path]) };
+  }
+
+  function iconContext(icon, workspace) {
+    if (!icon || workspace.iconMap.get(icon.id) !== icon || Object.prototype.hasOwnProperty.call(icon, 'sceneId')) return null;
+    const context = groupContext(workspace.groupMap.get(icon.folderId), workspace);
+    if (!context || (icon.parentId != null && typeof icon.parentId !== 'string')) return null;
+    const ancestors = [];
+    const seen = new Set([icon.id]);
+    let parentId = icon.parentId;
+    while (parentId) {
+      if (seen.has(parentId)) return null;
+      seen.add(parentId);
+      const parent = workspace.iconMap.get(parentId);
+      if (!parent || parent.type !== 'folder' || parent.folderId !== icon.folderId ||
+          typeof parent.name !== 'string' || !parent.name.trim() || Object.prototype.hasOwnProperty.call(parent, 'sceneId') ||
+          (parent.parentId != null && typeof parent.parentId !== 'string')) return null;
+      ancestors.unshift({ id: parent.id, name: parent.name, folderId: parent.folderId, parentId: parent.parentId || '' });
+      parentId = parent.parentId;
+    }
+    return { ...context, location: [context.location, ...ancestors.map((part) => part.name)].join(' / '),
+      affiliation: JSON.stringify([context.affiliation, ancestors]) };
   }
 
   function matchingSites(query, options = {}) {
     const needle = String(query || '').trim().toLowerCase();
     if (!needle && !options.includeEmpty) return [];
-    const { icons, folders } = loadedWorkspace();
-    const matches = icons.map(savedSiteRecord).filter(Boolean).map((site) => {
+    const workspace = loadedWorkspace();
+    const { icons, folders, sceneAware } = workspace;
+    const matches = icons.map((icon, index) => {
+      const site = savedSiteRecord(icon, index);
+      if (!site) return null;
+      const context = sceneAware ? iconContext(icon, workspace) : { location: siteLocation(site, icons, folders) };
+      if (!context) return null;
       const name = site.name.toLowerCase();
-      const location = siteLocation(site, icons, folders);
       const rank = !needle || name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 :
-        site.domain.toLowerCase().includes(needle) ? 3 : options.includeLocation && location.toLowerCase().includes(needle) ? 4 : -1;
-      return { ...site, location, rank, query: needle };
-    }).filter((site) => site.rank >= 0).sort((a, b) => a.rank - b.rank || a.index - b.index);
+        site.domain.toLowerCase().includes(needle) ? 3 : options.includeLocation && context.location.toLowerCase().includes(needle) ? 4 : -1;
+      return { ...site, ...context, sceneAware, rank, query: needle };
+    }).filter((site) => site && site.rank >= 0).sort((a, b) => a.rank - b.rank || a.index - b.index);
     return options.limit ? matches.slice(0, options.limit) : matches;
   }
 
@@ -370,35 +440,54 @@
     return matchingSites(query, { limit: MAX_SAVED_SITES });
   }
 
+  function capturedView() {
+    try {
+      const view = global.OpenTabSceneNavigation?.getView?.();
+      return view && typeof view === 'object' ? { ...view } : undefined;
+    } catch (error) { return undefined; }
+  }
+
   function matchingGroups(query) {
     const needle = String(query || '').trim().toLowerCase();
-    return loadedWorkspace().folders.filter((group) => group && group.id && String(group.name || '').trim())
-      .map((group, index) => {
-        const name = String(group.name);
-        const lower = name.toLowerCase();
-        const rank = !needle || lower === needle ? 0 : lower.startsWith(needle) ? 1 : lower.includes(needle) ? 2 : -1;
-        return { type: 'group', id: group.id, name, rank, index };
-      }).filter((group) => group.rank >= 0).sort((a, b) => a.rank - b.rank || a.index - b.index);
+    const workspace = loadedWorkspace();
+    const view = workspace.sceneAware ? capturedView() : undefined;
+    return workspace.folders.map((group, index) => {
+      if (!group || !group.id || !String(group.name || '').trim()) return null;
+      const context = workspace.sceneAware ? groupContext(group, workspace) : {};
+      if (!context) return null;
+      const name = String(group.name);
+      const lower = name.toLowerCase();
+      const rank = !needle || lower === needle ? 0 : lower.startsWith(needle) ? 1 : lower.includes(needle) ? 2 :
+        context.location?.toLowerCase().includes(needle) ? 3 : -1;
+      return { type: 'group', id: group.id, name, ...context, sceneAware: workspace.sceneAware, view, rank, index };
+    }).filter((group) => group && group.rank >= 0).sort((a, b) => a.rank - b.rank || a.index - b.index);
   }
 
   function validatedGroup(item) {
     if (!item || item.type !== 'group' || !item.id) return null;
-    const matches = loadedWorkspace().folders.filter((group) => group && group.id === item.id);
+    const workspace = loadedWorkspace();
+    if (Boolean(item.sceneAware) !== workspace.sceneAware) return null;
+    const matches = workspace.folders.filter((group) => group && group.id === item.id);
     if (matches.length !== 1 || String(matches[0].name || '') !== item.name) return null;
-    return { type: 'group', id: item.id, name: item.name };
+    const context = workspace.sceneAware ? groupContext(matches[0], workspace) : {};
+    if (!context || context.affiliation !== item.affiliation || context.location !== item.location) return null;
+    return { type: 'group', id: item.id, name: item.name, ...context };
   }
 
   function validatedSite(item) {
     if (!item || item.type !== 'site') return null;
-    const { icons, folders } = loadedWorkspace();
+    const workspace = loadedWorkspace();
+    const { icons, folders, sceneAware } = workspace;
+    if (Boolean(item.sceneAware) !== sceneAware) return null;
     const matches = icons.filter((icon) => icon && (item.id ? icon.id === item.id : icon === item.source));
     if (matches.length !== 1) return null;
     const fresh = savedSiteRecord(matches[0], 0);
-    // Revalidate the displayed snapshot separately from the inline input query.
-    // Imports, edits, moves, and deletes cannot redirect a stale selection.
-    if (!fresh || fresh.id !== item.id || fresh.name !== item.name || fresh.url !== item.url ||
+    const context = sceneAware ? iconContext(matches[0], workspace) : fresh && { location: siteLocation(fresh, icons, folders) };
+    // Revalidate URL, title, ancestry and active scene identity. Identically
+    // named destinations never make a stale move or scene rename acceptable.
+    if (!fresh || !context || fresh.id !== item.id || fresh.name !== item.name || fresh.url !== item.url ||
         fresh.folderId !== item.folderId || fresh.parentId !== item.parentId ||
-        siteLocation(fresh, icons, folders) !== item.location) return null;
+        context.location !== item.location || context.affiliation !== item.affiliation) return null;
     return fresh;
   }
 
@@ -1162,6 +1251,7 @@
   function init(options) {
     const getState = options && typeof options.getState === 'function' ? options.getState : () => ({});
     callbacks = {
+      getState: options && typeof options.getState === 'function' ? options.getState : null,
       getIcons: options && typeof options.getIcons === 'function' ? options.getIcons : () => getState()?.icons || [],
       getFolders: options && typeof options.getFolders === 'function' ? options.getFolders : () => getState()?.folders || [],
       openMatchedIcon: options && typeof options.openMatchedIcon === 'function' ? options.openMatchedIcon : null

@@ -17,6 +17,73 @@
 
   let current = Object.assign({}, DEFAULTS);
   let bound = false;
+  let sceneAdapter = null;
+  let operation = 0;
+  let committedTodo = true;
+  let sceneQueue = Promise.resolve();
+  let failedDrain = false;
+  let todoIntent = 0, todoRevision = 0, todoPending = 0;
+  const pendingWrites = new Set();
+
+  function captureView(adapter = sceneAdapter) {
+    const view = adapter.getView();
+    return { sceneId: view.sceneId, homeGroupId: view.homeGroupId, generation: view.generation };
+  }
+
+  function sameView(adapter, view) {
+    if (adapter !== sceneAdapter) return false;
+    const latest = adapter.getView();
+    return ['sceneId', 'homeGroupId', 'generation'].every(key => latest[key] === view[key]);
+  }
+
+  function track(promise) {
+    pendingWrites.add(promise);
+    promise.then(() => pendingWrites.delete(promise), () => pendingWrites.delete(promise));
+    return promise;
+  }
+
+  async function whenIdle() {
+    while (pendingWrites.size) await Promise.allSettled(Array.from(pendingWrites));
+    // A failed appearance save blocks one attempted view change. The next
+    // explicit attempt may proceed after the caller has surfaced that failure.
+    if (failedDrain) { failedDrain = false; return false; }
+    return get();
+  }
+
+  function beginTodoWrite() {
+    todoRevision += 1;
+    todoPending += 1;
+    return ++todoIntent;
+  }
+
+  function finishTodoWrite() {
+    todoRevision += 1;
+    todoPending -= 1;
+  }
+
+  // The controller owns atomic profile persistence. Public mutators still return
+  // the applied settings synchronously; await whenIdle() before changing views.
+  function setSceneAdapter(adapter) {
+    if (adapter && !['getView', 'getProfile', 'persist'].every(key => typeof adapter[key] === 'function')) {
+      throw new TypeError('A scene layout adapter requires getView, getProfile and persist');
+    }
+    sceneAdapter = adapter || null;
+    operation += 1;
+    if (sceneAdapter) return loadFromStorage({ todoButtonVisible: committedTodo });
+    return get();
+  }
+
+  function globalTodo() {
+    const revision = todoRevision;
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) return Promise.resolve(committedTodo);
+    return new Promise(resolve => {
+      try {
+        chrome.storage.local.get(['todoButtonVisible'], result => {
+          resolve(chrome.runtime?.lastError || revision !== todoRevision ? committedTodo : result?.todoButtonVisible !== false);
+        });
+      } catch (_) { resolve(committedTodo); }
+    });
+  }
 
   function clamp(value, min, max, fallback) {
     const n = Number(value);
@@ -107,7 +174,10 @@
   }
 
   function bootMirrorSlice(settings) {
-    const s = normalize(settings || current);
+    // Home may request a mirror during an optimistic edit. Only explicit,
+    // confirmed writes may cache those settings; passive mirrors stay durable.
+    const committed = sceneAdapter ? Object.assign({}, sceneAdapter.getProfile(), { todoButtonVisible: committedTodo }) : current;
+    const s = normalize(settings || committed);
     return {
       layoutIconSize: s.layoutIconSize,
       layoutColumns: s.layoutColumns,
@@ -121,10 +191,11 @@
     return typeof globalThis !== 'undefined' ? globalThis.OpenTabBoot : undefined;
   }
 
-  function writeMirror(settings) {
+  function writeMirror(settings, view) {
     const boot = bootApi();
     if (!boot || !boot.writeMirror || !boot.readMirror) return;
-    boot.writeMirror(Object.assign({}, boot.readMirror() || {}, bootMirrorSlice(settings)));
+    const sceneId = view?.sceneId || (sceneAdapter && captureView().sceneId);
+    boot.writeMirror(Object.assign({}, boot.readMirror(sceneId) || {}, bootMirrorSlice(sceneAdapter && !view ? undefined : settings), sceneId ? { sceneId } : {}));
   }
 
   function applyFromMirror() {
@@ -136,7 +207,50 @@
     return true;
   }
 
-  function persist(settings) {
+  function persist(settings, includeTodo = Object.prototype.hasOwnProperty.call(settings || {}, 'todoButtonVisible'), touchedKeys = STORAGE_KEYS.slice(0, 4)) {
+    if (sceneAdapter) {
+      const adapter = sceneAdapter, view = captureView(adapter), id = ++operation;
+      // Preserve dispatch-time intent across the async queue. The full payload
+      // remains normalized, but only these keys are requested changes. The
+      // snapshot is informational; the workspace owns conflict/rebase guards.
+      const keys = STORAGE_KEYS.filter(key => key === 'todoButtonVisible' ? includeTodo : touchedKeys.includes(key));
+      const before = bootMirrorSlice();
+      const visibilityIntent = includeTodo ? beginTodoWrite() : null;
+      const s = apply(settings);
+      const payload = bootMirrorSlice(s);
+      if (!includeTodo) delete payload.todoButtonVisible;
+      const pending = sceneQueue.then(async () => {
+        try {
+          if (!sameView(adapter, view)) return;
+          if (await adapter.persist(payload, view, { keys: keys.slice(), before: Object.assign({}, before) }) !== true) throw new Error('Scene layout storage failed');
+          if (includeTodo) {
+            committedTodo = s.todoButtonVisible;
+            if (visibilityIntent === todoIntent) apply(Object.assign({}, current, { todoButtonVisible: committedTodo }));
+          }
+          if (sameView(adapter, view) && id === operation) {
+            const saved = apply(Object.assign({}, adapter.getProfile(), { todoButtonVisible: committedTodo }));
+            writeMirror(saved, view);
+          }
+        } catch (error) {
+          failedDrain = true;
+          if (sameView(adapter, view) && id === operation) {
+            const todoButtonVisible = await globalTodo();
+            if (sameView(adapter, view) && id === operation) {
+              committedTodo = todoButtonVisible;
+              const restored = apply(Object.assign({}, adapter.getProfile(), { todoButtonVisible }));
+              writeMirror(restored, view);
+            }
+          }
+          if (sameView(adapter, view) && adapter.onError) adapter.onError(error);
+        } finally {
+          if (includeTodo) finishTodoWrite();
+        }
+      });
+      // Recovery is part of the queue, so switches can drain it without a race.
+      sceneQueue = pending.catch(() => {});
+      track(sceneQueue);
+      return s;
+    }
     const s = apply(settings);
     writeMirror(s);
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -148,7 +262,7 @@
   }
 
   function patch(partial) {
-    return persist(Object.assign({}, current, partial));
+    return persist(Object.assign({}, current, partial), Object.prototype.hasOwnProperty.call(partial || {}, 'todoButtonVisible'), Object.keys(partial || {}));
   }
 
   function get() {
@@ -161,6 +275,11 @@
 
   function loadFromStorage(result) {
     const src = result || {};
+    committedTodo = src.todoButtonVisible !== false;
+    if (sceneAdapter) {
+      operation += 1;
+      return apply(Object.assign({}, sceneAdapter.getProfile(), { todoButtonVisible: committedTodo }));
+    }
     if (!STORAGE_KEYS.some((key) => src[key] !== undefined)) {
       return current.todoButtonVisible ? current : apply(Object.assign({}, current, { todoButtonVisible: true }));
     }
@@ -169,10 +288,16 @@
 
   function readAndApply() {
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
-      return Promise.resolve(current);
+      return Promise.resolve(sceneAdapter ? loadFromStorage({ todoButtonVisible: committedTodo }) : current);
     }
+    const revision = todoRevision;
     return new Promise((resolve) => {
-      chrome.storage.local.get(STORAGE_KEYS, (result) => resolve(loadFromStorage(result || {})));
+      chrome.storage.local.get(STORAGE_KEYS, (result) => {
+        // Reads begun before (or during) a local visibility write cannot undo
+        // that newer intent when an older storage callback arrives late.
+        if (revision !== todoRevision || todoPending) { resolve(get()); return; }
+        resolve(loadFromStorage(result || {}));
+      });
     });
   }
 
@@ -181,16 +306,33 @@
     if (input?.disabled) return Promise.resolve(false);
     if (input) input.disabled = true;
     if (status) status.textContent = '';
-    return new Promise(resolve => {
+    const intent = beginTodoWrite();
+    const run = () => new Promise(resolve => {
       const finish = error => {
+        finishTodoWrite();
         if (input) input.disabled = false;
-        if (!error) { apply(Object.assign({}, current, { todoButtonVisible: visible !== false })); writeMirror(current); }
-        else { syncUi(current); if (status) status.textContent = globalThis.OpenTabI18n?.t('保存失败，请重试') || '保存失败，请重试'; }
+        if (!error) {
+          committedTodo = visible !== false;
+          if (intent === todoIntent) apply(Object.assign({}, current, { todoButtonVisible: committedTodo }));
+          writeMirror(current);
+        } else {
+          failedDrain = true;
+          syncUi(current);
+          if (status) status.textContent = globalThis.OpenTabI18n?.t('保存失败，请重试') || '保存失败，请重试';
+        }
         resolve(!error);
       };
       try { chrome.storage.local.set({ todoButtonVisible: visible !== false }, () => finish(chrome.runtime?.lastError)); }
       catch (error) { finish(error); }
     });
+    // Reset and explicit layout persistence may also write this global flag.
+    // Share their queue so the latest accepted user intent is the final write.
+    if (sceneAdapter) {
+      const pending = sceneQueue.then(run);
+      sceneQueue = pending.catch(() => {});
+      return track(pending);
+    }
+    return track(run());
   }
 
   function bindUi() {
@@ -241,6 +383,8 @@
     bindUi,
     setTodoButtonVisible,
     bootMirrorSlice,
-    applyFromMirror
+    applyFromMirror,
+    setSceneAdapter,
+    whenIdle
   };
 }));

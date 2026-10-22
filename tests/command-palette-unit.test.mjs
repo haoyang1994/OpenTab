@@ -380,7 +380,7 @@ for (const mutation of ['remove', 'name', 'id']) {
   const save = new Promise((resolve) => { settle = resolve; });
   const state = { currentFolderId: 'home', folders: [{ id: 'home' }, { id: 'work' }] };
   let rendered = 0;
-  const homeContext = vm.createContext({ state, getFolderById: (id) => state.folders.find((group) => group.id === id),
+  const homeContext = vm.createContext({ state, sceneRuntime: null, getFolderById: (id) => state.folders.find((group) => group.id === id),
     saveState: () => save, refreshIconViews: () => { rendered++; } });
   vm.runInContext(extract(homeSource, 'selectFolder', 'addIcon'), homeContext);
   const folderContext = vm.createContext({ state: () => state, closeOverlay() {}, host: { selectFolder: homeContext.selectFolder } });
@@ -391,6 +391,11 @@ for (const mutation of ['remove', 'name', 'id']) {
   assert.equal(result, save, 'the real folder API returns the exact durable workspace-save promise');
   assert.equal(rendered, 1); assert.equal(state.currentFolderId, 'work'); settle(false);
   assert.equal(await result, false, 'save failure reaches the caller instead of being reported as success');
+  const sceneSave = Promise.resolve(true); let destination;
+  homeContext.sceneRuntime = { isActive: () => true };
+  homeContext.window = { OpenTabSceneNavigation: { selectGroup(id) { destination = id; return sceneSave; } } };
+  assert.equal(homeContext.selectFolder('home'), sceneSave, 'scene navigation returns its guarded durable operation');
+  assert.equal(destination, 'home'); assert.equal(state.currentFolderId, 'work', 'scene adapter, not legacy path, owns view changes');
 }
 
 // The only new host hooks are specific existing UI entry points.

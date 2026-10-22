@@ -17,7 +17,7 @@ A Chrome Manifest V3 new tab page with an iPad-style glass UI. Open source and a
 
 ## Introduction
 
-OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, shortcuts, search, weather, and a few developer tools. Settings stay on your machine.
+OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, shortcuts, search, weather, and a few developer tools. Homepage data is stored locally, with optional Chrome sync.
 
 First paint applies the saved theme, clock, and wallpaper from a local boot mirror so placeholder copy never flashes. First install uses a bundled `default.webp` and does not call Bing until you choose Bing wallpaper.
 
@@ -26,6 +26,20 @@ First paint applies the saved theme, clock, and wallpaper from a local boot mirr
 The main new-tab, settings, import/weather, and add-page popup support English and Simplified Chinese. They follow your browser language; change it in Settings → Language. Existing shortcut titles and other personal content are never translated. New installations start in light appearance; existing themes are preserved. Standalone SSH/JSON tool pages are not yet fully bilingual. [Coverage and behavior](docs/LOCALIZATION.md).
 
 ## Features
+
+### Scene spaces
+
+Keep work, reading, and personal projects separate without rebuilding your homepage. Scene support is integrated on this branch; final release validation is still pending.
+
+- **Enable only when ready**: open **Scenes** beside the group tabs, read the compatibility notice, then choose **Enable scenes**. Opening the page or canceling the introduction does not migrate data. Your existing groups, sites, folders, tasks, IDs, and ordering become the **Default scene**.
+- **Separate content and appearance**: each scene has its own groups, to-dos, background/Bing selection, icon size, columns, name visibility, and grid width. Theme, accent, opacity, blur, search, privacy, weather, timezone, and the to-do button's visibility remain shared. The focus timer stays with its tab and continues across scene changes.
+- **Create, rename, archive, restore**: choose a scene from the manager; archive hides it without deleting its contents. At least one scene must remain active. Select a non-Home group and use **Move current group** to move it, its child groups, and sites together; to-dos stay in the original scene.
+- **Independent tabs**: keep different scenes open in different tabs. Switching selects a view of the full workspace, not a backup restore. Finish or cancel an unsaved edit before switching; a changed destination is rejected rather than silently receiving an old draft.
+- **Find and save across scenes**: saved-site search and Cmd+K / Ctrl+K include active scenes with scene/group labels. The palette can switch to another scene's group. The toolbar popup offers explicit **scene / group** save destinations; archived scenes are excluded.
+- **Back up before enabling**: use **Settings → Import and sync → Backup and restore → Download backup**. Scene JSON exports include every scene, including archived content and stored local assets, but omit secrets and search history by default. Restoring is a full workspace replacement, not a scene switch.
+- **Update your other devices first**: enabling scenes upgrades this profile's format. Do not downgrade OpenTab on that same profile. Optional scene sync uses a separate v2 stream; old devices do not join it, and the new app cannot make an old build safely refuse writes. Enabling scenes adds no permissions and does not turn on sync.
+
+See the [scene guide](docs/SCENE-SPACES.md#english) for sync boundaries, recovery, and limitations, and the [integration and release contract](docs/SCENE-SPACES-PLAN.md) for validation status.
 
 ### Clock and calendar
 
@@ -70,30 +84,30 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 - **Esc**: closes menus, dialogs, folder overlay, settings, and calendar one layer at a time and restores focus
 - Built-in SSH terminal (needs the local gateway described below)
 - Local JSON formatter
-- Toolbar popup to save the current tab as a shortcut (choose a group)
+- Toolbar popup to save the current tab as a shortcut (choose a group, or scene / group when scenes are enabled)
 
 ### Search, weather, todos, backup
 
 - Search engines: Google, Bing, Baidu, DuckDuckGo, GitHub, plus custom `%s` engines. The selected engine sits on top of a compact card stack; expand it to choose another without changing your query. Keyboard selection and reduced-motion preferences are supported.
 - Type a URL or domain to open it; Enter on an exact shortcut name opens that shortcut
-- Find saved websites as you type, across all groups and folders: up to five local matches show their title, domain and location above search history. Exact titles rank before prefixes, title fragments and domains. Arrow keys or a click explicitly select a result; partial matches never replace your normal Enter-to-search behavior. Each lookup reads the current page’s loaded workspace and revalidates the selected site before opening it; this is not a cross-tab live-sync feature. Looking up saved sites makes no network request and still works when history is disabled.
+- Find saved websites as you type, across all groups and folders in active scenes: up to five local matches show their title, domain and location above search history. Exact titles rank before prefixes, title fragments and domains. Arrow keys or a click explicitly select a result; partial matches never replace your normal Enter-to-search behavior. Each lookup reads the current page’s loaded workspace and revalidates the selected site before opening it; this is local lookup, not an online suggestion service. Looking up saved sites makes no network request and still works when history is disabled.
 - On an active OpenTab page, Cmd+K (Mac) / Ctrl+K (Windows/Linux) opens an independent quick-launch dialog. Filter saved sites, switch groups, or open Add website and settings sections. Empty input already offers entries; arrows and Enter choose one, Escape/backdrop closes and restores focus. The main search query is untouched, including in clock-only mode. Other editing fields and open dialogs are left alone. This is not a browser-wide shortcut.
 - Alt+ArrowDown / Alt+ArrowUp cycles engines while the search input is focused; Tab / Shift+Tab moves focus normally. `/` or typing focuses search when nothing else is focused
 - Local search history (up to 20 items): delete individual entries directly from the suggestions, or disable/clear history in settings
 - Option to open search results in a new tab (also Ctrl/Cmd+Enter and middle-click)
 - Optional weather: off by default. Enable it and save a city in Settings → Weather; choose °C / °F or refresh manually. No device location is read. Fresh weather is cached for 30 minutes, with up to 24-hour-old data retained during an outage. Weather preferences and cache stay local, outside sync and JSON backups.
 - Side-drawer todos with a progress bar
-- JSON backup export/import and a local snapshot
+- JSON backup export/import for the full workspace, plus local snapshots; compact manual snapshots omit uploaded/local icon data and are not a substitute for a full export
 - Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
 - Multi-tab workspace saves preserve unrelated item changes and reject conflicting edits; see [persistence and undo rules](docs/PERSISTENCE.md).
 - Hide the to-do button from layout settings without deleting tasks; show it again whenever needed. Click outside the settings sidebar to dismiss it without activating the page underneath.
-- Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks **Use cloud copy** / **Use local copy**. Settings shows local storage usage
+- Optional Chrome sync for shortcuts, folders, and eligible settings; scenes add metadata, group ownership, and their four layout settings (not backgrounds, uploads, to-dos, history, or tab selection); turning it on when another device already has data asks **Use cloud copy** / **Use local copy**. Settings shows local storage usage
 
 ### Settings and layout
 
 - Section nav: appearance, wallpaper, shortcuts and layout, search, weather, import/sync, advanced, about. Click a section to jump; the highlight follows scroll. Below 720px the nav becomes a top tab row
 - Search box at the top of the panel filters by labels and help text (Chinese or English, case-insensitive). Empty state: **No results found**. Esc clears the query, then closes the panel
-- Layout: icon size (small/medium/large, or 48–96px), columns (auto or 4–12), show/hide names, grid max width. Changes preview live, survive reload, and join the existing sync keys
+- Layout: icon size (small/medium/large, or 48–96px), columns (auto or 4–12), show/hide names, grid max width. Changes preview live and survive reload; with scenes enabled, these four settings belong to the current scene and use scene sync
 - Each section and the footer have **Reset defaults** (in-page confirm + the same undo toast). Shortcuts are not reset
 - SSH / JSON add-icon entries stay hidden until Advanced is on. Installs that already have SSH or tool shortcuts keep the toggle on
 
@@ -115,7 +129,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and settings only (not wallpapers, todos, search history, the current folder, or SSH secrets). Bing wallpaper cache metadata stays in `chrome.storage.local` (it is not synced and is omitted from JSON backups). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and eligible settings. When scenes are enabled, it also copies scene metadata, group ownership, and the four scene layout settings in an isolated v2 namespace; backgrounds, uploaded/local icon data, todos, search history, tab selection, and SSH secrets stay local. Bing wallpaper cache metadata stays in `chrome.storage.local` (it is not synced and is omitted from JSON backups). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
 - The search box does not fetch suggestions or typeahead from any engine.
 - Bookmarks and most-visited sites are `optional_permissions`: Chrome does not prompt for them at install. OpenTab requests each one when you click the matching import button.
 - OpenTab does not include analytics, ads, or account login.
@@ -160,7 +174,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` runs the Python packaging checks, Node unit/security suites, and twelve Playwright extension suites: clock cards, site selection/organization, pasted URL lists, command palette, accessibility, localization, multi-tab workspace persistence, core extension UI, search, first-run, settings/layout, and weather. On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [testing guide (Chinese)](docs/TESTING.md).
+`npm test` runs the Python packaging checks, Node unit/security suites (including scene migration, persistence, projections, backup, and sync), and the Playwright extension suites listed in `scripts/run-e2e.sh`, including scenes. These commands describe the validation workflow, not a claim that this branch has passed it; see the [scene release checklist](docs/SCENE-SPACES-PLAN.md#release-validation-still-required). On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [testing guide (Chinese)](docs/TESTING.md).
 
 After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
 
@@ -226,6 +240,7 @@ OpenTab/
 ├── search.js                  # new-tab search box (engines, history, URL jump)
 ├── folders.js                 # desktop folders and group tabs
 ├── import.js / sync.js        # backup import and chrome.storage.sync
+├── scene-*.js / scene-ui.css   # schema, scoped views, manager, sync, runtime bridge
 ├── icons.js                   # shortcut icon library, cache, icon customization
 ├── layout.js / settings-nav.js
 ├── specs/                     # iteration acceptance criteria
