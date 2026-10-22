@@ -10,6 +10,7 @@
   ];
 
   const MAX_HISTORY = 20;
+  const MAX_SAVED_SITES = 5;
   const MAX_CUSTOM_ENGINES = 12;
   const BUILTIN_ENGINES = [
     { id: 'google', name: 'Google', template: 'https://www.google.com/search?q=%s' },
@@ -40,9 +41,11 @@
 
   let callbacks = {
     getIcons: () => [],
+    getFolders: () => [],
     openMatchedIcon: null
   };
   let historyHighlight = -1;
+  let displayedSuggestions = [];
   let editingCustomId = '';
   let hideHistoryTimer = 0;
   let bound = false;
@@ -286,7 +289,75 @@
     if (!needle) return null;
     const icons = typeof callbacks.getIcons === 'function' ? callbacks.getIcons() : [];
     if (!Array.isArray(icons)) return null;
-    return icons.find((icon) => String(icon.name || '').trim().toLowerCase() === needle) || null;
+    return icons.find((icon) => icon && String(icon.name || '').trim().toLowerCase() === needle) || null;
+  }
+
+  function savedSiteRecord(icon, index) {
+    if (!icon || (icon.type || 'shortcut') !== 'shortcut') return null;
+    const name = String(icon.name || '').trim();
+    const url = String(icon.url || '').trim();
+    if (!name || !/^https?:\/\//i.test(url)) return null;
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) return null;
+      // Snapshot displayed fields, not the mutable workspace record.
+      return { type: 'site', id: icon.id, name, url, domain: parsed.host,
+        folderId: icon.folderId || '', parentId: icon.parentId || '', index, source: icon };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function siteLocation(site, icons, folders) {
+    const group = folders.find((folder) => folder && folder.id === site.folderId);
+    const parts = [group ? String(group.name || '') : t(site.folderId === 'folder-home' ? '主页' : '分组')];
+    const ancestors = [];
+    const seen = new Set();
+    let parentId = site.parentId;
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const folder = icons.find((icon) => icon && icon.id === parentId && icon.type === 'folder' && icon.folderId === site.folderId);
+      if (!folder) break;
+      ancestors.unshift(String(folder.name || t('文件夹')));
+      parentId = folder.parentId;
+    }
+    return parts.concat(ancestors).filter(Boolean).join(' / ');
+  }
+
+  function savedSiteMatches(query) {
+    const needle = String(query || '').trim().toLowerCase();
+    if (!needle) return [];
+    const icons = callbacks.getIcons();
+    if (!Array.isArray(icons)) return [];
+    const groups = callbacks.getFolders();
+    const folders = Array.isArray(groups) ? groups : [];
+    return icons.map(savedSiteRecord).filter(Boolean).map((site) => {
+      const name = site.name.toLowerCase();
+      const rank = name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 : site.domain.toLowerCase().includes(needle) ? 3 : -1;
+      return { ...site, rank, query: needle };
+    }).filter((site) => site.rank >= 0)
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .slice(0, MAX_SAVED_SITES)
+      .map((site) => ({ ...site, location: siteLocation(site, icons, folders) }));
+  }
+
+  function openSavedSite(item, forceNewTab) {
+    const input = inputEl();
+    const icons = callbacks.getIcons();
+    const current = Array.isArray(icons) ? icons.find((icon) => icon && (item.id ? icon.id === item.id : icon === item.source)) : null;
+    const fresh = savedSiteRecord(current, 0);
+    // A visible option may outlive an edit/delete/import. Never redirect to a
+    // different record, changed destination, or a renamed stale selection.
+    if (!input || input.value.trim().toLowerCase() !== item.query || !fresh ||
+        fresh.name !== item.name || fresh.url !== item.url ||
+        fresh.folderId !== item.folderId || fresh.parentId !== item.parentId) {
+      historyHighlight = -1;
+      updateHint();
+      renderHistory();
+      return;
+    }
+    hideHistory();
+    navigate(fresh.url, forceNewTab);
   }
 
   function resolve(query) {
@@ -571,64 +642,130 @@
     renderEngineButtons();
   }
 
-  function filteredHistory() {
+  // This legacy dropdown now combines local saved sites and query history.
+  // Enter reads the rendered snapshot so a workspace edit cannot change what
+  // an already highlighted index means; saved sites revalidate on activation.
+  function filteredHistory(options) {
+    if (options && options.rendered) return displayedSuggestions;
     const input = inputEl();
     const needle = input ? input.value.trim().toLowerCase() : '';
-    if (!needle) return searchState.searchHistory.slice();
-    return searchState.searchHistory.filter((item) => item.q.toLowerCase().includes(needle));
+    const history = searchState.searchHistoryEnabled
+      ? searchState.searchHistory.filter((item) => !needle || item.q.toLowerCase().includes(needle))
+      : [];
+    return savedSiteMatches(needle).concat(history);
   }
 
   function hideHistory() {
     const list = $('search-history');
-    if (!list) return;
-    list.classList.add('hidden');
-    list.innerHTML = '';
+    if (list) {
+      list.classList.add('hidden');
+      list.replaceChildren();
+    }
+    const input = inputEl();
+    if (input) {
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+    displayedSuggestions = [];
     historyHighlight = -1;
   }
 
-  function renderHistory() {
+  function renderHistory(suggestions) {
     const list = $('search-history');
     const input = inputEl();
     if (!list || !input) return;
-    if (!searchState.searchHistoryEnabled || document.activeElement !== input) {
+    if (document.activeElement !== input) {
       hideHistory();
       return;
     }
-    const items = filteredHistory();
+    const items = Array.isArray(suggestions) ? suggestions : filteredHistory();
     if (!items.length) {
       hideHistory();
       return;
     }
-    list.innerHTML = '';
+    list.replaceChildren();
+    displayedSuggestions = items;
+    if (historyHighlight >= items.length) historyHighlight = -1;
+    input.removeAttribute('aria-activedescendant');
+    let group = null;
+    let previousKind = '';
     items.forEach((item, index) => {
+      const isSite = item.type === 'site';
+      const kind = isSite ? 'sites' : 'history';
+      if (kind !== previousKind) {
+        group = document.createElement('div');
+        group.className = 'search-result-group';
+        group.dataset.kind = kind;
+        group.setAttribute('role', 'group');
+        const label = t(isSite ? '已保存的网站' : '搜索历史');
+        group.setAttribute('aria-label', label);
+        const heading = document.createElement('div');
+        heading.className = 'search-result-heading';
+        heading.setAttribute('aria-hidden', 'true');
+        heading.textContent = label;
+        group.appendChild(heading);
+        list.appendChild(group);
+        previousKind = kind;
+      }
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `search-history-item${index === historyHighlight ? ' active' : ''}`;
+      btn.tabIndex = -1;
+      btn.id = `search-result-${index}`;
+      btn.className = `search-result-item ${isSite ? 'search-site-item' : 'search-history-item'}${index === historyHighlight ? ' active' : ''}`;
       btn.setAttribute('role', 'option');
-      btn.dataset.q = item.q;
-      btn.dataset.engine = item.engine;
-      const q = document.createElement('span');
-      q.className = 'search-history-q';
-      q.textContent = item.q;
-      const engine = document.createElement('span');
-      engine.className = 'search-history-engine';
-      engine.textContent = engineLabel(item.engine);
-      btn.appendChild(q);
-      btn.appendChild(engine);
-      btn.addEventListener('mousedown', (event) => event.preventDefault());
-      btn.addEventListener('click', () => applyHistoryItem(item, false));
+      btn.setAttribute('aria-selected', index === historyHighlight ? 'true' : 'false');
+      if (isSite) {
+        btn.dataset.siteId = item.id || '';
+        btn.title = `${item.name}\n${item.url}\n${item.location}`;
+        const name = document.createElement('span');
+        name.className = 'search-site-name';
+        name.textContent = item.name;
+        const meta = document.createElement('span');
+        meta.className = 'search-site-meta';
+        meta.textContent = [item.domain, item.location].filter(Boolean).join(' · ');
+        btn.appendChild(name);
+        btn.appendChild(meta);
+      } else {
+        btn.dataset.q = item.q;
+        btn.dataset.engine = item.engine;
+        const q = document.createElement('span');
+        q.className = 'search-history-q';
+        q.textContent = item.q;
+        const engine = document.createElement('span');
+        engine.className = 'search-history-engine';
+        engine.textContent = engineLabel(item.engine);
+        btn.appendChild(q);
+        btn.appendChild(engine);
+      }
+      btn.addEventListener('mousedown', (event) => {
+        if (event.button === 0 || event.button === 1) event.preventDefault();
+      });
+      btn.addEventListener('click', (event) => {
+        if (event.button !== 0) return;
+        applyHistoryItem(item, event.ctrlKey || event.metaKey);
+      });
       btn.addEventListener('auxclick', (event) => {
         if (event.button === 1) {
           event.preventDefault();
           applyHistoryItem(item, true);
         }
       });
-      list.appendChild(btn);
+      group.appendChild(btn);
+      if (index === historyHighlight) input.setAttribute('aria-activedescendant', btn.id);
     });
     list.classList.remove('hidden');
+    input.setAttribute('aria-expanded', 'true');
+    if (historyHighlight >= 0) {
+      const active = $(`search-result-${historyHighlight}`);
+      if (active) active.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   function applyHistoryItem(item, forceNewTab) {
+    if (item.type === 'site') {
+      openSavedSite(item, forceNewTab);
+      return;
+    }
     const input = inputEl();
     if (input) input.value = item.q;
     if (item.engine) selectEngine(item.engine, { focus: true });
@@ -739,18 +876,24 @@
         return;
       }
       const items = filteredHistory();
-      if (searchState.searchHistoryEnabled && items.length) {
+      if (items.length && (searchState.searchHistoryEnabled || items.some((item) => item.type === 'site'))) {
         event.preventDefault();
         const step = event.key === 'ArrowDown' ? 1 : -1;
-        historyHighlight = (historyHighlight + step + items.length) % items.length;
-        renderHistory();
+        historyHighlight = historyHighlight < 0 ? (step > 0 ? 0 : items.length - 1) : (historyHighlight + step + items.length) % items.length;
+        renderHistory(items);
       }
+      return;
+    }
+    if (event.key === 'Escape' && inputEl().getAttribute('aria-expanded') === 'true') {
+      event.preventDefault();
+      event.stopPropagation();
+      hideHistory();
       return;
     }
     if (event.key === 'Enter') {
       event.preventDefault();
       if (historyHighlight >= 0) {
-        const items = filteredHistory();
+        const items = filteredHistory({ rendered: true });
         const item = items[historyHighlight];
         if (item) {
           applyHistoryItem(item, event.ctrlKey || event.metaKey);
@@ -816,7 +959,8 @@
       historyEnabled.addEventListener('change', () => {
         searchState.searchHistoryEnabled = historyEnabled.checked;
         persist();
-        if (!searchState.searchHistoryEnabled) hideHistory();
+        historyHighlight = -1;
+        renderHistory();
       });
     }
     const clearBtn = $('search-history-clear');
@@ -824,7 +968,8 @@
       clearBtn.addEventListener('click', () => {
         searchState.searchHistory = [];
         persist();
-        hideHistory();
+        historyHighlight = -1;
+        renderHistory();
         setCustomStatus(t('已清除搜索历史。'));
       });
     }
@@ -848,6 +993,8 @@
     renderSettingsToggles();
     renderCustomList();
     updateHint();
+    historyHighlight = -1;
+    renderHistory();
   }
 
   function loadFromStorage() {
@@ -862,8 +1009,10 @@
   }
 
   function init(options) {
+    const getState = options && typeof options.getState === 'function' ? options.getState : () => ({});
     callbacks = {
-      getIcons: options && typeof options.getIcons === 'function' ? options.getIcons : () => [],
+      getIcons: options && typeof options.getIcons === 'function' ? options.getIcons : () => getState()?.icons || [],
+      getFolders: options && typeof options.getFolders === 'function' ? options.getFolders : () => getState()?.folders || [],
       openMatchedIcon: options && typeof options.openMatchedIcon === 'function' ? options.openMatchedIcon : null
     };
     if (!bound) {

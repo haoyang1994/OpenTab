@@ -68,6 +68,7 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 
 - Search engines: Google, Bing, Baidu, DuckDuckGo, GitHub, plus custom `%s` engines
 - Type a URL or domain to open it; Enter on an exact shortcut name opens that shortcut
+- Find saved websites as you type, across all groups and folders: up to five local matches show their title, domain and location above search history. Exact titles rank before prefixes, title fragments and domains. Arrow keys or a click explicitly select a result; partial matches never replace your normal Enter-to-search behavior. Each lookup reads the current page’s loaded workspace and revalidates the selected site before opening it; this is not a cross-tab live-sync feature. Looking up saved sites makes no network request and still works when history is disabled.
 - Alt+ArrowDown / Alt+ArrowUp cycles engines while the search input is focused; Tab / Shift+Tab moves focus normally. `/` or typing focuses search when nothing else is focused
 - Local search history (up to 20 items, can be disabled or cleared)
 - Option to open search results in a new tab (also Ctrl/Cmd+Enter and middle-click)
