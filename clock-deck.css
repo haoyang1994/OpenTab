@@ -1,0 +1,141 @@
+/* Local, opaque stacked surfaces; the original clock/popovers keep their IDs. */
+#clock-deck {
+  --deck-surface: #334155;
+  --deck-under: #475569;
+  --deck-last: #52647d;
+  --deck-border: #64748b;
+  --deck-text: #f8fafc;
+  --deck-muted: #cbd5e1;
+  --deck-accent: #a5b4fc;
+  position: relative;
+  z-index: 20;
+  flex: none;
+  width: min(620px, 92vw);
+  max-width: 100%;
+  margin-top: clamp(12px, 6vh, 64px);
+  color: var(--deck-text);
+}
+body.theme-light #clock-deck {
+  --deck-surface: #f8fafc;
+  --deck-under: #e2e8f0;
+  --deck-last: #cbd5e1;
+  --deck-border: #cbd5e1;
+  --deck-text: #334155;
+  --deck-muted: #64748b;
+  --deck-accent: #4f46e5;
+}
+/* A popover must lift the outer context above autocomplete and group tabs. */
+#clock-deck:has(.calendar-popover:not(.hidden)),
+#clock-deck:has(.timezone-selector:not(.hidden)) { z-index: 1270; }
+#clock-deck-stage {
+  position: relative;
+  display: grid;
+  isolation: isolate;
+  touch-action: pan-y;
+}
+#clock-deck-stage::before, #clock-deck-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid var(--deck-border);
+  border-radius: var(--radius-xl);
+  background: var(--deck-under);
+  transform: translateY(8px) scale(.97);
+  transform-origin: center bottom;
+  pointer-events: none;
+}
+#clock-deck-stage::after { z-index: -2; background: var(--deck-last); transform: translateY(16px) scale(.94); }
+#clock-deck .clock-deck-card {
+  grid-area: 1 / 1;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 316px;
+  margin: 0;
+  padding: 34px clamp(24px, 4vw, 48px) 28px;
+  border: 1px solid var(--deck-border);
+  border-radius: var(--radius-xl);
+  background: var(--deck-surface);
+  color: var(--deck-text);
+  box-shadow: 0 18px 46px -28px rgba(15, 23, 42, .32);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition: transform 260ms var(--transition), opacity 260ms var(--transition), visibility 260ms;
+}
+#clock-deck .clock-deck-card[data-active='false'] {
+  z-index: 0;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(12px) scale(.96);
+  pointer-events: none;
+}
+#clock-deck #clock-widget::before { display: none; }
+#clock-deck #time, #clock-deck #ampm, #clock-deck #date { color: var(--deck-text); text-shadow: none; }
+#clock-deck #timezone-label, #clock-deck #welcome-text { color: var(--deck-muted); }
+#clock-deck #time { font-size: clamp(78px, 9.6vw, 112px); }
+#clock-deck .widget-btn { color: var(--deck-muted); }
+#clock-deck #weather-pill { color: var(--deck-text); border-color: var(--deck-border); background: transparent; }
+.clock-extra-card { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.clock-card-eyebrow { font-size: 12px; line-height: 1.5; font-weight: 600; letter-spacing: .08em; color: var(--deck-muted); }
+#clock-focus-time { margin-top: 8px; font-size: clamp(64px, 8.5vw, 88px); line-height: 1.1; letter-spacing: -.04em; font-weight: 300; font-variant-numeric: tabular-nums; }
+.clock-card-description { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--deck-muted); }
+#clock-focus-progress { display: block; width: min(220px, 80%); height: 4px; margin: 16px 0 0; border: 0; border-radius: 4px; overflow: hidden; accent-color: var(--deck-accent); appearance: none; }
+#clock-focus-progress::-webkit-progress-bar { background: var(--deck-under); border-radius: 4px; }
+#clock-focus-progress::-webkit-progress-value { background: var(--deck-accent); border-radius: 4px; }
+.clock-card-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.clock-card-actions button {
+  min-height: 36px; padding: 8px 16px; border: 1px solid var(--deck-border); border-radius: 10px;
+  background: transparent; color: var(--deck-text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.clock-card-actions button:hover { background: var(--deck-under); }
+.clock-card-actions .clock-card-primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+.clock-card-actions .clock-card-primary:hover { background: #4338ca; }
+.clock-card-actions button:disabled { opacity: .55; cursor: default; }
+.clock-card-actions [hidden] { display: none !important; }
+.clock-card-note { margin-top: 12px; min-height: 1.5em; color: var(--deck-muted); font-size: 11px; line-height: 1.5; }
+.clock-todo-mark { display: grid; place-items: center; width: 34px; height: 34px; margin-top: 14px; border: 1px solid var(--deck-border); border-radius: 11px; color: var(--deck-accent); font-size: 20px; }
+#clock-todo-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; width: 100%; max-height: 4.5em; margin-top: 12px; font-size: 21px; line-height: 1.5; font-weight: 500; }
+#clock-deck-peek { position: absolute; z-index: 0; bottom: -18px; left: 3%; width: 94%; height: 19px; padding: 0; border: 0; border-radius: 0 0 24px 24px; background: transparent; cursor: pointer; touch-action: manipulation; }
+#clock-deck-nav { display: flex; align-items: center; justify-content: center; gap: 7px; width: max-content; max-width: 100%; margin: 28px auto 0; padding: 1px 5px; border: 1px solid var(--deck-border); border-radius: 999px; background: var(--deck-surface); }
+#clock-deck-nav button { display: grid; place-items: center; flex: none; min-width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--deck-muted); font: inherit; font-size: 23px; cursor: pointer; }
+#clock-deck-nav button:hover { background: var(--deck-under); color: var(--deck-text); }
+.clock-deck-dots { display: flex; gap: 0; }
+#clock-deck-nav .clock-deck-dots button { min-width: 24px; font-size: 0; }
+.clock-deck-dots span { width: 5px; height: 5px; border-radius: 999px; background: var(--deck-muted); transition: width 260ms var(--transition), background 260ms; }
+.clock-deck-dots [aria-pressed='true'] span { width: 16px; background: var(--deck-accent); }
+#clock-deck-label { min-width: 7em; font-size: 11px; text-align: center; color: var(--deck-muted); }
+.clock-deck-hint { width: max-content; max-width: 100%; margin: 6px auto 0; padding: 2px 8px; border-radius: 6px; background: var(--deck-surface); color: var(--deck-muted); font-size: 10px; text-align: center; }
+#clock-deck button:focus-visible { outline: 3px solid var(--deck-accent); outline-offset: 3px; }
+body.hide-todo-entry #clock-todo-open { display: none !important; }
+body.minimal-mode #clock-deck { margin: 0; width: auto; max-width: 100%; }
+body.minimal-mode #clock-deck-stage { display: block; touch-action: auto; }
+body.minimal-mode #clock-deck-stage::before, body.minimal-mode #clock-deck-stage::after,
+body.minimal-mode #clock-deck-nav, body.minimal-mode #clock-deck-peek,
+body.minimal-mode .clock-deck-hint, body.minimal-mode .clock-extra-card { display: none !important; }
+body.minimal-mode #clock-deck #clock-widget { display: flex; min-height: 0; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; transform: none; visibility: visible; opacity: 1; }
+body.minimal-mode #clock-deck #time { font-size: clamp(110px, 19vw, 240px); color: var(--text-primary); text-shadow: 0 0 90px var(--accent-glow); }
+body.minimal-mode #clock-deck #ampm { color: var(--text-primary); }
+@media (max-width: 760px) {
+  #clock-deck { width: 100%; margin-top: 8px; }
+  #clock-deck .clock-deck-card { min-height: 306px; padding: 28px 18px 22px; border-radius: 26px; }
+  #clock-deck-stage::before, #clock-deck-stage::after { border-radius: 26px; }
+  #clock-deck #time { font-size: clamp(58px, 16vw, 84px); }
+  #clock-todo-text { font-size: 19px; }
+}
+@media (max-width: 420px) {
+  #clock-deck #time { font-size: clamp(40px, 13.8vw, 58px); }
+}
+@media (max-height: 650px) and (min-width: 761px) {
+  #clock-deck { margin-top: 8px; }
+  #clock-deck .clock-deck-card { min-height: 294px; padding-top: 24px; padding-bottom: 20px; }
+  #clock-deck #time { font-size: 90px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #clock-deck .clock-deck-card, .clock-deck-dots span { transition: none !important; }
+}

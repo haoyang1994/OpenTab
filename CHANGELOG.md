@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Present the clock, a tab-local focus timer, and the next existing to-do as a navigable card stack, with reduced-motion and inactive-panel focus isolation.
+- Collapse search engines into a selected-on-top picker while preserving queries, custom engines, and keyboard switching.
 - Refine group controls, the shortcut form, and the quick-launch badge with slate/indigo surfaces; use labeled icon buttons for site selection and batch-add entry points.
 - Replace the heavy application mark with a lighter open ribbon and lifted tab.
 - Dismiss settings with an outside click or touch while preserving drafts and blocking accidental background activation.

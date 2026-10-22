@@ -16,7 +16,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Dependency downloads have a separate bounded budget from test execution.
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -35,12 +36,15 @@ jobs:
         run: npm audit --audit-level=high
 
       - name: Install Playwright Chromium
+        timeout-minutes: 18
         run: npx playwright install --with-deps chromium
 
       - name: Run tests
+        timeout-minutes: 15
         run: npm test
 
       - name: Verify extracted release candidate
+        timeout-minutes: 3
         run: |
           npm run test:package:smoke
           (cd dist && sha256sum opentab-*.zip > SHA256SUMS)

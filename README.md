@@ -29,7 +29,11 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 
 ### Clock and calendar
 
-- Glass clock card with 12-hour / 24-hour formats
+- A three-card stack keeps the clock, a 25-minute focus timer, and your next unfinished to-do together. Swipe a non-interactive card surface, tap the exposed rear card, or use the navigation controls. Calendar, time-zone and weather controls keep their existing behavior.
+- Focus is local to the current tab: refreshing continues the deadline, changing cards does not pause it, and closing the tab ends the session. Pause and reset are explicit; there are no notifications or sounds. Minimal mode remains clock-only.
+- The next-task card uses your existing to-dos, not invented daily statistics. Hiding the to-do entry also hides its list-opening action.
+
+- Clock card with 12-hour / 24-hour formats
 - 23 common time zones
 - Optional seconds
 - Calendar popover, with Chinese holidays and solar terms in the Chinese interface
@@ -70,7 +74,7 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 
 ### Search, weather, todos, backup
 
-- Search engines: Google, Bing, Baidu, DuckDuckGo, GitHub, plus custom `%s` engines
+- Search engines: Google, Bing, Baidu, DuckDuckGo, GitHub, plus custom `%s` engines. The selected engine sits on top of a compact card stack; expand it to choose another without changing your query. Keyboard selection and reduced-motion preferences are supported.
 - Type a URL or domain to open it; Enter on an exact shortcut name opens that shortcut
 - Find saved websites as you type, across all groups and folders: up to five local matches show their title, domain and location above search history. Exact titles rank before prefixes, title fragments and domains. Arrow keys or a click explicitly select a result; partial matches never replace your normal Enter-to-search behavior. Each lookup reads the current page’s loaded workspace and revalidates the selected site before opening it; this is not a cross-tab live-sync feature. Looking up saved sites makes no network request and still works when history is disabled.
 - On an active OpenTab page, Cmd+K (Mac) / Ctrl+K (Windows/Linux) opens an independent quick-launch dialog. Filter saved sites, switch groups, or open Add website and settings sections. Empty input already offers entries; arrows and Enter choose one, Escape/backdrop closes and restores focus. The main search query is untouched, including in clock-only mode. Other editing fields and open dialogs are left alone. This is not a browser-wide shortcut.
@@ -156,7 +160,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` runs the Python packaging checks, Node unit/security suites, and eleven Playwright extension suites: site selection/organization, pasted URL lists, command palette, accessibility, localization, multi-tab workspace persistence, core extension UI, search, first-run, settings/layout, and weather. On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [testing guide (Chinese)](docs/TESTING.md).
+`npm test` runs the Python packaging checks, Node unit/security suites, and twelve Playwright extension suites: clock cards, site selection/organization, pasted URL lists, command palette, accessibility, localization, multi-tab workspace persistence, core extension UI, search, first-run, settings/layout, and weather. On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [testing guide (Chinese)](docs/TESTING.md).
 
 After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
 

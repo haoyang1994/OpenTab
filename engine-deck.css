@@ -1,0 +1,159 @@
+/* The picker owns a stable slot. Opening it never changes the query width. */
+#search-engine-switch.engine-deck {
+  --engine-surface: #263247;
+  --engine-front: #35425c;
+  --engine-back: #475470;
+  --engine-border: #5a6680;
+  --engine-selected: #3d4d75;
+  --engine-hover: #34425d;
+  --engine-label: #e6edf8;
+  --engine-motion: 260ms cubic-bezier(.22, 1, .36, 1);
+  position: relative;
+  display: block;
+  flex: 0 0 66px;
+  width: 66px;
+  max-width: none;
+  height: 44px;
+  padding: 0;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+}
+body.theme-light #search-engine-switch.engine-deck {
+  --engine-surface: #f3f6fc;
+  --engine-front: #ffffff;
+  --engine-back: #dee5f2;
+  --engine-border: #c3cde0;
+  --engine-selected: #e1e7fb;
+  --engine-hover: #e6ecf6;
+  --engine-label: #263751;
+}
+.engine-deck-trigger {
+  position: relative;
+  isolation: isolate;
+  width: 66px;
+  height: 44px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--engine-label);
+  cursor: pointer;
+}
+.engine-deck-trigger::before,
+.engine-deck-trigger::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--engine-border);
+  border-radius: 14px;
+  background: var(--engine-back);
+  transform: translate(9px, -1px) scale(.88);
+  transition: transform var(--engine-motion), opacity var(--engine-motion);
+}
+.engine-deck-trigger::after { transform: translate(5px, 0) scale(.95); }
+.engine-deck-front {
+  position: absolute;
+  z-index: 1;
+  inset: 2px auto auto 2px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--engine-border);
+  border-radius: 14px;
+  background: var(--engine-front);
+  box-shadow: 0 3px 8px rgb(20 30 55 / 12%);
+  transition: transform var(--engine-motion), background var(--engine-motion);
+}
+.engine-deck-icon, .engine-option-icon { display: inline-flex; align-items: center; justify-content: center; }
+.engine-deck-icon { font-size: 15px; font-weight: 700; }
+.engine-deck-icon svg { width: 19px; height: 19px; }
+.engine-deck-chevron { position: absolute; right: 0; top: 16px; opacity: .8; transition: transform var(--engine-motion); }
+.engine-deck-trigger:hover .engine-deck-front { background: var(--engine-hover); transform: translateY(-1px); }
+.engine-deck-open .engine-deck-trigger::before { transform: translate(11px, -2px) scale(.88); }
+.engine-deck-open .engine-deck-trigger::after { transform: translate(6px, -1px) scale(.95); }
+.engine-deck-open .engine-deck-chevron { transform: rotate(180deg); }
+.engine-deck-panel {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 12px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  width: min(276px, calc(100vw - 32px));
+  max-height: min(400px, 55dvh);
+  padding: 9px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  border: 1px solid var(--engine-border);
+  border-radius: 20px;
+  background: var(--engine-surface);
+  box-shadow: 0 14px 32px -12px rgb(23 33 55 / 30%);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-9px) scale(.94);
+  transform-origin: 24px 0;
+  transition: transform var(--engine-motion), opacity var(--engine-motion), visibility 0s 260ms;
+}
+.engine-deck-panel[data-placement='above'] {
+  top: auto;
+  bottom: calc(100% + 12px);
+  transform: translateY(9px) scale(.94);
+  transform-origin: 24px 100%;
+}
+.engine-deck-open .engine-deck-panel {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition: transform var(--engine-motion), opacity var(--engine-motion), visibility 0s;
+}
+#search-engine-panel .search-custom-engines { display: contents; }
+#search-engine-panel .engine-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 7px;
+  width: 100%;
+  height: auto;
+  min-height: 76px;
+  padding: 11px 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  opacity: 1;
+  color: var(--engine-label);
+  font-weight: 500;
+  background: transparent;
+  box-shadow: none;
+  transition: background var(--engine-motion), border-color var(--engine-motion), transform var(--engine-motion);
+}
+#search-engine-panel .engine-option-icon { height: 24px; font-size: 17px; font-weight: 700; }
+#search-engine-panel .engine-option-icon svg { width: 22px; height: 22px; }
+#search-engine-panel .engine-option-name {
+  display: block;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 16px;
+}
+#search-engine-panel .engine-btn:hover { background: var(--engine-hover); transform: translateY(-1px); }
+#search-engine-panel .engine-btn.active { border-color: var(--engine-border); background: var(--engine-selected); }
+#search-engine-panel .engine-btn:focus-visible,
+.engine-deck-trigger:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.engine-deck-trigger[data-engine='bing'] svg:not(.engine-deck-chevron) { filter: brightness(1.4) saturate(1.15); }
+body.theme-light .engine-deck-trigger[data-engine='bing'] svg:not(.engine-deck-chevron) { filter: brightness(.85) saturate(1.1); }
+body.theme-light .engine-deck-trigger[data-engine='github'] svg:not(.engine-deck-chevron) { filter: invert(1); }
+/* Raise only the open search context, below the clock popovers and root dialogs. */
+body:not(.minimal-mode) #search-widget-wrap:has(.engine-deck-open) { z-index: 1265; }
+@media (prefers-reduced-motion: reduce) {
+  #search-engine-switch.engine-deck { --engine-motion: 0s; }
+  /* Beat the global important 0.01ms duration reset: this disclosure is instant. */
+  .engine-deck-panel, .engine-deck-open .engine-deck-panel { transition: none !important; }
+}

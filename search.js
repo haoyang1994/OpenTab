@@ -51,6 +51,7 @@
   let hideHistoryTimer = 0;
   let bound = false;
   let deletingHistory = false;
+  let engineDeck = null;
 
   const api = {
     STORAGE_KEYS,
@@ -502,6 +503,7 @@
 
   function selectEngine(id, options) {
     const next = engineIds().includes(id) ? id : 'google';
+    engineDeck?.close();
     searchState.searchEngine = next;
     persist();
     renderEngineButtons();
@@ -524,11 +526,13 @@
       btn.classList.toggle('active', active);
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+    engineDeck?.render(searchState.searchEngine);
   }
 
   function renderCustomEngineButtons() {
     const host = $('search-custom-engines');
     if (!host) return;
+    engineDeck?.close({ restoreFocus: Boolean($('search-engine-panel')?.contains(document.activeElement)) });
     host.innerHTML = '';
     searchState.customSearchEngines.forEach((engine) => {
       const btn = document.createElement('button');
@@ -539,7 +543,7 @@
       btn.setAttribute('aria-label', engine.name);
       const letter = (engine.name || '?').trim().slice(0, 1).toUpperCase();
       btn.textContent = letter || '?';
-      btn.addEventListener('click', () => selectEngine(engine.id));
+      if (!engineDeck) btn.addEventListener('click', () => selectEngine(engine.id));
       host.appendChild(btn);
     });
     renderEngineButtons();
@@ -1062,6 +1066,7 @@
       renderHistory();
     });
     input.addEventListener('focus', () => {
+      engineDeck?.close();
       historyHighlight = -1;
       updateHint();
       renderHistory();
@@ -1077,9 +1082,15 @@
     input.addEventListener('auxclick', onSearchAuxClick);
     input.addEventListener('mousedown', onSearchMouseDown);
 
-    document.querySelectorAll('#search-engine-switch > .engine-btn[data-engine]').forEach((btn) => {
-      btn.addEventListener('click', () => selectEngine(btn.dataset.engine));
-    });
+    engineDeck = global.OpenTabEngineDeck?.create({
+      host: $('search-engine-switch'), trigger: $('search-engine-trigger'), panel: $('search-engine-panel'), input,
+      getLabel: engineLabel, onSelect: (id) => selectEngine(id), onOpen: hideHistory
+    }) || null;
+    if (!engineDeck) {
+      document.querySelectorAll('#search-engine-switch .engine-btn[data-engine]').forEach((btn) => {
+        btn.addEventListener('click', () => selectEngine(btn.dataset.engine));
+      });
+    }
   }
 
   function bindSettings() {

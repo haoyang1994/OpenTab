@@ -9,6 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runner = path.join(root, 'scripts/run-e2e.sh');
 const bash = execFileSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' }).trim();
 const suites = [
+  'tests/clock-deck.test.mjs',
   'tests/site-selection.test.mjs',
   'tests/paste-sites.test.mjs',
   'tests/command-palette.test.mjs',
@@ -141,7 +142,7 @@ async function cancel(mode, signal, expectedStatus) {
   assert.equal(result.code, expectedStatus, `${mode.name}: ${signal} must remain a failed/cancelled run`);
   assert.equal(result.exitSignal, null);
   assertCalls(suites.slice(0, 2));
-  assert.doesNotMatch(stdout, /all 11 suites passed/);
+  assert.doesNotMatch(stdout, /all 12 suites passed/);
 }
 
 try {
@@ -149,7 +150,7 @@ try {
     const success = run(mode);
     assert.equal(success.status, 0, mode.name);
     assertCalls(suites);
-    assert.match(success.stdout, /E2E: all 11 suites passed/);
+    assert.match(success.stdout, /E2E: all 12 suites passed/);
     for (const suite of suites) {
       assert.ok(success.stdout.includes(`stdout: ${suite}\n`), 'suite stdout must remain visible');
       assert.ok(success.stderr.includes(`stderr: ${suite}\n`), 'suite stderr must remain visible');
@@ -162,7 +163,7 @@ try {
     assert.ok(failed.stdout.includes(`E2E: ${suites[0]} exited 7\n`));
     assert.ok(failed.stdout.includes(`E2E: ${suites[5]} exited 19\n`));
     assert.ok(failed.stderr.endsWith(`E2E: 2 suite(s) failed:\n  ${suites[0]} (exit 7)\n  ${suites[5]} (exit 19)\n`));
-    assert.doesNotMatch(failed.stdout, /all 11 suites passed/);
+    assert.doesNotMatch(failed.stdout, /all 12 suites passed/);
 
     const timedOut = run(mode, { FAKE_TIMEOUT_SUITE: suites[5] });
     assert.equal(timedOut.status, 1, 'a suite timeout must never be reported as success');
@@ -174,7 +175,7 @@ try {
       assert.equal(terminated.status, status, `${mode.name}: ${signal} suite termination must abort`);
       assertCalls(suites.slice(0, 2));
       assert.ok(terminated.stdout.includes(`E2E: ${suites[1]} exited ${status}\n`));
-      assert.doesNotMatch(terminated.stdout, /all 11 suites passed/);
+      assert.doesNotMatch(terminated.stdout, /all 12 suites passed/);
     }
     await cancel(mode, 'SIGINT', 130);
     await cancel(mode, 'SIGTERM', 143);
