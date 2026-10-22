@@ -758,7 +758,8 @@ body.theme-light .engine-btn.active {
   gap: 8px;
 }
 
-.search-custom-form input {
+.search-custom-form input,
+.weather-city-controls input {
   flex: 1 1 140px;
   min-width: 0;
   height: 38px;
@@ -771,7 +772,8 @@ body.theme-light .engine-btn.active {
   outline: none;
 }
 
-.search-custom-form input:focus {
+.search-custom-form input:focus,
+.weather-city-controls input:focus {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
@@ -2945,3 +2947,13 @@ body.minimal-mode #settings-btn:hover {
     background: var(--panel-bg-solid);
   }
 }
+
+/* Weather stays absent until the user explicitly enables a city. */
+.weather-pill[hidden] { display: none; }
+.weather-city-form { display: grid; gap: 8px; margin-bottom: 16px; }
+.weather-city-controls { display: flex; gap: 8px; }
+.weather-city-controls input { flex: 1; min-width: 0; }
+.weather-city-controls button { flex-shrink: 0; }
+.weather-pill[data-stale="true"] { border-style: dashed; }
+
+.weather-city-form > label { font-size: 13px; color: var(--text-secondary); }

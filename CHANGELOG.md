@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in city weather settings with Celsius/Fahrenheit, manual refresh, 30-minute cache reuse, and a bounded offline fallback; weather state remains local-only.
+- Weather unit and mocked-network extension regressions for opt-in privacy, storage failures, cross-tab units and cancelled/late requests.
+
+### Privacy
+
+- Weather no longer reads device location or falls back to an automatic IP-location request. It is off until explicitly enabled with a saved city, and the unused `geolocation` permission is removed.
+- Weather and About settings no longer expose internal development placeholders.
+
+### Existing unreleased additions
+
 - Settings panel section nav (appearance, wallpaper, shortcuts and layout, search, weather placeholder, import/sync, advanced, about): click a section to jump, scroll-spy highlight, and a top tab row below 720px
 - Settings search (Chinese/English, case-insensitive) with a 「没有找到」 empty state; Esc clears the query before it closes the panel
 - Layout settings: icon size (small/medium/large or 48–96px), columns (auto or 4–12), show/hide names, and grid max width; live CSS-variable preview, persisted, and included in browser sync keys (shards still count stored JSON bytes, BUG-022)

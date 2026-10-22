@@ -65,7 +65,7 @@ function addDays(date, days) {
     master = null;
   }
   if (master) {
-    assert.deepEqual(local.permissions, master.permissions);
+    assert.ok(local.permissions.every((permission) => master.permissions.includes(permission)), 'must not broaden permissions');
     assert.deepEqual(local.host_permissions, master.host_permissions);
     function cspSources(csp, directive) {
       const chunk = String(csp || '')
@@ -95,7 +95,7 @@ function addDays(date, days) {
     assert.ok(localConnect.includes('https:'), 'iter-8: connect-src https: is required for 重新抓取');
     assert.equal(
       stripImg(localCsp).replace(/\shttps:(?=\s)/, ''),
-      stripImg(masterCsp)
+      stripImg(masterCsp).replace(/\shttps:(?=\s)/, '')
     );
   }
   console.log('U4 passed');

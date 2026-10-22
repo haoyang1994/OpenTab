@@ -184,3 +184,12 @@ npm run test:ssh-gateway
 1. 引入 Playwright Test runner，产出 HTML 报告与 trace。
 2. 为图标 CRUD、时区切换、背景切换补齐自动化用例。
 3. 增加离线模式和 API 失败可视化提示测试。
+
+
+## 10. 天气隐私与可靠性回归
+
+- `node tests/weather-unit.test.mjs`：默认关闭、城市校验、显式偏好保留、缓存复用与过期、服务/数据异常、超时、关闭后迟到响应、同标签与跨标签单位切换、存储读取/写入失败。测试使用隔离 VM 和合成数据，不读取定位或请求真实天气。
+- `tests/weather.test.mjs` 已加入 `npm test` / headed E2E 链：真实 MV3 页面中检查默认无天气请求、城市保存后主动启用、刷新与故障降级、跨重载缓存、关闭与输入校验；全部 HTTP 请求拦截，城市为 `Test City`。
+- 权限回归要求不新增权限，并明确移除 `geolocation`。CSP 比较对新旧基线对称规范化，避免图标迭代合并后误报。
+- 验证记录（2026-10-22）：云工作区的 Node 单元与 SSH 安全检查通过；该工作区因缺少显示依赖及浏览器 IPC 限制无法执行 E2E。随后在 GitHub Actions Ubuntu 云 runner 完整运行 `npm test`，全部五套真实 MV3 E2E 通过，包括天气、搜索、首屏、设置恢复/撤销与原有扩展功能。参见 [CI 39718057430](https://github.com/haoyang1994/OpenTab/actions/runs/39718057430)。每次后续提交仍须重新通过完整 CI。
+- CI 保存 `browser-verification` 截图产物（7 天），包括天气浅色、深色与 600px 窄屏。截图不是完整的人工可访问性审计，Chrome 商店发布仍是独立流程。
