@@ -4,6 +4,12 @@
   if (root) root.OpenTabSync = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // Translate only application-owned prose, never stored user content.
+  function t(source, params = {}) {
+    const i18n = typeof globalThis !== 'undefined' && globalThis.OpenTabI18n;
+    return i18n ? i18n.t(source, params) : String(source).replace(/\{(\w+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(params, key) ? String(params[key]) : match);
+  }
+
 
   const SECRET_FIELDS = ['sshPassword', 'sshGatewayToken', 'sshSocksPassword'];
   const LOCAL_ONLY_FIELDS = ['uploadedIconDataUrl', 'resolvedIconUrl'];
@@ -588,7 +594,7 @@
           ok: false,
           reason: 'item',
           fallback: 'local',
-          message: '同步单项超过 8KB 限制，已改为仅保存在本地。'
+          message: t('同步单项超过 8KB 限制，已改为仅保存在本地。')
         };
       }
       total += size;
@@ -599,7 +605,7 @@
         reason: 'total',
         fallback: 'local',
         bytes: total,
-        message: '同步数据超出 100KB 配额，已改为仅保存在本地。'
+        message: t('同步数据超出 100KB 配额，已改为仅保存在本地。')
       };
     }
     return {
@@ -618,14 +624,14 @@
   }
 
   function formatLocalUsage(bytes) {
-    return '本地存储用量 ' + formatBytes(bytes);
+    return t('本地存储用量 {bytes}', { bytes: formatBytes(bytes) });
   }
 
   function formatSyncUsage(bytes, quota) {
     const cap = quota || QUOTA_BYTES;
     const used = Number(bytes) || 0;
     const pct = Math.min(100, Math.round((used / cap) * 100));
-    return '浏览器同步 ' + formatBytes(used) + ' / ' + formatBytes(cap) + '（' + pct + '%）';
+    return t('浏览器同步 {used} / {cap}（{pct}%）', { used: formatBytes(used), cap: formatBytes(cap), pct });
   }
 
   function setSyncStatus(message, isError) {
@@ -727,7 +733,7 @@
       lastPushedHash = payload.hash;
       lastAppliedHash = payload.hash;
       if (plan.near) {
-        setSyncStatus('同步已接近 100KB 配额，数据已分片保存。', false);
+        setSyncStatus(t('同步已接近 100KB 配额，数据已分片保存。'), false);
       }
       await refreshUsage();
       return plan;
@@ -736,7 +742,7 @@
       await areaSet('local', { [ENABLED_KEY]: false });
       const checkbox = typeof document !== 'undefined' ? document.getElementById('browser-sync-enabled') : null;
       if (checkbox) checkbox.checked = false;
-      setSyncStatus('同步写入失败，已改为仅保存在本地。', true);
+      setSyncStatus(t('同步写入失败，已改为仅保存在本地。'), true);
       await refreshUsage();
       return { ok: false, fallback: 'local', message: error && error.message };
     } finally {
@@ -814,13 +820,13 @@
     if (typeof document === 'undefined') return;
     const row = document.getElementById('sync-conflict-row');
     if (row) row.classList.remove('hidden');
-    setSyncStatus('云端已有另一台设备的数据。请选择用云端或用本机；用云端会先备份本机。', false);
+    setSyncStatus(t('云端已有另一台设备的数据。请选择用云端或用本机；用云端会先备份本机。'), false);
   }
 
   async function undoRemotePayload(undo) {
-    if (!undo || !undo.before || !undo.after) throw new Error('没有可安全撤销的同步记录。');
+    if (!undo || !undo.before || !undo.after) throw new Error(t('没有可安全撤销的同步记录。'));
     const saved = await getWorkspace().commit(undo.after, undo.before);
-    setSyncStatus('已撤销云端替换，保留了之后的其他修改。', false);
+    setSyncStatus(t('已撤销云端替换，保留了之后的其他修改。'), false);
     notifyApplied();
     return saved;
   }
@@ -829,10 +835,10 @@
     if (typeof document === 'undefined' || !undo) return;
     const toast = document.getElementById('toast');
     if (!toast) return;
-    toast.textContent = '已用云端数据替换本机。';
+    toast.textContent = t('已用云端数据替换本机。');
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = '撤销';
+    btn.textContent = t('撤销');
     btn.onclick = async () => {
       if (btn.disabled) return;
       btn.disabled = true;
@@ -841,7 +847,7 @@
         toast.classList.add('hidden');
       } catch (error) {
         const message = error && error.code === 'WORKSPACE_CONFLICT'
-          ? '同步后相关内容已被修改，无法安全撤销。现有数据未改动。' : '撤销失败，请重试。';
+          ? t('同步后相关内容已被修改，无法安全撤销。现有数据未改动。') : t('撤销失败，请重试。');
         setSyncStatus(message, true);
         toast.textContent = message;
         toast.appendChild(btn);
@@ -866,14 +872,14 @@
         onSnapshot: (record, inverse) => { snapshot = record; undo = inverse; }
       });
       if (pulled) {
-        setSyncStatus('已用云端数据替换本机快捷方式，可撤销。', false);
+        setSyncStatus(t('已用云端数据替换本机快捷方式，可撤销。'), false);
         showSyncUndoToast(undo);
       }
       await refreshUsage();
       return { ok: true, pulled: !!pulled, snapshotId: snapshot && snapshot.id };
     }
     const pushed = await pushLocalToSync();
-    if (pushed.ok) setSyncStatus('已用本机数据覆盖云端。', false);
+    if (pushed.ok) setSyncStatus(t('已用本机数据覆盖云端。'), false);
     await refreshUsage();
     return { ok: !!pushed.ok, pushed: true };
   }
@@ -899,7 +905,7 @@
     if (checkbox) checkbox.checked = enabled;
     if (!enabled) {
       hideSyncConflict();
-      setSyncStatus('已关闭浏览器同步，数据只保存在本机。', false);
+      setSyncStatus(t('已关闭浏览器同步，数据只保存在本机。'), false);
       await refreshUsage();
       return { ok: true, enabled: false };
     }
@@ -912,7 +918,7 @@
     if (remoteFromOther && remoteHasIcons && localCount === 0) {
       const pulled = await applyRemotePayload(remote);
       if (pulled) {
-        setSyncStatus('已从浏览器同步恢复快捷方式、分组和设置。', false);
+        setSyncStatus(t('已从浏览器同步恢复快捷方式、分组和设置。'), false);
         await refreshUsage();
         return { ok: true, enabled: true, pulled: true };
       }
@@ -924,7 +930,7 @@
       return { ok: true, enabled: true, conflict: true, localCount, remoteCount: remote.icons.length };
     }
     const pushed = await pushLocalToSync();
-    if (pushed.ok) setSyncStatus('已开启浏览器同步（仅快捷方式、分组和设置）。', false);
+    if (pushed.ok) setSyncStatus(t('已开启浏览器同步（仅快捷方式、分组和设置）。'), false);
     return { ok: pushed.ok, enabled, pushed };
   }
 
@@ -939,7 +945,7 @@
           readRemotePayload().then((payload) => {
             if (!payload) return;
             return applyRemotePayload(payload);
-          }).catch(() => setSyncStatus('读取或保存云端数据失败，请重试。', true));
+          }).catch(() => setSyncStatus(t('读取或保存云端数据失败，请重试。'), true));
         }
         return;
       }
@@ -953,25 +959,25 @@
     if (typeof document === 'undefined') return;
     if (!document.getElementById('import-sync-section')) return;
     wrapLocalSet();
-    migratePlaintextSecrets().catch(() => setSyncStatus('保护本地凭据时保存失败，请重试。', true));
+    migratePlaintextSecrets().catch(() => setSyncStatus(t('保护本地凭据时保存失败，请重试。'), true));
     const checkbox = document.getElementById('browser-sync-enabled');
     const useRemoteBtn = document.getElementById('sync-use-remote-btn');
     const useLocalBtn = document.getElementById('sync-use-local-btn');
     if (useRemoteBtn) {
       useRemoteBtn.addEventListener('click', () => {
-        resolveSyncChoice('remote').catch(() => setSyncStatus('无法使用云端数据。', true));
+        resolveSyncChoice('remote').catch(() => setSyncStatus(t('无法使用云端数据。'), true));
       });
     }
     if (useLocalBtn) {
       useLocalBtn.addEventListener('click', () => {
-        resolveSyncChoice('local').catch(() => setSyncStatus('无法上传本机数据。', true));
+        resolveSyncChoice('local').catch(() => setSyncStatus(t('无法上传本机数据。'), true));
       });
     }
     if (checkbox) {
       checkbox.addEventListener('change', () => {
         setEnabled(checkbox.checked).catch(() => {
           checkbox.checked = false;
-          setSyncStatus('无法开启浏览器同步。', true);
+          setSyncStatus(t('无法开启浏览器同步。'), true);
         });
       });
     }
@@ -990,8 +996,12 @@
 
   if (typeof document !== 'undefined') {
     wrapLocalSet();
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindUi);
-    else bindUi();
+    const start = () => {
+      if (globalThis.OpenTabI18n) globalThis.OpenTabI18n.ready.then(bindUi);
+      else bindUi();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
   }
 
   return {

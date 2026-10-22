@@ -4,6 +4,12 @@
   if (root) root.OpenTabSettingsNav = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // Translate only application-owned prose, never stored user content.
+  function t(source, params = {}) {
+    const i18n = typeof globalThis !== 'undefined' && globalThis.OpenTabI18n;
+    return i18n ? i18n.t(source, params) : String(source).replace(/\{(\w+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(params, key) ? String(params[key]) : match);
+  }
+
 
   const NARROW_MQ = '(max-width: 719px)';
   const DEVELOPER_TOOLS_KEY = 'developerToolsEnabled';
@@ -187,7 +193,7 @@
       btn.className = 'settings-nav-btn';
       btn.dataset.section = section.id;
       btn.id = 'settings-nav-' + section.id;
-      btn.textContent = section.label;
+      btn.textContent = t(section.label);
       const first = document.querySelector('[data-settings-section="' + section.id + '"]');
       if (first && first.id) btn.setAttribute('aria-controls', first.id);
       btn.addEventListener('click', () => {
@@ -211,8 +217,8 @@
       btn.type = 'button';
       btn.className = 'btn-small ghost settings-reset-section';
       btn.dataset.section = section.id;
-      btn.textContent = '恢复默认';
-      btn.setAttribute('aria-label', '恢复' + section.label + '默认设置');
+      btn.textContent = t('恢复默认');
+      btn.setAttribute('aria-label', t('恢复{section}默认设置', { section: t(section.label) }));
       btn.addEventListener('click', () => { resetWithConfirm(section.id); });
       first.appendChild(btn);
     });
@@ -353,8 +359,8 @@
   function confirmDialog(message) {
     if (typeof OpenTabFolders !== 'undefined' && typeof OpenTabFolders.showDialog === 'function') {
       return OpenTabFolders.showDialog(message, [
-        { label: '取消', value: false },
-        { label: '恢复默认', value: true, className: 'btn-primary' }
+        { label: t('取消'), value: false },
+        { label: t('恢复默认'), value: true, className: 'btn-primary' }
       ]);
     }
     return Promise.resolve(false);
@@ -547,14 +553,14 @@
     const intent = host && host.captureIntent ? host.captureIntent() : null;
     const intentIsCurrent = () => !intent || !host || !host.isIntentCurrent || host.isIntentCurrent(intent);
     const message = sectionId === 'sync'
-      ? '恢复该分区的默认设置？会关闭浏览器同步。快捷方式不会改动。'
+      ? t('恢复该分区的默认设置？会关闭浏览器同步。快捷方式不会改动。')
       : sectionId
-        ? '恢复该分区的默认设置？快捷方式不会改动。'
-        : '恢复全部设置为默认？快捷方式不会改动。';
+        ? t('恢复该分区的默认设置？快捷方式不会改动。')
+        : t('恢复全部设置为默认？快捷方式不会改动。');
     return confirmDialog(message).then((ok) => {
       if (!ok) return false;
       if (!intentIsCurrent()) {
-        if (host && host.showToast) host.showToast('内容已变化，请重新选择恢复默认。');
+        if (host && host.showToast) host.showToast(t('内容已变化，请重新选择恢复默认。'));
         return false;
       }
       const snap = takeSnapshot();
@@ -565,14 +571,14 @@
       if (sectionId === 'sync') after.browserSyncEnabled = false;
       const inverse = resetInverse(snap, after);
       if (host && host.showToast) {
-        host.showToast('已恢复默认', {
-          actionLabel: '撤销',
+        host.showToast(t('已恢复默认'), {
+          actionLabel: t('撤销'),
           onAction: () => {
             if (!intentIsCurrent() || !applyResetInverse(inverse)) {
-              if (host.showToast) host.showToast('相关设置已变化，无法安全撤销。');
+              if (host.showToast) host.showToast(t('相关设置已变化，无法安全撤销。'));
               return false;
             }
-            if (host.showToast) host.showToast('已恢复', { duration: 1500 });
+            if (host.showToast) host.showToast(t('已恢复'), { duration: 1500 });
             return true;
           },
           duration: 6000
@@ -813,7 +819,7 @@
         try {
           url = host.normalizeUrl(raw);
         } catch (error) {
-          if (host.showToast) host.showToast('请输入有效的图片网址。');
+          if (host.showToast) host.showToast(t('请输入有效的图片网址。'));
           if ($('custom-bg-url')) $('custom-bg-url').focus();
           return;
         }
@@ -842,7 +848,7 @@
           updateBgTabs();
           updatePresetSelection();
         } catch (error) {
-          if (host.showToast) host.showToast('读取本地图片失败，请重试。');
+          if (host.showToast) host.showToast(t('读取本地图片失败，请重试。'));
         }
       });
     }
@@ -900,19 +906,18 @@
 
   if (typeof document !== 'undefined') {
     bindFocusTrap();
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
+    const start = () => {
+      const bind = () => {
         bindPanel();
         buildNav();
         ensureResetButtons();
         fillAbout();
-      });
-    } else {
-      bindPanel();
-      buildNav();
-      ensureResetButtons();
-      fillAbout();
-    }
+      };
+      if (globalThis.OpenTabI18n) globalThis.OpenTabI18n.ready.then(bind);
+      else bind();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
   }
 
   return {

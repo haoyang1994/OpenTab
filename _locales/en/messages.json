@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "OpenTab"
+  },
+  "extensionDescription": {
+    "message": "OpenTab new tab page with clock, customizable backgrounds, and shortcut icons"
+  },
+  "actionTitle": {
+    "message": "Add to OpenTab"
+  }
+}

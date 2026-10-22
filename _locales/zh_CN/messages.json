@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "OpenTab"
+  },
+  "extensionDescription": {
+    "message": "OpenTab 新标签页，提供时钟、自定义背景和快捷图标"
+  },
+  "actionTitle": {
+    "message": "添加到 OpenTab"
+  }
+}

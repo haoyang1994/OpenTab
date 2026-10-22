@@ -1,5 +1,6 @@
 (function (g) {
   'use strict';
+  const t = (source) => g.OpenTabI18n ? g.OpenTabI18n.t(source) : source;
   const CACHE_NAME = 'opentab-bing-v1';
   let ctx;
   let lastBlob = '';
@@ -32,7 +33,7 @@
   // Network completions own wallpaper keys, never the rest of the workspace.
   function saveBackground() {
     chrome.storage.local.set({ background: ctx.state.background, bingIndex: ctx.state.bingIndex }, () => {
-      if (chrome.runtime.lastError && ctx.showToast) ctx.showToast('背景保存失败，请重试');
+      if (chrome.runtime.lastError && ctx.showToast) ctx.showToast(t('背景保存失败，请重试'));
     });
   }
 

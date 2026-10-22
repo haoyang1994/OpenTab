@@ -15,10 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- English and Simplified Chinese for the main new-tab, settings, import/sync/weather and add-page popup, with browser-language default, persistent explicit preference, and localized Chrome metadata. User content is not translated.
+- Light appearance for genuinely new installations, without resetting existing themes.
+- Catalog/locale unit tests and real MV3 bilingual workflows with wide and 600px screenshots.
+
+
 - Opt-in city weather settings with Celsius/Fahrenheit, manual refresh, 30-minute cache reuse, and a bounded offline fallback; weather state remains local-only.
 - Weather unit and mocked-network extension regressions for opt-in privacy, storage failures, cross-tab units and cancelled/late requests.
 
 ### Fixed
+
+- Ignore stale local-icon upload completions after a newer file selection, dialog close/reopen, or conflicting record update; cover each race with delayed-file regressions.
+
 
 - Save workspace changes by settings key and item ID under a shared cross-tab lock, instead of overwriting shortcuts with stale tab snapshots. Reject conflicting edits and pre-restore shortcut changes rather than resurrecting deleted data.
 - Preserve unrelated later changes when undoing a deletion or import; coordinate popup additions and incoming workspace sync with page saves.

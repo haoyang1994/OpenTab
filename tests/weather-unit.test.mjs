@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../weather.js', import.meta.url), 'utf8');
 const payload = (temp = '20') => ({ current_condition: [{ temp_C: temp, weatherCode: '113', weatherDesc: [{ value: 'Sunny' }] }], nearest_area: [{ areaName: [{ value: 'Test City' }] }] });
-function harness(stored = {}) {
+function harness(stored = {}, locale) {
   const nodes = new Map();
   const listeners = [];
   const timers = new Map();
@@ -25,6 +25,7 @@ function harness(stored = {}) {
       set: async (value) => { Object.assign(db, structuredClone(value)); },
     }, onChanged: { addListener(fn) { listeners.push(fn); } } } },
   };
+  if (locale) sandbox.OpenTabI18n = { locale, t: (text) => text };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
@@ -134,6 +135,42 @@ const cached = (age) => ({ city: 'Test City', observedAt: Date.now() - age, data
   const h = harness({ ...active, weatherCache: { ...cached(1000), city: 'Other City' } });
   await h.api.init(); assert.equal(h.requests.length, 1, 'wrong-city cache must not be reused');
   assert.equal(h.node('weather-location-inline').textContent, 'Test City');
+}
+{
+  const h = harness(active, 'zh-CN');
+  h.sandbox.response = async () => ({ ok: true, json: async () => {
+    const result = payload();
+    result.current_condition[0].lang_zh = [{ value: '晴' }];
+    return result;
+  } });
+  await h.api.init();
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.db.weatherCache.data.descEn, 'Sunny');
+  assert.equal(h.db.weatherCache.data.descZh, '晴');
+  assert.equal(h.node('weather-pill').title, 'Test City · 晴');
+  const english = harness(h.db, 'en'); let englishUpdate;
+  await english.api.init({ onUpdate: (data) => { englishUpdate = data; } });
+  assert.equal(englishUpdate.description, 'Sunny', 'home callback receives current-locale provider description');
+  assert.equal(english.db.weatherCache.data.description, '晴', 'render does not mutate cached legacy value');
+  assert.equal(english.node('weather-pill').title, 'Test City · Sunny');
+  assert.equal(english.requests.length, 0, 'locale switch reuses both provider descriptions without a fetch');
+  const chinese = harness(english.db, 'zh-CN'); await chinese.api.init();
+  assert.equal(chinese.node('weather-pill').title, 'Test City · 晴');
+  assert.equal(chinese.requests.length, 0, 'switching back also needs no fetch');
+  const disabled = harness({ ...h.db, weatherEnabled: false }, 'en'); await disabled.api.init();
+  assert.equal(disabled.requests.length, 0, 'cached language switch never opts into weather');
+  assert.equal(disabled.node('weather-pill').hidden, true);
+  const long = payload();
+  long.current_condition[0].weatherDesc = [{ value: 'a'.repeat(200) }];
+  long.current_condition[0].lang_zh = [{ value: '晴'.repeat(200) }];
+  assert.equal(h.api.parse(long).descEn.length, 160);
+  assert.equal(h.api.parse(long).descZh.length, 160);
+}
+{
+  const legacy = cached(1000); legacy.data.description = '旧缓存描述';
+  const h = harness({ ...active, weatherCache: legacy }, 'en'); await h.api.init();
+  assert.equal(h.node('weather-pill').title, 'Test City · 旧缓存描述', 'legacy provider description is preserved as fallback');
+  assert.equal(h.requests.length, 0, 'legacy cache compatibility does not force a fetch');
 }
 assert.doesNotMatch(source, /navigator\.geolocation/);
 console.log('weather unit tests passed: opt-in, validation, migration, cache, units, failure, timeout and cancellation');

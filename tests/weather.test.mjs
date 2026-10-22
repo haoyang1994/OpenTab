@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const context = await chromium.launchPersistentContext('', {
+    locale: 'zh-CN',
   headless: process.env.HEADLESS === 'true',
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {}),
   viewport: { width: 1280, height: 800 },

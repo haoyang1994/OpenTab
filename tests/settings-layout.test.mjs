@@ -148,6 +148,7 @@ async function runSettingsLayoutE2E() {
 
   const headless = resolveHeadless(false);
   const context = await chromium.launchPersistentContext('', {
+    locale: 'zh-CN',
     headless,
     viewport: { width: 1280, height: 800 },
     args: [

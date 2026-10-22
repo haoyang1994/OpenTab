@@ -107,7 +107,7 @@ function memory(initial = base()) {
   const adapter = source.slice(source.indexOf('  const workspace = '), source.indexOf('  function loadState()'));
   function tab() {
     const context = { state: base(), OpenTabWorkspace: h.api, window: {}, refreshIconViews() {}, renderTodos() {}, updateClock() {}, applyThemeMode() {}, renderWorkspaceSettings() {}, renderTodoPanel() {}, updateBackground() {}, writeBootMirror() {}, showToast() {} };
-    vm.createContext(context); vm.runInContext(adapter + '\nworkspace.seed(state);', context);
+    context.t ||= (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(context); vm.runInContext(adapter + '\nworkspace.seed(state);', context);
     return { context, save: () => vm.runInContext('saveState()', context) };
   }
   const a = tab(), b = tab(); a.context.state.icons.push({ id: 'new', name: 'New', folderId: 'folder-home' }); await a.save();
@@ -213,7 +213,7 @@ function popupHarness(h) {
     setTimeout() {}, close() {}
   };
   context.window = context;
-  vm.createContext(context);
+  context.t ||= (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(context);
   vm.runInContext(fs.readFileSync(new URL('../popup.js', import.meta.url), 'utf8'), context);
   return { elements, ready };
 }
@@ -309,11 +309,27 @@ function popupHarness(h) {
   const chrome = { ...h.chrome, runtime: { onInstalled: { addListener(fn) { listener = fn; } } } };
   const source = fs.readFileSync(new URL('../background.js', import.meta.url), 'utf8');
   const context = { chrome, console, Intl, importScripts() {}, OpenTabWorkspace: { transaction(fn) { pending = h.api.transaction(fn); return pending; } } };
-  vm.createContext(context); vm.runInContext(source.slice(0, source.indexOf('async function fetchArchive')), context);
+  context.t ||= (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(context); vm.runInContext(source.slice(0, source.indexOf('async function fetchArchive')), context);
   const add = h.api.commit({}, { icons: [{ id: 'early', name: 'Early', folderId: 'folder-home' }], folders: base().folders });
   listener({ reason: 'install' }); await Promise.all([add, pending]);
   assert.equal(h.store.icons[0].id, 'early', 'late onInstalled initialization never erases early user additions');
   assert.equal(h.store.background.value, 'user-choice');
+}
+for (const [initial, reason, expectedTheme] of [
+  [{}, 'install', 'light'],
+  [{ themeMode: 'dark' }, 'install', 'dark'],
+  [{ themeMode: 'auto' }, 'install', 'auto'],
+  [{ icons: [] }, 'install', undefined],
+  [{ icons: [], themeMode: 'dark' }, 'update', 'dark'],
+  [{}, 'update', undefined]
+]) {
+  const h = memory(initial); let listener, pending;
+  const chrome = { ...h.chrome, runtime: { onInstalled: { addListener(fn) { listener = fn; } } } };
+  const source = fs.readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  const context = { chrome, console, Intl, importScripts() {}, OpenTabWorkspace: { transaction(fn) { pending = h.api.transaction(fn); return pending; } } };
+  context.t ||= (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(context); vm.runInContext(source.slice(0, source.indexOf('async function fetchArchive')), context);
+  listener({ reason }); await pending;
+  assert.equal(h.store.themeMode, expectedTheme, 'light default applies only to genuinely new install, preserving explicit and legacy implicit choice');
 }
 {
   let timer;
@@ -487,7 +503,7 @@ console.log('workspace persistence tests passed: real home path, parallel writer
   const source = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');
   let button, actions = 0, closed = false, text = '';
   const toast = { textContent: '', classList: { add() {}, remove() {} }, appendChild(value) { button = value; } };
-  const context = vm.createContext({ workspace: c, elements: { toast }, document: { createElement: () => ({}) }, toastTimer: null, pendingUndo: null, clearTimeout() {}, setTimeout() {}, action: () => { actions++; } });
+  const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  workspace: c, elements: { toast }, document: { createElement: () => ({}) }, toastTimer: null, pendingUndo: null, clearTimeout() {}, setTimeout() {}, action: () => { actions++; } });
   const start = source.indexOf('  function showToast(');
   vm.runInContext(source.slice(start, source.indexOf('  function isFocusable(', start)) + "\nshowToast('deleted', { actionLabel: 'Undo', onAction: action });", context);
   const oldButton = button;
@@ -500,7 +516,7 @@ console.log('workspace persistence tests passed: real home path, parallel writer
   const draft = modal.captureIntent({ icons: ['x'] }); modalState.icons[0].name = 'remote';
   const modalStart = source.indexOf('  async function handleSaveIcon(');
   const modalBody = source.slice(modalStart, source.indexOf('\n  }\n', modalStart) + 5);
-  const modalContext = vm.createContext({ workspace: modal, iconDraftIntent: draft, iconSaveGate: { has: () => false }, closeAddIconModal() { closed = true; }, showToast(value) { text = value; } });
+  const modalContext = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  workspace: modal, iconDraftIntent: draft, iconSaveGate: { has: () => false }, closeAddIconModal() { closed = true; }, showToast(value) { text = value; } });
   await vm.runInContext(modalBody + '\nhandleSaveIcon()', modalContext);
   assert.equal(closed, true); assert.match(text, /内容已变化/);
 }
@@ -511,7 +527,7 @@ function iconChanger(h, state) {
     if (!nodes.has(id)) nodes.set(id, { value: '', files: [], handlers: {}, classList: { add() {}, remove() {}, contains() { return false; } }, addEventListener(type, fn) { this.handlers[type] = fn; }, removeAttribute() {}, focus() {} });
     return nodes.get(id);
   };
-  const ctx = vm.createContext({ URL, document: { getElementById: get }, fetch: async () => { throw new Error('unexpected fetch'); } });
+  const ctx = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  URL, document: { getElementById: get }, fetch: async () => { throw new Error('unexpected fetch'); } });
   vm.runInContext(fs.readFileSync(new URL('../icons.js', import.meta.url), 'utf8'), ctx);
   ctx.OpenTabIcons.init({ ...c, getIcons: () => state.icons, saveState: () => { const p = c.save(); saves.push(p); return p; }, showToast: (message) => messages.push(message) });
   return { c, ctx, get, messages, saves, icons: ctx.OpenTabIcons };
@@ -567,7 +583,7 @@ function homeIconEditor(h, state, editId = null) {
   const elements = Object.fromEntries(['iconType', 'iconName', 'iconUrl', 'iconCustomUrl', 'sshGatewayUrl', 'sshGatewayToken', 'sshHost', 'sshPort', 'sshUsername', 'sshPassword', 'sshSocksHost', 'sshSocksPort', 'sshSocksUsername', 'sshSocksPassword', 'toolSubtype'].map((key) => [key, { value: '', focus() {} }]));
   elements.iconType.value = 'shortcut'; elements.iconName.value = 'Submitted'; elements.iconUrl.value = 'https://synthetic.example.test';
   elements.saveBtn = { disabled: false }; elements.addIconModal = { querySelectorAll: () => Object.values(elements).filter((node) => node !== elements.addIconModal), classList: { add() { hidden = true; } } };
-  const context = vm.createContext({ state, elements, window: {}, workspace: c, saveState: c.save,
+  const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  state, elements, window: {}, workspace: c, saveState: c.save,
     editingIconId: editId, iconSaveGate: require('../icons.js').createSaveGate(), iconDraftIntent: c.captureIntent(editId ? { icons: [editId] } : {}), pendingIconUploadDataUrl: '',
     ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'folder-home',
     normalizeIconType: (value) => value || 'shortcut', normalizeUrl: (value) => value, normalizeOptionalUrl: (value) => value,
@@ -670,7 +686,7 @@ function homeIconEditor(h, state, editId = null) {
   const before = clone(state), messages = []; state.icons[0].name = 'Folder operation';
   let release, entered = false; const originalSet = h.chrome.storage.local.set;
   h.chrome.storage.local.set = async (patch) => { entered = true; await new Promise((resolve) => { release = resolve; }); return originalSet(patch); };
-  const context = vm.createContext({ OpenTabWorkspace: h.api, before, snapshot: () => clone(state), restore: (snapshot) => Object.assign(state, clone(snapshot)), closeOverlay() {}, host: { ...c, saveState: c.save, refreshIconViews() {}, showToast: (text, opts) => messages.push({ text, opts }) } });
+  const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  OpenTabWorkspace: h.api, before, snapshot: () => clone(state), restore: (snapshot) => Object.assign(state, clone(snapshot)), closeOverlay() {}, host: { ...c, saveState: c.save, refreshIconViews() {}, showToast: (text, opts) => messages.push({ text, opts }) } });
   const source = fs.readFileSync(new URL('../folders.js', import.meta.url), 'utf8'), start = source.indexOf('  async function persistUndo(');
   vm.runInContext(source.slice(start, source.indexOf('\n  }\n', start) + 5), context);
   const saving = vm.runInContext("persistUndo(before, '已完成')", context); while (!entered) await Promise.resolve();

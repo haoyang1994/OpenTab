@@ -73,6 +73,7 @@ async function runSearchE2E() {
 
   const headless = resolveHeadless(false);
   const context = await chromium.launchPersistentContext('', {
+    locale: 'zh-CN',
     headless,
     args: [
       `--disable-extensions-except=${EXTENSION_PATH}`,

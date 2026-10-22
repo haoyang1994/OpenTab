@@ -1,4 +1,6 @@
 (function (global) {
+  const t = (s, p) => globalThis.OpenTabI18n ? globalThis.OpenTabI18n.t(s, p) : s.replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
+
   const STORAGE_KEYS = [
     'searchEngine',
     'customSearchEngines',
@@ -90,7 +92,7 @@
   function listEngines() {
     return engineList().map((engine) => ({
       id: engine.id,
-      name: engine.name,
+      name: engineLabel(engine.id),
       template: engine.template
     }));
   }
@@ -101,7 +103,7 @@
 
   function engineLabel(id) {
     const engine = engineList().find((item) => item.id === id);
-    return engine ? engine.name : id;
+    return engine ? (builtinById(id) ? t(engine.name) : engine.name) : id;
   }
 
   function copyHistory(list) {
@@ -216,10 +218,10 @@
 
   function templateError(template) {
     const value = String(template || '').trim();
-    if (!value) return '请填写包含 %s 的 http(s) 地址。';
-    if (!/^https?:\/\//i.test(value)) return '自定义引擎地址必须是 http 或 https。';
-    if (!value.includes('%s')) return '自定义引擎地址必须包含 %s，用于替换关键词。';
-    if (!isValidTemplate(value)) return '自定义引擎地址无效，请检查后重试。';
+    if (!value) return t('请填写包含 %s 的 http(s) 地址。');
+    if (!/^https?:\/\//i.test(value)) return t('自定义引擎地址必须是 http 或 https。');
+    if (!value.includes('%s')) return t('自定义引擎地址必须包含 %s，用于替换关键词。');
+    if (!isValidTemplate(value)) return t('自定义引擎地址无效，请检查后重试。');
     return '';
   }
 
@@ -426,7 +428,7 @@
     engineList().forEach((engine) => {
       const option = document.createElement('option');
       option.value = engine.id;
-      option.textContent = engine.name;
+      option.textContent = engineLabel(engine.id);
       select.appendChild(option);
     });
     select.value = engineIds().includes(current) ? current : 'google';
@@ -446,7 +448,7 @@
     if (!searchState.customSearchEngines.length) {
       const empty = document.createElement('li');
       empty.className = 'search-custom-empty';
-      empty.textContent = '还没有自定义引擎';
+      empty.textContent = t('还没有自定义引擎');
       list.appendChild(empty);
       return;
     }
@@ -469,12 +471,12 @@
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'btn-small ghost';
-      editBtn.textContent = '编辑';
+      editBtn.textContent = t('编辑');
       editBtn.addEventListener('click', () => startEditCustom(engine.id));
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.className = 'btn-small ghost';
-      deleteBtn.textContent = '删除';
+      deleteBtn.textContent = t('删除');
       deleteBtn.addEventListener('click', () => deleteCustom(engine.id));
       actions.appendChild(editBtn);
       actions.appendChild(deleteBtn);
@@ -501,8 +503,8 @@
     const save = $('search-custom-save');
     if (name) name.value = engine.name;
     if (template) template.value = engine.template;
-    if (save) save.textContent = '保存';
-    setCustomStatus('正在编辑该引擎。');
+    if (save) save.textContent = t('保存');
+    setCustomStatus(t('正在编辑该引擎。'));
   }
 
   function resetCustomForm() {
@@ -512,7 +514,7 @@
     const save = $('search-custom-save');
     if (name) name.value = '';
     if (template) template.value = '';
-    if (save) save.textContent = '添加';
+    if (save) save.textContent = t('添加');
   }
 
   function saveCustomEngine() {
@@ -521,7 +523,7 @@
     const name = nameEl ? nameEl.value.trim() : '';
     const template = templateEl ? templateEl.value.trim() : '';
     if (!name) {
-      setCustomStatus('请填写引擎名称。', true);
+      setCustomStatus(t('请填写引擎名称。'), true);
       if (nameEl) nameEl.focus();
       return;
     }
@@ -537,10 +539,10 @@
         current.name = name.slice(0, 40);
         current.template = template;
       }
-      setCustomStatus('已保存自定义引擎。');
+      setCustomStatus(t('已保存自定义引擎。'));
     } else {
       if (searchState.customSearchEngines.length >= MAX_CUSTOM_ENGINES) {
-        setCustomStatus(`最多添加 ${MAX_CUSTOM_ENGINES} 个自定义引擎。`, true);
+        setCustomStatus(t('最多添加 {count} 个自定义引擎。', { count: MAX_CUSTOM_ENGINES }), true);
         return;
       }
       searchState.customSearchEngines.push({
@@ -548,7 +550,7 @@
         name: name.slice(0, 40),
         template
       });
-      setCustomStatus('已添加自定义引擎。');
+      setCustomStatus(t('已添加自定义引擎。'));
     }
     persist();
     resetCustomForm();
@@ -562,7 +564,7 @@
     if (searchState.searchEngine === id) searchState.searchEngine = 'google';
     if (editingCustomId === id) resetCustomForm();
     persist();
-    setCustomStatus('已删除自定义引擎。');
+    setCustomStatus(t('已删除自定义引擎。'));
     renderCustomEngineButtons();
     renderDefaultEngineSelect();
     renderCustomList();
@@ -645,7 +647,7 @@
       hint.removeAttribute('data-match');
       return;
     }
-    hint.textContent = `回车打开快捷方式「${icon.name}」`;
+    hint.textContent = t('回车打开快捷方式「{name}」', { name: icon.name });
     hint.dataset.match = 'shortcut';
     hint.classList.remove('hidden');
   }
@@ -819,7 +821,7 @@
         searchState.searchHistory = [];
         persist();
         hideHistory();
-        setCustomStatus('已清除搜索历史。');
+        setCustomStatus(t('已清除搜索历史。'));
       });
     }
     const save = $('search-custom-save');

@@ -4,6 +4,12 @@
   if (root) root.OpenTabImport = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // Translate only application-owned prose, never stored user content.
+  function t(source, params = {}) {
+    const i18n = typeof globalThis !== 'undefined' && globalThis.OpenTabI18n;
+    return i18n ? i18n.t(source, params) : String(source).replace(/\{(\w+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(params, key) ? String(params[key]) : match);
+  }
+
 
   const HOME_GROUP_ID = 'folder-home';
   const TOP_SITES_LIMIT = 12;
@@ -208,7 +214,7 @@
     if (typeof document === 'undefined') return;
     const el = document.getElementById('backup-status');
     if (!el) return;
-    el.textContent = message;
+    el.textContent = t(message);
     el.style.color = isError ? '#ffb4b4' : 'rgba(255, 255, 255, 0.65)';
   }
 
@@ -349,34 +355,39 @@
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
-    updateBackupStatus('已下载备份文件。', false);
+    updateBackupStatus(t('已下载备份文件。'), false);
   }
 
   async function handleSaveSnapshot() {
     await saveSnapshotRecord('manual');
-    updateBackupStatus('已保存快照。', false);
+    updateBackupStatus(t('已保存快照。'), false);
   }
 
   async function handleRestoreLatestSnapshot() {
     const result = await storageLocalGet([BACKUP_SNAPSHOTS_KEY]);
     const list = Array.isArray(result[BACKUP_SNAPSHOTS_KEY]) ? result[BACKUP_SNAPSHOTS_KEY] : [];
     if (!list.length) {
-      updateBackupStatus('没有可恢复的快照。', true);
+      updateBackupStatus(t('没有可恢复的快照。'), true);
       return;
     }
-    updateBackupStatus('正在恢复快照并刷新页面...', false);
+    updateBackupStatus(t('正在恢复快照并刷新页面...'), false);
     await applyOpenTabBackup(list[0].data || {}, { snapshotReason: 'before-restore' });
+  }
+
+  function noticeMessage(notice) {
+    return Number.isFinite(notice.iconCount) && Number.isFinite(notice.groupCount)
+      ? importResultMessage(notice.iconCount, notice.groupCount) : t(notice.text);
   }
 
   function showImportToast(notice) {
     if (typeof document === 'undefined' || !notice || !notice.text) return;
     const toast = document.getElementById('toast');
     if (!toast) return;
-    toast.textContent = notice.text;
+    toast.textContent = noticeMessage(notice);
     if (notice.canUndo) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = '撤销';
+      btn.textContent = t('撤销');
       btn.onclick = () => {
         toast.classList.add('hidden');
         undoLastImport().catch((error) => {
@@ -398,7 +409,7 @@
     const saveBtn = document.getElementById('backup-save-snapshot-btn');
     const restoreBtn = document.getElementById('backup-restore-snapshot-btn');
     if (downloadBtn) downloadBtn.addEventListener('click', () => {
-      handleDownloadBackup().catch(() => updateBackupStatus('下载备份失败。', true));
+      handleDownloadBackup().catch(() => updateBackupStatus(t('下载备份失败。'), true));
     });
     if (importBtn && importFile) {
       importBtn.addEventListener('click', () => {
@@ -410,20 +421,20 @@
         if (!file) return;
         Promise.resolve(file.text()).then((text) => {
           const raw = JSON.parse(text);
-          updateBackupStatus('正在导入备份并刷新页面...', false);
+          updateBackupStatus(t('正在导入备份并刷新页面...'), false);
           return applyOpenTabBackup(raw, { snapshotReason: 'before-import' });
         }).catch(() => {
-          updateBackupStatus('导入失败：JSON 无效或结构不支持。', true);
+          updateBackupStatus(t('导入失败：JSON 无效或结构不支持。'), true);
         }).then(() => {
           importFile.value = '';
         });
       });
     }
     if (saveBtn) saveBtn.addEventListener('click', () => {
-      handleSaveSnapshot().catch(() => updateBackupStatus('保存快照失败。', true));
+      handleSaveSnapshot().catch(() => updateBackupStatus(t('保存快照失败。'), true));
     });
     if (restoreBtn) restoreBtn.addEventListener('click', () => {
-      handleRestoreLatestSnapshot().catch(() => updateBackupStatus('恢复快照失败。', true));
+      handleRestoreLatestSnapshot().catch(() => updateBackupStatus(t('恢复快照失败。'), true));
     });
   }
 
@@ -483,8 +494,8 @@
   }
 
   function nextGroupName(desired, groups) {
-    let base = String(desired || '').trim() || '导入';
-    if (base === '主页') base = '导入的主页';
+    let base = String(desired || '').trim() || t('导入');
+    if (base === '主页') base = t('导入的主页');
     const used = new Set((groups || []).map((group) => group.name));
     if (!used.has(base)) return base;
     let index = 2;
@@ -499,7 +510,7 @@
       if (shortcut) icons.push(shortcut);
     });
     if (!icons.length) return;
-    groups.push({ name: name || '导入', icons });
+    groups.push({ name: name || t('导入'), icons });
   }
 
   function collectBookmarkLinks(node) {
@@ -519,7 +530,7 @@
     const path = trail || [];
     (nodes || []).forEach((node) => {
       if (!node || node.url) return;
-      const title = node.title || '未命名';
+      const title = node.title || t('未命名');
       const nextPath = node.id === '0' ? path : path.concat([title]);
       const links = collectBookmarkLinks(node);
       folders.push({
@@ -545,7 +556,7 @@
         if (!item || typeof item !== 'object') return;
         if (Array.isArray(item.children) && item.children.length) {
           const nested = item.children.map(pickLink);
-          pushGroup(groups, item.name || item.title || 'Infinity 文件夹', nested);
+          pushGroup(groups, item.name || item.title || t('Infinity 文件夹'), nested);
           return;
         }
         const link = pickLink(item);
@@ -606,12 +617,12 @@
     });
     folderList.forEach((folder) => {
       const links = byId.get(folder.id) || [];
-      const name = folder.id === HOME_GROUP_ID ? '导入的主页' : folder.name;
+      const name = folder.id === HOME_GROUP_ID ? t('导入的主页') : folder.name;
       pushGroup(groups, name, links);
     });
     byId.forEach((links, folderId) => {
       if (folderList.some((folder) => folder.id === folderId)) return;
-      pushGroup(groups, '导入', links);
+      pushGroup(groups, t('导入'), links);
     });
     return groups;
   }
@@ -646,11 +657,11 @@
       try {
         raw = JSON.parse(String(textOrObject).replace(/^\uFEFF/, '').trim());
       } catch (error) {
-        return { ok: false, error: 'invalid-json', message: MSG_INVALID_JSON };
+        return { ok: false, error: 'invalid-json', message: t(MSG_INVALID_JSON) };
       }
     }
     if (!raw || typeof raw !== 'object') {
-      return { ok: false, error: 'unrecognized', message: MSG_UNRECOGNIZED };
+      return { ok: false, error: 'unrecognized', message: t(MSG_UNRECOGNIZED) };
     }
 
     let format = '';
@@ -668,12 +679,12 @@
       format = 'opentab';
       groups = parseOpenTab(raw);
     } else {
-      return { ok: false, error: 'unrecognized', message: MSG_UNRECOGNIZED };
+      return { ok: false, error: 'unrecognized', message: t(MSG_UNRECOGNIZED) };
     }
 
     const iconCount = groups.reduce((sum, group) => sum + ((group.icons || []).length), 0);
     if (!iconCount) {
-      return { ok: false, error: 'empty', message: '备份里没有可导入的图标，现有数据未改动。' };
+      return { ok: false, error: 'empty', message: t('备份里没有可导入的图标，现有数据未改动。') };
     }
     return { ok: true, format, groups, iconCount, groupCount: groups.length };
   }
@@ -709,14 +720,14 @@
   }
 
   function importResultMessage(iconCount, groupCount) {
-    return '已导入 ' + iconCount + ' 个图标、' + groupCount + ' 个分组。';
+    return t('已导入 {iconCount} 个图标、{groupCount} 个分组。', { iconCount, groupCount });
   }
 
   function setStatus(message, isError) {
     if (typeof document === 'undefined') return;
     const el = document.getElementById('import-sync-status');
     if (!el) return;
-    el.textContent = message;
+    el.textContent = t(message);
     el.style.color = isError ? '#ffb4b4' : '';
   }
 
@@ -728,7 +739,7 @@
       const enabled = !!(snapshot && snapshot.before && snapshot.after);
       btn.disabled = !enabled;
       const legacy = snapshot && !enabled;
-      btn.title = legacy ? '旧版撤销记录缺少冲突信息，无法安全撤销；原记录保留。' : '';
+      btn.title = legacy ? t('旧版撤销记录缺少冲突信息，无法安全撤销；原记录保留。') : '';
       if (legacy) setStatus(btn.title, true);
       return enabled;
     }, () => {
@@ -746,7 +757,7 @@
       return notice;
     }).then((notice) => {
       if (!notice) return null;
-      if (notice.text) setStatus(notice.text, !!notice.error);
+      if (notice.text) setStatus(noticeMessage(notice), !!notice.error);
       if (typeof callback === 'function') callback(notice);
       return notice;
     });
@@ -757,7 +768,7 @@
       const current = await read(['icons', 'folders', EPOCH_KEY]);
       const materialized = materializeImport(parsed, current);
       if (!materialized.iconCount) {
-        return { ok: false, error: 'empty', message: '备份里没有可导入的图标，现有数据未改动。' };
+        return { ok: false, error: 'empty', message: t('备份里没有可导入的图标，现有数据未改动。') };
       }
       const epoch = current[EPOCH_KEY] || 0;
       const before = stripSecretsFromState({
@@ -775,7 +786,7 @@
         icons: materialized.icons,
         folders: materialized.folders,
         [UNDO_KEY]: { id: generateId(), createdAt: new Date().toISOString(), before, after },
-        [NOTICE_KEY]: { text, canUndo: true }
+        [NOTICE_KEY]: { text, iconCount: materialized.iconCount, groupCount: materialized.groupCount, canUndo: true }
       });
       return { ok: true, format: parsed.format, iconCount: materialized.iconCount, groupCount: materialized.groupCount, message: text };
     });
@@ -802,36 +813,36 @@
   async function loadBookmarkFolders() {
     const permission = await requestOptionalPermission('bookmarks');
     if (!permission.granted) {
-      return { ok: false, denied: true, message: MSG_BOOKMARKS_DENIED };
+      return { ok: false, denied: true, message: t(MSG_BOOKMARKS_DENIED) };
     }
     const api = getChrome();
     if (!api || !api.bookmarks || typeof api.bookmarks.getTree !== 'function') {
-      return { ok: false, denied: true, message: MSG_BOOKMARKS_DENIED };
+      return { ok: false, denied: true, message: t(MSG_BOOKMARKS_DENIED) };
     }
     try {
       const tree = await chromeCall(api.bookmarks.getTree.bind(api.bookmarks), []);
       const folders = flattenBookmarkFolders(tree).filter((folder) => folder.id !== '0');
       return { ok: true, tree, folders };
     } catch (error) {
-      return { ok: false, denied: true, message: MSG_BOOKMARKS_DENIED };
+      return { ok: false, denied: true, message: t(MSG_BOOKMARKS_DENIED) };
     }
   }
 
   function parsedFromBookmarkFolder(tree, folderId) {
     const folders = flattenBookmarkFolders(tree);
     const folder = folders.find((item) => item.id === String(folderId));
-    if (!folder) return { ok: false, error: 'missing', message: '未找到该书签文件夹。' };
+    if (!folder) return { ok: false, error: 'missing', message: t('未找到该书签文件夹。') };
     const groups = [];
     pushGroup(groups, folder.title, collectBookmarkLinks(folder.node));
-    if (!groups.length) return { ok: false, error: 'empty', message: '该文件夹没有可导入的书签，现有数据未改动。' };
+    if (!groups.length) return { ok: false, error: 'empty', message: t('该文件夹没有可导入的书签，现有数据未改动。') };
     return { ok: true, format: 'bookmarks', groups, iconCount: groups[0].icons.length, groupCount: 1 };
   }
 
   function parsedFromTopSites(sites) {
     const sliced = (Array.isArray(sites) ? sites : []).slice(0, TOP_SITES_LIMIT);
     const groups = [];
-    pushGroup(groups, '常用网站', sliced.map((site) => ({ name: site && site.title, url: site && site.url })));
-    if (!groups.length) return { ok: false, error: 'empty', message: '没有可导入的常用网站。' };
+    pushGroup(groups, t('常用网站'), sliced.map((site) => ({ name: site && site.title, url: site && site.url })));
+    if (!groups.length) return { ok: false, error: 'empty', message: t('没有可导入的常用网站。') };
     return { ok: true, format: 'topsites', groups, iconCount: groups[0].icons.length, groupCount: 1 };
   }
 
@@ -839,12 +850,12 @@
     const permission = await requestOptionalPermission('topSites');
     if (!permission.granted) {
       setStatus(MSG_TOPSITES_DENIED, true);
-      return { ok: false, denied: true, message: MSG_TOPSITES_DENIED };
+      return { ok: false, denied: true, message: t(MSG_TOPSITES_DENIED) };
     }
     const api = getChrome();
     if (!api || !api.topSites || typeof api.topSites.get !== 'function') {
       setStatus(MSG_TOPSITES_DENIED, true);
-      return { ok: false, denied: true, message: MSG_TOPSITES_DENIED };
+      return { ok: false, denied: true, message: t(MSG_TOPSITES_DENIED) };
     }
     try {
       const sites = await chromeCall(api.topSites.get.bind(api.topSites), []);
@@ -856,14 +867,14 @@
       return commitImport(parsed);
     } catch (error) {
       setStatus(MSG_TOPSITES_DENIED, true);
-      return { ok: false, denied: true, message: MSG_TOPSITES_DENIED };
+      return { ok: false, denied: true, message: t(MSG_TOPSITES_DENIED) };
     }
   }
 
   function undoFailureMessage(error) {
     return error && error.code === 'WORKSPACE_CONFLICT'
-      ? '导入后相关内容已被修改，无法安全撤销。现有数据未改动。'
-      : '撤销失败，请重试。';
+      ? t('导入后相关内容已被修改，无法安全撤销。现有数据未改动。')
+      : t('撤销失败，请重试。');
   }
 
   async function undoLastImport() {
@@ -872,9 +883,9 @@
       result = await getWorkspace().transaction(async ({ read, write, merge }) => {
         const current = await read(null);
         const snapshot = current[UNDO_KEY];
-        if (!snapshot) return { ok: false, message: '没有可撤销的导入。' };
+        if (!snapshot) return { ok: false, message: t('没有可撤销的导入。') };
         if (!snapshot.before || !snapshot.after) {
-          return { ok: false, error: 'legacy-undo', message: '该导入记录较旧，无法安全撤销。现有数据未改动。' };
+          return { ok: false, error: 'legacy-undo', message: t('该导入记录较旧，无法安全撤销。现有数据未改动。') };
         }
         // Apply only the inverse import delta, preserving later independent edits.
         const merged = merge(snapshot.after, snapshot.before, current);
@@ -896,7 +907,7 @@
       setStatus(result.message, true);
       return result;
     }
-    setStatus('已撤销上次导入。', false);
+    setStatus(t('已撤销上次导入。'), false);
     refreshUndoButton();
     reloadPage();
     return { ok: true };
@@ -910,7 +921,7 @@
     folders.forEach((folder) => {
       const option = document.createElement('option');
       option.value = folder.id;
-      option.textContent = folder.path + '（' + folder.count + '）';
+      option.textContent = t('{path}（{count}）', { path: folder.path, count: folder.count });
       select.appendChild(option);
     });
     row.classList.remove('hidden');
@@ -935,7 +946,7 @@
           }
           bookmarkTree = result.tree;
           fillBookmarkSelect(result.folders);
-          setStatus('请选择要导入的书签文件夹，导入后会成为一个分组。', false);
+          setStatus(t('请选择要导入的书签文件夹，导入后会成为一个分组。'), false);
         }).catch(() => {
           setStatus(MSG_BOOKMARKS_DENIED, true);
         });
@@ -946,7 +957,7 @@
       confirmBtn.addEventListener('click', () => {
         const select = document.getElementById('bookmark-folder-select');
         if (!bookmarkTree || !select || !select.value) {
-          setStatus('请先选择一个书签文件夹。', true);
+          setStatus(t('请先选择一个书签文件夹。'), true);
           return;
         }
         const parsed = parsedFromBookmarkFolder(bookmarkTree, select.value);
@@ -954,7 +965,7 @@
           setStatus(parsed.message, true);
           return;
         }
-        commitImport(parsed).catch(() => setStatus('导入失败，现有数据未改动。', true));
+        commitImport(parsed).catch(() => setStatus(t('导入失败，现有数据未改动。'), true));
       });
     }
 
@@ -998,13 +1009,17 @@
     if (settingsBtn) {
       settingsBtn.addEventListener('click', () => { refreshUndoButton(); });
     }
-    consumeNotice((notice) => { showImportToast(notice); }).catch(() => setStatus('读取导入状态失败，请重试。', true));
+    consumeNotice((notice) => { showImportToast(notice); }).catch(() => setStatus(t('读取导入状态失败，请重试。'), true));
     refreshUndoButton();
   }
 
   if (typeof document !== 'undefined') {
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindUi);
-    else bindUi();
+    const start = () => {
+      if (globalThis.OpenTabI18n) globalThis.OpenTabI18n.ready.then(bindUi);
+      else bindUi();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
   }
 
   return {

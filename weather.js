@@ -1,5 +1,11 @@
 (function (global) {
   'use strict';
+  // Translate only application-owned prose, never stored user content.
+  function t(source, params = {}) {
+    const i18n = typeof globalThis !== 'undefined' && globalThis.OpenTabI18n;
+    return i18n ? i18n.t(source, params) : String(source).replace(/\{(\w+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(params, key) ? String(params[key]) : match);
+  }
+
   const DEFAULTS = { weatherEnabled: false, weatherCity: '', weatherUnit: 'c' };
   const KEYS = Object.keys(DEFAULTS);
   const FRESH_MS = 30 * 60 * 1000;
@@ -30,6 +36,11 @@
       && Number.isFinite(cache?.data?.tempC) && typeof cache?.data?.location === 'string'
       && typeof cache?.data?.description === 'string';
   }
+  function descriptionFor(data) {
+    const preferred = globalThis.OpenTabI18n?.locale === 'en' ? data.descEn : data.descZh;
+    // Provider strings stay verbatim; old caches still have only description.
+    return preferred || data.description || data.descEn || data.descZh || t('天气');
+  }
   function status(message) { $('weather-status').textContent = message; }
   function render(message = '') {
     const active = settings.weatherEnabled && validCity(settings.weatherCity);
@@ -38,14 +49,14 @@
     $('weather-unit').value = settings.weatherUnit;
     $('weather-refresh').disabled = !active || !!controller;
     $('weather-pill').hidden = !active;
-    const data = active && usableCache() ? cache.data : null;
+    const data = active && usableCache() ? { ...cache.data, description: descriptionFor(cache.data) } : null;
     const stale = data && Date.now() - cache.observedAt >= FRESH_MS;
     $('weather-temp').textContent = data ? `${Math.round(settings.weatherUnit === 'f' ? data.tempC * 9 / 5 + 32 : data.tempC)}°${settings.weatherUnit.toUpperCase()}` : '--°';
     $('weather-location-inline').textContent = data ? data.location : settings.weatherCity;
     $('weather-icon').textContent = data?.icon || '☁';
-    $('weather-pill').title = data ? `${data.location} · ${data.description}${stale ? ' · 上次更新' : ''}` : '天气暂不可用';
+    $('weather-pill').title = data ? `${data.location} · ${data.description}${stale ? t(' · 上次更新') : ''}` : t('天气暂不可用');
     $('weather-pill').dataset.stale = String(!!stale);
-    status(message || (!settings.weatherEnabled ? '天气已关闭，不会请求天气或定位。' : !active ? '填写城市后保存，即可显示天气。' : data ? `${stale ? '上次更新' : '已更新'} ${new Date(cache.observedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '暂未获取天气。'));
+    status(message || (!settings.weatherEnabled ? t('天气已关闭，不会请求天气或定位。') : !active ? t('填写城市后保存，即可显示天气。') : data ? `${stale ? t('上次更新') : t('已更新')} ${new Date(cache.observedAt).toLocaleTimeString(globalThis.OpenTabI18n?.locale || [], { hour: '2-digit', minute: '2-digit' })}` : t('暂未获取天气。')));
     onUpdate(data);
   }
   function stop() {
@@ -74,10 +85,12 @@
     else if ([176, 263, 266, 293, 296, 299, 302, 305, 308, 311, 314, 317, 353, 356, 359, 362, 365].includes(code)) { tag = 'rainy'; icon = '☔'; }
     else if ([143, 248, 260].includes(code)) { tag = 'fog'; icon = '🌫'; }
     else if ([116, 119, 122].includes(code)) { tag = 'cloudy'; icon = code === 116 ? '⛅' : '☁'; }
+    const descEn = String(current.weatherDesc?.[0]?.value || '').slice(0, 160);
+    const descZh = String(current.lang_zh?.[0]?.value || '').slice(0, 160);
     return {
-      tempC, tag, icon,
+      tempC, tag, icon, descEn, descZh,
       location: String(data?.nearest_area?.[0]?.areaName?.[0]?.value || settings.weatherCity).slice(0, 120),
-      description: String(current.lang_zh?.[0]?.value || current.weatherDesc?.[0]?.value || '天气').slice(0, 160)
+      description: (globalThis.OpenTabI18n?.locale === 'en' ? descEn : descZh) || descEn || descZh || t('天气')
     };
   }
   async function refresh(force = false) {
@@ -89,8 +102,9 @@
     const request = new AbortController();
     controller = request;
     const timeout = setTimeout(() => request.abort(), 8000);
-    render('正在更新天气…');
+    render(t('正在更新天气…'));
     try {
+      // Request both the provider's base English and Chinese descriptions in one response.
       const response = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh-cn`, { signal: request.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
       if (!response.ok) throw new Error('Weather unavailable');
       const data = parse(await response.json());
@@ -103,7 +117,7 @@
     } catch (_) {
       if (ticket !== revision) return;
       controller = null;
-      render(usableCache() ? '更新失败，显示上次天气。可稍后重试。' : '暂时无法获取天气，请检查城市名称或稍后重试。');
+      render(usableCache() ? t('更新失败，显示上次天气。可稍后重试。') : t('暂时无法获取天气，请检查城市名称或稍后重试。'));
     } finally {
       clearTimeout(timeout);
       if (ticket === revision) { controller = null; schedule(); }
@@ -121,7 +135,7 @@
     } catch (_) {
       if (settings === chosen) {
         settings = previous;
-        render('设置未能保存，请重试。');
+        render(t('设置未能保存，请重试。'));
         schedule();
       }
       return;
@@ -136,7 +150,7 @@
     onUpdate = options.onUpdate || onUpdate;
     let stored;
     try { stored = await chrome.storage.local.get([...KEYS, 'weatherCache']); }
-    catch (_) { render('无法读取天气设置，请重新打开新标签页。'); return; }
+    catch (_) { render(t('无法读取天气设置，请重新打开新标签页。')); return; }
     settings = normalize(stored);
     cache = stored.weatherCache || null;
     $('weather-enabled').addEventListener('change', () => replaceSettings({ ...settings, weatherEnabled: $('weather-enabled').checked }));
@@ -144,7 +158,7 @@
     $('weather-city-form').addEventListener('submit', (event) => {
       event.preventDefault();
       const city = $('weather-city').value.trim();
-      if (!validCity(city)) { status('请输入有效城市名称，例如「上海」或「London」。'); $('weather-city').focus(); return; }
+      if (!validCity(city)) { status(t('请输入有效城市名称，例如「上海」或「London」。')); $('weather-city').focus(); return; }
       replaceSettings({ ...settings, weatherCity: city });
     });
     $('weather-refresh').addEventListener('click', () => refresh(true));

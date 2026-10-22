@@ -58,7 +58,7 @@ function harness(options = {}) {
       DEFAULT_BACKGROUND: { type: 'gradient', value: 'default-gradient', source: 'gradient' }
     }
   };
-  vm.createContext(g); vm.runInContext(resetCode, g);
+  g.t = (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(g); vm.runInContext(resetCode, g);
   return {
     state, store, writes, toasts, moduleWrites, api, connection, syncCheckbox,
     reset: (section) => vm.runInContext(`resetWithConfirm(${JSON.stringify(section)})`, g),
