@@ -975,12 +975,30 @@
     };
   }
 
+  // Only shipped tools can resolve. Legacy records remain available for
+  // backup/edit/delete without being silently redirected to another tool.
+  function targetHref(icon, type, getURL) {
+    if (type === 'ssh') {
+      return icon.sshGatewayUrl && icon.sshGatewayToken && icon.sshHost && icon.sshUsername
+        ? getURL(`ssh_terminal.html?iconId=${encodeURIComponent(icon.id)}`) : '';
+    }
+    if (type === 'tool') {
+      return (icon.toolSubtype || 'json-format') === 'json-format' ? getURL('tool.html?tool=json-format') : '';
+    }
+    try {
+      const parsed = new URL(icon.url || '');
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return icon.url;
+    } catch (error) { /* invalid */ }
+    return '';
+  }
+
   function init(nextHost) {
     host = Object.assign(host, nextHost || {});
     if (typeof document !== 'undefined') bindChanger();
   }
 
   return {
+    targetHref,
     LIBRARY,
     MAX_ICON_PX,
     MAX_ICON_BYTES,

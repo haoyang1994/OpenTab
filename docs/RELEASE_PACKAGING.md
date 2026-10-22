@@ -26,7 +26,7 @@ old file for the output of a failed build.
 
 ZIP entries are the sorted, individually reviewed paths in
 `scripts/release-files.json`, not a recursive copy of the checkout. The current
-baseline has 101 entries: extension pages/scripts/styles, manifest, icons and
+baseline has 99 entries: extension pages/scripts/styles, manifest, icons and
 catalog, default wallpapers, browser libraries, both Chrome message locales,
 three application translation bundles, and redistribution licenses/notices.
 `vendor/README.md` records the actual vendored dependency versions. Package
@@ -78,8 +78,8 @@ The separate packaged smoke requires the existing Playwright installation and
 Chromium. On Linux without a display it uses `xvfb-run`, matching the normal
 headed MV3 strategy. It builds the candidate in `dist/` and extracts a temporary copy, loads **only
 the extracted directory**, checks the installed service worker and manifest,
-opens all five extension pages, verifies actual extension-document identity and
-clock/i18n/vendor initialization, and exercises the JSON/FIX buttons with synthetic
+opens all four extension pages, verifies actual extension-document identity and
+clock/i18n/vendor initialization, and exercises the JSON buttons with synthetic
 fixtures. It accepts a nullable navigation Response only alongside the correct
 loaded document, and rejects console/page errors or missing extension resources.
 The SSH page checks terminal initialization and its expected missing-parameter

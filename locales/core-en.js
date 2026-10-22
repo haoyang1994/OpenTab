@@ -1,5 +1,6 @@
 // Core interface copy. User content and network responses are never dictionary keys.
 OpenTabI18n.register({
+  "此工具已移除，快捷方式数据仍保留": "This tool was removed. Your shortcut data is preserved.",
   "标记为未完成": "Mark incomplete",
   "标记为已完成": "Mark complete",
   "删除待办：{name}": "Delete to-do: {name}",

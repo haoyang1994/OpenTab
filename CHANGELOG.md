@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Remove the independent FIX parser and its creation entry points. Existing shortcut records remain intact and show an unavailable-tool message instead of navigating to a different tool.
+
 - Update only the locked versions of `ws` (8.20.0 → 8.22.0), `ip-address` (10.1.0 → 10.7.4), and `brace-expansion` (1.1.15 → 1.1.21) within existing dependency ranges, addressing the three affected packages reported by the 2026-10-22 npm audit.
 - Keep the gateway, extension assets, permissions, dependency ranges, and packaging unchanged; updated tarballs resolve through the official npm registry.
 - Check the installed dependency tree with `npm audit --audit-level=high` in CI, alongside the full existing test suite.
@@ -26,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Weather unit and mocked-network extension regressions for opt-in privacy, storage failures, cross-tab units and cancelled/late requests.
 
 ### Fixed
+
+- Let Tab and Shift+Tab leave the JSON input without changing its contents; keep two-space indentation on the visible Ctrl+] shortcut, with composition/modifier guards and labelled input/output fields.
 
 - Release native Tab/Shift+Tab navigation from the search input instead of trapping focus. Engine cycling moves to Alt+Down/Up, with localized hints and IME/modifier guards.
 

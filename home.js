@@ -337,24 +337,7 @@
   }
 
   function getIconHref(icon) {
-    const iconType = normalizeIconType(icon.type);
-    if (iconType === ICON_TYPE_SSH) {
-      return isSshConfigComplete(icon) ? chrome.runtime.getURL(`ssh_terminal.html?iconId=${encodeURIComponent(icon.id)}`) : '';
-    }
-    if (iconType === ICON_TYPE_TOOL) {
-      const toolType = icon.toolSubtype || 'json-format';
-      const file = toolType === 'fix-parser' ? 'fixparser.html' : 'tool.html';
-      return chrome.runtime.getURL(`${file}?tool=${encodeURIComponent(toolType)}`);
-    }
-    try {
-      const parsed = new URL(icon.url || '');
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return icon.url;
-    } catch (error) { /* invalid */ }
-    return '';
-  }
-
-  function isSshConfigComplete(icon) {
-    return Boolean(icon.sshGatewayUrl && icon.sshGatewayToken && icon.sshHost && icon.sshUsername);
+    return OpenTabIcons.targetHref(icon, normalizeIconType(icon.type), path => chrome.runtime.getURL(path));
   }
 
   function navigateTo(url) {
@@ -364,6 +347,7 @@
   }
 
   function disabledIconToast(icon) {
+    if (normalizeIconType(icon.type) === ICON_TYPE_TOOL) return t('此工具已移除，快捷方式数据仍保留');
     return normalizeIconType(icon.type) === ICON_TYPE_SSH ? t('SSH 配置不完整，请先编辑这个图标') : t('网址无效，请编辑');
   }
 
@@ -1497,7 +1481,8 @@
     const rawSshSocksPort = elements.sshSocksPort.value.trim();
     const rawSshSocksUsername = elements.sshSocksUsername.value.trim();
     const rawSshSocksPassword = elements.sshSocksPassword.value;
-    const toolSubtype = elements.toolSubtype.value;
+    // Retain removed tool metadata unless the user explicitly selects JSON.
+    const toolSubtype = elements.toolSubtype.value || (editingIconId ? state.icons.find(item => item.id === editingIconId)?.toolSubtype : '') || 'json-format';
     const folderId = state.currentFolderId || HOME_FOLDER_ID;
 
     if (!name) {

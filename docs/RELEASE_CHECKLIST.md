@@ -36,3 +36,9 @@
 3. `npm run package:release`，检查打印的 SHA-256 和 ZIP 内容。
 4. `npm run test:package:smoke`，用解压后的 ZIP 完成真实 MV3 验证。
 5. 保留 LICENSE / NOTICE；打包不代表已签名、上传、发布或通过商店审核。
+
+## 高级工具安全回归
+
+- FIX 工具与新增入口不再打包；既有快捷方式数据保留，点击时明确提示工具已移除。
+- JSON：原生 Tab / Shift+Tab 离开输入框且不改变内容或选区；Ctrl+] 插入两个空格。
+- `npm run test:tools` 覆盖实际处理函数，解压 ZIP 的 MV3 测试覆盖真实 DOM 和键盘路径。

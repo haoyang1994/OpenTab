@@ -33,10 +33,18 @@ const json = loadTool('tool.js');
 json('input-area').value = '{"packaged":true}';
 json('format-btn').handlers.click();
 assert.deepEqual(JSON.parse(json('output-area').value), { packaged: true });
-const fix = loadTool('fixparser.js');
-fix('input-area').value = '8=FIX.4.4|35=0|10=000|';
-fix('parse-btn').handlers.click();
-assert.match(fix('timeline-container').innerHTML, /class="timeline-item selected"/);
-assert.match(fix('timeline-container').innerHTML, />Heartbeat</);
-assert.match(fix('detail-container').innerHTML, /FIX\.4\.4/);
-console.log('Package navigation tests passed: nullable response, wrong-document negatives and actual JSON/FIX fixtures');
+console.log('Package navigation tests passed: nullable response, wrong-document negatives and actual JSON fixture');
+
+// Execute the actual shortcut resolver: legacy records are retained, never
+// redirected to JSON or a missing packaged page. No storage mutation is involved.
+const sandbox = { module: { exports: {} }, URL };
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(new URL('../icons.js', import.meta.url), 'utf8'), sandbox);
+const href = icon => sandbox.module.exports.targetHref(icon, icon.type, path => `chrome-extension://${id}/${path}`);
+const old = { id: 'legacy', type: 'tool', toolSubtype: 'fix-parser', name: 'My FIX shortcut' };
+const snapshot = JSON.stringify(old);
+assert.equal(href(old), '');
+assert.equal(JSON.stringify(old), snapshot);
+assert.equal(href({ type: 'tool', toolSubtype: 'json-format' }), `chrome-extension://${id}/tool.html?tool=json-format`);
+assert.equal(href({ type: 'url', url: 'https://example.com/' }), 'https://example.com/');
+assert.ok(!fs.readFileSync(new URL('../home.html', import.meta.url), 'utf8').includes('value="fix-parser"'));

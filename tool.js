@@ -88,7 +88,10 @@ inputArea.addEventListener('input', () => {
 });
 
 inputArea.addEventListener('keydown', (e) => {
-  if (e.key === 'Tab') {
+  if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+  // Tab and Shift+Tab retain native focus navigation. Keep the existing
+  // two-space insertion on an explicit editor-only shortcut instead.
+  if (e.key === ']' && e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
     e.preventDefault();
     const start = inputArea.selectionStart;
     const end = inputArea.selectionEnd;
