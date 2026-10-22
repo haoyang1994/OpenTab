@@ -1952,7 +1952,7 @@
   OpenTabBingCache.init({
     state,
     elements,
-    saveState,
+    showToast,
     writeBootMirror,
     DEFAULT_GRADIENT,
     isVideoBackground

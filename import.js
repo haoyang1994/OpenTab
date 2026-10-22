@@ -298,17 +298,24 @@
   }
 
   async function applyOpenTabBackup(rawPayload) {
-    const current = await storageLocalGet(backupStateKeys(true));
-    const writePayload = mergeBackupPayload(rawPayload, current);
-    Object.keys(writePayload).forEach((key) => {
-      if (writePayload[key] === undefined) delete writePayload[key];
-    });
-    if (Array.isArray(writePayload.icons) && typeof OpenTabFolders !== 'undefined' && OpenTabFolders.repairIconGraph) {
-      OpenTabFolders.repairIconGraph(writePayload.icons);
+    const resumeBackground = typeof OpenTabBingCache !== 'undefined' && OpenTabBingCache.suspendUpdates
+      ? OpenTabBingCache.suspendUpdates() : null;
+    try {
+      const current = await storageLocalGet(backupStateKeys(true));
+      const writePayload = mergeBackupPayload(rawPayload, current);
+      Object.keys(writePayload).forEach((key) => {
+        if (writePayload[key] === undefined) delete writePayload[key];
+      });
+      if (Array.isArray(writePayload.icons) && typeof OpenTabFolders !== 'undefined' && OpenTabFolders.repairIconGraph) {
+        OpenTabFolders.repairIconGraph(writePayload.icons);
+      }
+      await storageLocalSet(writePayload);
+      reloadPage();
+      return writePayload;
+    } catch (error) {
+      if (resumeBackground) resumeBackground();
+      throw error;
     }
-    await storageLocalSet(writePayload);
-    reloadPage();
-    return writePayload;
   }
 
   async function handleDownloadBackup() {
