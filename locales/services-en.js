@@ -2,6 +2,7 @@
 (function (root) {
   'use strict';
   root.OpenTabI18n.register({
+  "已移动 {count} 个网站": "Moved {count} websites",
   "网址不能包含空白、控制字符或反斜杠。": "URLs cannot contain whitespace, control characters or backslashes.",
   "仅支持 HTTP 或 HTTPS 网址。": "Only HTTP and HTTPS URLs are supported.",
   "网址格式无效，请填写完整网址或域名。": "Invalid URL. Enter a full URL or domain name.",

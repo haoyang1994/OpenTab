@@ -21,6 +21,8 @@ The shortcut add/edit dialog waits for its storage commit before closing. Shortc
 
 No new extension permission or remote service is required. Existing storage data remains readable. The existing SSH-secret vault/storage wrapper remains responsible for encrypting secrets and excluding them from sync and exported backups. SSH passwords and gateway/proxy secrets are separate from the workspace metadata comparison: concurrent secret-only edits retain the vault’s existing last-successful-save behavior. This change does not add collaborative credential editing.
 
+Bulk site moves also validate unchanged dependencies, such as the selected destination and source-folder membership, against the latest snapshot while holding the same lock. A changed destination cannot silently accept an old move request. Failed preconditions use the normal conflict/recovery path without writing a partial move.
+
 ## Regression coverage
 
 `tests/workspace-persistence.test.mjs` exercises merge rules and failure behavior without a browser. `tests/workspace.test.mjs` uses real extension pages and persistent Chromium storage: concurrent additions/renames, stale settings, deletion, same-item conflicts, explicit restore, stale dialogs and undo after an intermediate setting save, explicit inline-rename cancellation, delete/import/sync undo, popup/home additions and closing a lock owner. Assertions check persisted data and reload, not only optimistic UI state. All URLs and data in these tests are synthetic.

@@ -123,7 +123,9 @@
       <div id="group-tabs-bar" class="group-tabs-bar">
         <div id="group-tabs" class="group-tabs" role="tablist" aria-label="分组" data-i18n-aria-label="分组"></div>
         <button id="add-group-btn" class="group-add-btn" type="button" title="新建分组" data-i18n-title="新建分组" aria-label="新建分组" data-i18n-aria-label="新建分组">+</button>
+        <button id="select-sites" class="site-selection-entry" type="button" data-select-sites data-i18n="选择网站">选择网站</button>
       </div>
+      <div id="site-selection-toolbar" class="site-selection-toolbar" role="region" aria-label="选择网站" data-i18n-aria-label="选择网站" hidden></div>
       <div id="icons-container"></div>
       <div id="icons-empty-hint" class="icons-empty-hint hidden"><p data-i18n="点击 + 添加常用网站，或在空白处右键">点击 + 添加常用网站，或在空白处右键</p><button id="empty-paste-sites" class="site-list-entry" type="button" data-i18n="粘贴网址，批量添加">粘贴网址，批量添加</button></div>
       <div id="drag-live" class="sr-only" aria-live="polite"></div>
@@ -284,9 +286,21 @@
       <div id="folder-overlay-backdrop" class="folder-overlay-backdrop"></div>
       <div id="folder-panel" class="folder-panel" role="dialog" aria-modal="true" aria-labelledby="folder-title-input">
         <input id="folder-title-input" class="folder-title-input" type="text" maxlength="24" aria-label="文件夹名称" data-i18n-aria-label="文件夹名称">
+        <button id="folder-select-sites" class="site-selection-entry" type="button" data-select-sites data-i18n="选择网站">选择网站</button>
         <div id="folder-icons-container" class="folder-icons-container"></div>
       </div>
     </div>
+
+    <dialog id="site-selection-dialog" class="site-selection-dialog" aria-labelledby="site-selection-title" aria-describedby="site-selection-error">
+      <h2 id="site-selection-title" data-i18n="移动选中的网站">移动选中的网站</h2>
+      <label for="site-selection-destination" data-i18n="选择已有分组或文件夹">选择已有分组或文件夹</label>
+      <select id="site-selection-destination"></select>
+      <p id="site-selection-error" role="status" aria-live="polite"></p>
+      <div class="site-selection-dialog-actions">
+        <button id="site-selection-dialog-cancel" type="button" data-i18n="取消">取消</button>
+        <button id="site-selection-confirm" type="button" data-i18n="移动">移动</button>
+      </div>
+    </dialog>
 
     <div id="inline-dialog" class="inline-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="inline-dialog-message">
       <p id="inline-dialog-message" class="inline-dialog-message"></p>
@@ -728,6 +742,7 @@
   <script src="weather.js"></script>
   <script src="lib/core-accessibility.js"></script>
   <script src="command-palette.js"></script>
+  <script src="site-selection.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

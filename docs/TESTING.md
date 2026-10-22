@@ -227,3 +227,7 @@ for the intentionally excluded standalone developer-tool pages.
 `tests/core-accessibility-unit.test.mjs` covers hidden-surface CSS and focus restoration, including re-rendered shortcut openers. `tests/icons.test.mjs` executes the actual Save/upload/close handlers with delayed image reads: fresh and replacement images, failure/retry, duplicate Save, newer files, and cancelled/reopened drafts.
 
 `tests/accessibility.test.mjs` runs real Chromium MV3 keyboard navigation, native file selection, persisted image saves and timezone selection. It checks computed foreground/background compositing for core panel hints in light and dark themes, captures wide/600px screenshots, and retains all existing regression suites and startup budgets. This is targeted verification, not a claim of complete WCAG conformance or readability over every user wallpaper. Existing canvas particles are not yet governed by reduced-motion preference; CSS transitions already are.
+
+## 批量整理网站
+
+`tests/bulk-site-move-unit.test.mjs` 和 `tests/site-selection-unit.test.mjs` 覆盖单次保存、位置与顺序、文件夹解散、锁内目标与来源校验、失败及逆向撤销。`tests/site-selection.test.mjs` 使用真实扩展页面验收选择/取消、原生键盘与鼠标不误开链接、分组/文件夹移动与持久化、冲突、撤销及中英文浅深窄屏。既有所有验收与首屏预算保持不变。

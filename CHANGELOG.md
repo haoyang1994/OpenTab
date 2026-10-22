@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Select multiple websites in the current view and move them to an existing group or folder with a single durable save and conflict-safe Undo. No new permissions or requests.
+
 - Preview pasted URL lists locally before adding them to an existing group, with target-scoped deduplication, per-line feedback, a first-use entry, and the existing conflict-safe last-import Undo.
 
 - Cmd+K on Mac and Ctrl+K on Windows/Linux open the dedicated quick-launch dialog on an active new-tab page, with a platform hint and Escape focus restoration; active drafts and IME input are not intercepted.

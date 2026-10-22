@@ -184,6 +184,29 @@ for (const [platform, modifier, other] of [['macOS', 'metaKey', 'ctrlKey'], ['Wi
   h.window.OpenTabSiteList.isBusy = () => false;
   assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, true, 'failed or finished import releases the shortcut gate');
   h.press('Escape');
+  let selecting = true, pending = false, canceled = 0;
+  const checkbox = h.add('input', 'selected-site-checkbox');
+  checkbox.setAttribute('type', 'checkbox'); checkbox.classList.add('site-selection-checkbox');
+  h.window.OpenTabSiteSelection = {
+    isActive: () => selecting, isPending: () => pending,
+    containsTarget: node => node === checkbox,
+    cancel() { canceled++; selecting = false; h.opener.focus(); }
+  };
+  checkbox.focus(); pending = true;
+  assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, false);
+  assert.equal(canceled, 0, 'a pending move cannot be cancelled by opening the launcher');
+  pending = false;
+  const moveDialog = h.add('dialog', 'site-selection-dialog'); moveDialog.open = true;
+  assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, false);
+  assert.equal(canceled, 0, 'destination dialog retains its draft');
+  moveDialog.open = false;
+  assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, true);
+  assert.equal(canceled, 1); assert.equal(selecting, false);
+  h.press('Escape'); assert.equal(h.document.activeElement, h.opener, 'selection teardown gives the launcher a stable opener');
+  selecting = true;
+  const unrelated = h.add('input', 'unrelated-selection-draft'); unrelated.value = 'preserve'; unrelated.focus();
+  assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, false);
+  assert.equal(canceled, 1); assert.equal(unrelated.value, 'preserve');
 }
 
 {
