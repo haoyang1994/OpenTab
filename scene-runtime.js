@@ -18,6 +18,10 @@
     const controllerAPI = root.OpenTabSceneController, commandAPI = root.OpenTabSceneWorkspace;
     if (!state || !workspace?.save || !coordinator?.read || !schema?.validate || !controllerAPI?.create
       || !commandAPI?.create || typeof applyLoadedState !== 'function') throw new TypeError('Scene runtime adapters are required.');
+    // Loading needs the complete graph/settings, not unrelated recovery blobs.
+    // Migration and destructive recovery still read all storage under the lock.
+    const loadKeys = [...new Set([...coordinator.KEYS, ...LAYOUT_KEYS])];
+    const initialMarks = new Set();
     let controller = null, manager = null, commands = null, initialized = false, disposed = false, blocked = false, applyingValidatedState = false, deferredView = false;
     let loadPending = null, enablePending = null, refreshQueued = false, refreshAfterEnable = false, refreshAfterLoad = false, blockedAdapters = false, committedProfiles = [];
     let entry = null, introduction = null, status = null, retry = null, recovery = null, settingsButton = null, discardButton = null, enable = null, lastError = null, discardPending = false;
@@ -32,6 +36,11 @@
       return !!expected && !!current && ['sceneId', 'generation'].every(key => expected[key] === current[key])
         && ['homeGroupId', 'currentFolderId'].every(key => expected[key] === undefined || expected[key] === current[key]);
     };
+    function markInitial(phase) {
+      if (initialized || initialMarks.has(phase)) return;
+      initialMarks.add(phase);
+      try { root.performance?.mark('opentab:initial-' + phase); } catch (_) {}
+    }
     function protocol(raw) {
       if (Object.hasOwn(raw, schema.SCHEMA_KEY) || Object.hasOwn(raw, 'scenes') || Object.hasOwn(raw, 'sceneProfiles')
         || ['folders', 'icons', 'todos'].some(key => Array.isArray(raw[key]) && raw[key].some(item => item && Object.hasOwn(item, 'sceneId')))) {
@@ -233,9 +242,10 @@
     async function applyValidated(projected, raw) {
       // The validated raw baseline is ready before synchronous loader callbacks
       // normalize and save legacy values. No load-dependent queue or deadlock.
+      markInitial('loader-start');
       workspace.seed(raw); applyingValidatedState = true;
       try { await applyLoadedState(projected, raw); }
-      finally { applyingValidatedState = false; }
+      finally { applyingValidatedState = false; markInitial('loader-end'); }
     }
     async function loaded(projected, raw) {
       if (disposed) return;
@@ -292,9 +302,13 @@
       if (!initialized) { setReady(false); failClosedAdapters(); }
       const pending = (async () => {
         try {
-          const raw = await coordinator.read(null);
+          markInitial('read-start');
+          const raw = await coordinator.read(loadKeys);
+          markInitial('read-end');
           if (disposed) return false;
-          if (protocol(raw)) {
+          const usesScenes = protocol(raw);
+          markInitial('validated');
+          if (usesScenes) {
             // Another tab can enable scenes while this legacy page is editing.
             // Do not normalize a new protocol underneath that captured draft.
             if (initialized && !canSwitch()) throw fail('SCENE_DIRTY_DRAFT');

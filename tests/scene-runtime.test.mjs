@@ -7,6 +7,9 @@ const Schema = require('../scene-schema.js');
 const Workspace = require('../workspace-persistence.js');
 const Commands = require('../scene-workspace.js');
 const Controller = require('../scene-controller.js');
+const Layout = require('../layout.js');
+const loadKeys = [...new Set([...Workspace.KEYS, ...Layout.STORAGE_KEYS])];
+const loadSnapshot = raw => Object.fromEntries(Object.entries(raw).filter(([key]) => loadKeys.includes(key)));
 const copy = structuredClone;
 const source = name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 const flush = () => new Promise(setImmediate);
@@ -43,12 +46,13 @@ function documentStub() {
   return { doc, mount: doc.body.appendChild(new Element('div')) };
 }
 function harness(initial = seed()) {
-  const store = copy(initial), writes = [], preferences = memory(), listeners = new Set();
+  const store = copy(initial), writes = [], reads = [], preferences = memory(), listeners = new Set();
   let nextFailure = null, nextRead = null, nextWrite = null;
   const chrome = { runtime: {}, storage: { onChanged: {
     addListener: listener => listeners.add(listener), removeListener: listener => listeners.delete(listener)
   }, local: {
     get(keys, callback) {
+      reads.push(copy(keys));
       const value = copy(keys === null ? store : Object.fromEntries(keys.filter(key => Object.hasOwn(store, key)).map(key => [key, store[key]])));
       if (nextRead) { const hook = nextRead; nextRead = null; hook(); }
       if (callback) { queueMicrotask(() => callback(value)); return; }
@@ -62,13 +66,14 @@ function harness(initial = seed()) {
   } } };
   const coordinator = Workspace.forChrome(chrome);
   function tab({ session = memory(), plainSecretMigration, onDiscardDraft } = {}) {
-    const { doc, mount } = documentStub(), loadStatuses = [], state = copy(initial), loads = [], errors = [], mirrors = [], undo = [], bingHost = {};
+    const { doc, mount } = documentStub(), loadStatuses = [], state = copy(initial), loads = [], errors = [], mirrors = [], undo = [], bingHost = {}, marks = [];
     let runtime, managerHost, provider, reloader, layoutAdapter, id = 0, dirty = false, invalidations = 0, visibleRenders = 0, opens = 0, reloads = 0, migrations = 0, loadHook;
     const bridge = coordinator.connect({ state, getViewIdentity: () => runtime?.getView(),
       onChange() { runtime?.syncVisibleAppearance(); visibleRenders++; }, onError(error) { errors.push(error); },
       onSaved(raw) { runtime.noteCommitted(raw); mirrors.push(copy(g.OpenTabLayout.bootMirrorSlice())); }
     });
     const g = { console, structuredClone, queueMicrotask, setTimeout, clearTimeout, AbortController, TextEncoder, URL, chrome,
+      performance: { mark: name => marks.push(name) },
       crypto: { randomUUID: () => `generated-${++id}` }, sessionStorage: session, localStorage: preferences,
       location: { reload() { reloads++; } },
       OpenTabWorkspace: coordinator, OpenTabSceneSchema: Schema, OpenTabSceneWorkspace: Commands, OpenTabSceneController: Controller,
@@ -95,20 +100,70 @@ function harness(initial = seed()) {
       }, showToast(text, options) { errors.push(text); if (options?.onAction) undo.push(options.onAction); },
       onDiscardDraft, onLoadStatus: value => loadStatuses.push(value), beforeSwitch: () => !dirty, onInvalidate: () => invalidations++, renderVisible: () => visibleRenders++
     });
-    return { runtime, g, state, session, doc, loadStatuses, mount, bridge, bingHost, loads, errors, mirrors, undo,
+    return { runtime, g, state, session, doc, loadStatuses, mount, bridge, bingHost, loads, errors, mirrors, undo, marks,
       get host() { return managerHost; }, get layoutAdapter() { return layoutAdapter; }, get provider() { return provider; }, get reloader() { return reloader; },
       get opens() { return opens; }, get reloads() { return reloads; }, get migrations() { return migrations; },
       get invalidations() { return invalidations; }, get visibleRenders() { return visibleRenders; },
       setDirty(value) { dirty = value; }, setLoadHook(hook) { loadHook = hook; }
     };
   }
-  return { store, writes, listeners, coordinator, tab,
+  return { store, writes, reads, listeners, coordinator, tab,
     failNext(error = new Error('quota')) { nextFailure = error; },
     onNextRead(fn) { nextRead = fn; }, onNextWrite(fn) { nextWrite = fn; },
     emit(changes, area = 'local') { listeners.forEach(listener => listener(changes, area)); }
   };
 }
 const context = tab => ({ view: tab.runtime.getView() });
+
+// Startup reads exactly the complete graph and all home/layout settings, never
+// unrelated upload/recovery/vault blobs. Those remain available to full migration.
+{
+  const initial = { ...legacy(), clockFormat: '24h', showSeconds: true, uiOpacity: 44, uiBlur: 3,
+    iconFrameEnabled: false, openInNewTab: true, timezone: 'UTC', bingIndex: 2, themeMode: 'light',
+    accentHue: 140, particlesEnabled: false, gradientFlow: false, minimalMode: true,
+    todoButtonVisible: false, todoPanelOpen: true, layoutIconSize: 80, layoutColumns: 6,
+    layoutShowNames: false, layoutMaxWidth: 1100, [Workspace.EPOCH_KEY]: 7,
+    unrelatedUpload: { data: 'x'.repeat(512 * 1024) }, existingSnapshots: [{ intact: true }] };
+  initial.icons[0].futureLocalField = { retained: true };
+  const h = harness(initial), a = h.tab(), before = copy(h.store);
+  assert.equal(await a.runtime.load(), true);
+  assert.deepEqual([...h.reads[0]].sort(), [...loadKeys].sort(), 'one locked startup read requests the exact complete loader key set');
+  assert.equal(h.reads.length, 1);
+  for (const key of [...source('scene-home.js').matchAll(/\bresult\.([A-Za-z]\w*)/g)].map(match => match[1])) {
+    assert.ok(h.reads[0].includes(key), 'actual home loader field must be read: ' + key);
+  }
+  for (const key of [Schema.SCHEMA_KEY, 'scenes', 'sceneProfiles', 'icons', 'folders', 'todos', 'lastOpenedSceneId', Workspace.EPOCH_KEY, ...Layout.STORAGE_KEYS]) {
+    assert.ok(h.reads[0].includes(key), 'schema/selection/appearance discriminant must not be omitted: ' + key);
+  }
+  assert.deepEqual(a.loads[0].raw, loadSnapshot(before));
+  assert.equal(Object.hasOwn(a.loads[0].raw, 'unrelatedUpload'), false);
+  assert.equal(Object.hasOwn(a.loads[0].raw, 'existingSnapshots'), false);
+  assert.deepEqual(h.store, before); assert.equal(h.writes.length, 0);
+  assert.deepEqual(a.marks, ['read-start', 'read-end', 'validated', 'loader-start', 'loader-end'].map(name => 'opentab:initial-' + name));
+  await a.runtime.load(); assert.equal(a.marks.length, 5, 'later reloads do not accumulate startup marks');
+  await a.runtime.openManager(); a.mount.find('enable').click();
+  await until(() => a.runtime.isActive() && a.opens === 1);
+  assert.ok(h.reads.includes(null), 'explicit migration still obtains full storage');
+  assert.deepEqual(h.store[Commands.BACKUP_KEY].data.unrelatedUpload, before.unrelatedUpload);
+  assert.deepEqual(h.store[Commands.BACKUP_KEY].data.existingSnapshots, before.existingSnapshots);
+  assert.deepEqual(h.store.unrelatedUpload, before.unrelatedUpload);
+}
+
+// Omitting recovery blobs from the display read must not hide a migration block.
+{
+  const initial = { ...legacy(), [Commands.BACKUP_KEY]: { reason: 'existing recovery', data: { retained: true } } };
+  const h = harness(initial), a = h.tab(); assert.equal(await a.runtime.load(), true);
+  assert.equal(h.reads[0].includes(Commands.BACKUP_KEY), false);
+  await a.runtime.openManager(); a.mount.find('enable').click(); await until(() => a.errors.length > 0);
+  assert.equal(a.runtime.isActive(), false); assert.deepEqual(h.store, initial); assert.equal(h.writes.length, 0);
+  assert.ok(h.reads.includes(null), 'migration checks the full current recovery state');
+}
+
+// Diagnostic instrumentation is optional and cannot break loading.
+{
+  const h = harness(legacy()), a = h.tab(); a.g.performance.mark = () => { throw new Error('trace unavailable'); };
+  assert.equal(await a.runtime.load(), true); assert.equal(h.writes.length, 0);
+}
 
 // Unresolved initial storage cannot use the legacy wallpaper/layout mutation paths.
 {
@@ -120,6 +175,22 @@ const context = tab => ({ view: tab.runtime.getView() });
   gate.resolve(); await held; assert.equal(await loading, true);
   assert.equal(typeof a.bingHost.getSceneView, 'undefined'); assert.equal(a.loadStatuses.at(-1), true);
   assert.equal(h.writes.length, 0);
+}
+
+// A startup queued behind a migration reads the committed v2 graph, not a
+// pre-lock legacy projection, while preserving the full recovery record.
+{
+  const h = harness(legacy()), a = h.tab(), gate = deferred(), started = deferred();
+  const migrating = h.coordinator.transaction(async ({ read, write }) => {
+    const raw = await read(null); started.resolve(); await gate.promise;
+    await write({ ...Schema.migrateLegacy(raw), [Commands.BACKUP_KEY]: { data: raw } });
+  });
+  await started.promise; const loading = a.runtime.load(); await flush();
+  assert.equal(a.loads.length, 0, 'startup still waits for the shared transaction lock');
+  gate.resolve(); await migrating; assert.equal(await loading, true);
+  assert.equal(a.runtime.isActive(), true); assert.equal(a.loads[0].raw[Schema.SCHEMA_KEY], 2);
+  assert.deepEqual(h.store[Commands.BACKUP_KEY].data, legacy());
+  assert.equal(h.writes.length, 1, 'only the migration writes');
 }
 
 // Validated loader normalization can save synchronously without awaiting its own load.
@@ -140,7 +211,7 @@ for (const active of [false, true]) {
   const h = harness(legacy()), a = h.tab(), before = copy(h.store);
   assert.equal(a.provider, undefined); assert.equal(typeof a.bingHost.getSceneView, 'undefined');
   assert.equal(await a.runtime.load(), true); assert.equal(a.runtime.isActive(), false);
-  assert.equal(a.loads.length, 1); assert.deepEqual(a.loads[0].projected, before);
+  assert.equal(a.loads.length, 1); assert.deepEqual(a.loads[0].projected, loadSnapshot(before));
   assert.equal(await a.runtime.openManager(), true);
   assert.equal(a.mount.find('enable').parentElement.hidden, false);
   assert.equal(a.migrations, 0); assert.deepEqual(h.store, before); assert.equal(h.writes.length, 0);
@@ -182,8 +253,11 @@ for (const mode of ['dirty', 'write', 'vault']) {
 }
 
 // Unsupported or partial data never enters the normalizer or obtains a save baseline.
-for (const broken of [{ ...legacy(), [Schema.SCHEMA_KEY]: 99 }, { ...legacy(), scenes: [] },
-  { ...legacy(), folders: [{ id: 'folder-home', name: 'Home', sceneId: 'orphan' }] }]) {
+for (const broken of [{ ...legacy(), [Schema.SCHEMA_KEY]: 99 }, { ...legacy(), [Schema.SCHEMA_KEY]: null },
+  { ...legacy(), scenes: [] }, { ...legacy(), sceneProfiles: [] },
+  { ...legacy(), folders: [{ id: 'folder-home', name: 'Home', sceneId: 'orphan' }] },
+  { ...legacy(), icons: [{ ...legacy().icons[0], sceneId: 'orphan' }] },
+  { ...legacy(), todos: [{ ...legacy().todos[0], sceneId: 'orphan' }] }]) {
   const h = harness(broken), a = h.tab();
   assert.equal(await a.runtime.load(), false); assert.equal(a.loads.length, 0);
   assert.equal(await a.runtime.saveState(), false); assert.equal(await a.runtime.openManager(), false);

@@ -97,14 +97,34 @@ async function viewIs(p, sceneId, groupId) {
     return view?.sceneId === sceneId && (!groupId || view.currentFolderId === groupId);
   }, { sceneId, groupId });
 }
-async function click(p, selector, options) {
+async function targetFailure(p, selector, stage) {
+  const snapshot = await p.evaluate(selector => ({
+    view: globalThis.OpenTabSceneNavigation?.getView() || null,
+    homepageInert: document.getElementById('homepage')?.inert ?? null,
+    dialogBusy: document.querySelector('.scene-dialog[open]')?.getAttribute('aria-busy') ?? null,
+    targetCount: document.querySelectorAll(selector).length,
+    groups: [...document.querySelectorAll('#group-tabs [data-group-id]')].map(node => ({ id: node.dataset.groupId, selected: node.getAttribute('aria-selected') }))
+  }), selector).catch(error => ({ unavailable: error.message }));
+  console.error(`Scenes: native target failed ${JSON.stringify({ phase: phaseName, selector, stage, page: p.url(), ...snapshot })}`);
+}
+async function nativeTarget(p, selector, options) {
   const target = p.locator(selector);
-  await target.scrollIntoViewIfNeeded();
-  assert.equal(await target.evaluate(node => {
-    const box = node.getBoundingClientRect();
-    return box.width > 0 && box.height > 0 && node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
-  }), true, `${selector}: native hit target is not occluded`);
-  await target.click(options);
+  try {
+    // Unlike a one-shot scroll on an element handle, native locator actionability
+    // re-resolves a target replaced by a legitimate trailing storage refresh.
+    // Trial performs no click; the explicit hit check and real native click stay.
+    await target.click({ ...options, trial: true });
+    assert.equal(await target.evaluate(node => {
+      const box = node.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    }), true, `${selector}: native hit target is not occluded`);
+    return target;
+  } catch (error) { await targetFailure(p, selector, 'actionability/hit-test'); throw error; }
+}
+async function click(p, selector, options) {
+  const target = await nativeTarget(p, selector, options);
+  try { await target.click(options); }
+  catch (error) { await targetFailure(p, selector, 'native click'); throw error; }
 }
 async function open(p = page) { await click(p, '#scene-switcher .scene-trigger'); await p.waitForSelector(dialog); }
 async function close(p = page) { await p.keyboard.press('Escape'); await p.waitForSelector('.scene-dialog[open]', { state: 'detached' }); }
@@ -440,8 +460,7 @@ try {
           const bounds = await page.locator(dialog).evaluate(node => { const b = node.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: innerWidth, height: innerHeight }; });
           assert.ok(bounds.left >= 15 && bounds.right <= bounds.width - 15 && bounds.top >= 0 && bounds.bottom <= bounds.height, 'scene manager fits the viewport');
           assert.equal(await page.locator(`${dialog} .scene-body`).evaluate(node => node.scrollWidth <= node.clientWidth + 1), true, 'scene labels and actions do not overflow horizontally');
-          const target = page.locator(rowAction(workScene, 'rename')); await target.scrollIntoViewIfNeeded();
-          assert.equal(await target.evaluate(node => { const b = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)); }), true);
+          await nativeTarget(page, rowAction(workScene, 'rename'));
           await page.screenshot({ path: path.join(artifacts, `scenes-${language}-${theme}-${label}.png`), animations: 'disabled' });
         }
         await close(); assert.equal(await page.evaluate(() => document.activeElement.matches('#scene-switcher .scene-trigger')), true);

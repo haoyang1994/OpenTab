@@ -86,7 +86,9 @@
 
     updateClock();
     renderTimezoneList();
-    initCalendar();
+    // Preserve the initial selected date, but build hidden calendar DOM only
+    // when its actual control opens it, never on the first-grid path.
+    initCalendar(true);
 
     renderWorkspaceSettings();
     workspace.seed(raw, { ...OpenTabWorkspace.migrationOverrides(raw, state), ...(!sceneEnabled && backgroundChanged ? { background: raw.background } : {}) });

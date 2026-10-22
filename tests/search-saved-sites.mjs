@@ -56,6 +56,12 @@ export async function verifySavedSites(page, worker) {
   await store({ ...fixture, languagePreference: 'zh-CN' });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await ready();
+  // Calendar construction is deferred until a real opening. Initialize through
+  // the public control before the later geometry fixture directly reveals it.
+  await page.locator('#date').click();
+  await page.locator('#calendar-popover:not(.hidden) .flatpickr-calendar').waitFor({ state: 'visible' });
+  await page.locator('#date').click();
+  await page.locator('#calendar-popover').waitFor({ state: 'hidden' });
   const beforeWorkspace = await worker.evaluate(() => chrome.storage.local.get(['icons', 'folders']));
   const requests = [];
   const onRequest = request => { if (/^https?:/i.test(request.url())) requests.push(request.url()); };

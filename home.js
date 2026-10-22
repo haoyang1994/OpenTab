@@ -260,7 +260,7 @@
     minimalMode: false
   };
 
-  let calendarPicker = null;
+  let calendarPicker = null, calendarDefaultDate = null;
   let todoAddPending = false;
   let editingIconId = null;
   let iconDraftIntent = null;
@@ -1594,8 +1594,11 @@
     else dayElem.classList.add('has-solar-term');
   }
 
-  function initCalendar() {
+  function initCalendar(defer = false) {
     if (calendarPicker || typeof flatpickr === 'undefined') return;
+    calendarDefaultDate ||= new Date();
+    if (defer === true) return;
+    try { performance.mark('opentab:calendar-build-start'); } catch (_) {}
 
     if (window.OpenTabI18n?.locale !== 'en' && flatpickr.l10ns && flatpickr.l10ns.zh) {
       flatpickr.localize(flatpickr.l10ns.zh);
@@ -1604,13 +1607,15 @@
     calendarPicker = flatpickr(elements.calendarInput, {
       inline: true,
       clickOpens: false,
-      defaultDate: new Date(),
+      defaultDate: calendarDefaultDate,
+      now: calendarDefaultDate,
       locale: window.OpenTabI18n?.locale === 'en' ? 'default' : 'zh',
       onDayCreate: (_dObj, _dStr, _fp, dayElem) => {
         const dateObj = dayElem.dateObj;
         if (dateObj) annotateCalendarDay(dayElem, dateObj);
       }
     });
+    try { performance.mark('opentab:calendar-build-end'); } catch (_) {}
   }
 
   function toggleCalendar(forceOpen) {

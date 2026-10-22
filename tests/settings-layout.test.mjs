@@ -183,12 +183,28 @@ async function runSettingsLayoutE2E() {
     const navTiming = await page.evaluate(() => {
       const nav = performance.getEntriesByType('navigation')[0];
       const marks = performance.getEntriesByName('opentab:grid-ready');
+      const phases = Object.fromEntries(['read-start', 'read-end', 'validated', 'loader-start', 'loader-end'].map(phase =>
+        [phase, performance.getEntriesByName('opentab:initial-' + phase)[0]?.startTime ?? null]));
       return {
         dcl: nav ? nav.domContentLoadedEventEnd : null,
-        gridReady: marks.length ? marks[0].startTime : null
+        gridReady: marks.length ? marks[0].startTime : null,
+        phases,
+        calendarBuilds: performance.getEntriesByName('opentab:calendar-build-start').length,
+        resources: performance.getEntriesByType('resource').filter(entry => {
+          const url = new URL(entry.name);
+          return url.protocol === location.protocol && url.host === location.host && /\.(?:js|css)$/.test(url.pathname);
+        }).map(entry => ({ path: new URL(entry.name).pathname, start: entry.startTime, end: entry.responseEnd, duration: entry.duration }))
       };
     });
     console.log(`AC7 first-screen wall=${wallMs}ms dcl=${navTiming.dcl}ms grid-ready=${navTiming.gridReady}ms`);
+    const elapsed = (end, start) => end === null || start === null ? null : end - start;
+    navTiming.durations = {
+      readWait: elapsed(navTiming.phases['read-end'], navTiming.phases['read-start']),
+      validation: elapsed(navTiming.phases.validated, navTiming.phases['read-end']),
+      loaderToGrid: elapsed(navTiming.gridReady, navTiming.phases['loader-start'])
+    };
+    console.log('AC7 startup phases/resources: ' + JSON.stringify(navTiming));
+    assert.equal(navTiming.calendarBuilds, 0, 'hidden calendar construction is not part of first-grid startup');
     assert.ok(navTiming.dcl > 0, 'AC7 DCL must be > 0');
     assert.ok(navTiming.gridReady != null, 'AC7 grid-ready missing');
     assert.ok(navTiming.gridReady <= GRID_READY_BUDGET_MS, `AC7 grid-ready ${navTiming.gridReady}ms`);

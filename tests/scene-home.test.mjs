@@ -18,7 +18,7 @@ const profile = raw.sceneProfiles.find(item => item.id === 'study');
 profile.background = { type: 'gradient', value: 'linear-gradient(red, blue)' };
 profile.layoutColumns = 4;
 const projected = { ...structuredClone(raw), ...structuredClone(profile), currentFolderId: 'study-home' };
-const state = {}, calls = { seed: [], layout: [], saves: 0 };
+const state = {}, calls = { seed: [], layout: [], calendar: [], saves: 0 };
 const context = {
   state, structuredClone, HOME_FOLDER_ID: 'folder-home', LEGACY_PRESET_FOLDER_IDS: new Set(['folder-tools']),
   OpenTabSceneSchema: Schema, OpenTabWorkspace: Workspace,
@@ -29,7 +29,7 @@ const context = {
   OpenTabLayout: { loadFromStorage: value => calls.layout.push(structuredClone(value)) },
   OpenTabFolders: { repairIconGraph() {} }, OpenTabIcons: { prepareRecord() {}, scheduleIdleMigration() {} },
   OpenTabBingCache: { afterStateLoaded() {} }, workspace: { seed: (data, changes) => calls.seed.push(structuredClone({ data, changes })) },
-  updateClock() {}, renderTimezoneList() {}, initCalendar() {}, renderWorkspaceSettings() {}, refreshIconViews() {}, renderTodos() {},
+  updateClock() {}, renderTimezoneList() {}, initCalendar: defer => calls.calendar.push(defer), renderWorkspaceSettings() {}, refreshIconViews() {}, renderTodos() {},
   setTodoPanelOpen() {}, writeBootMirror() {}, saveState() { calls.saves += 1; }
 };
 context.window = context;
@@ -43,6 +43,7 @@ assert.deepEqual(state.scenes, raw.scenes); assert.deepEqual(state.sceneProfiles
 assert.deepEqual(state.background, profile.background);
 assert.deepEqual(calls.seed[0].data, raw, 'session baseline receives durable full graph, not projected background aliases');
 assert.equal(calls.layout[0].layoutColumns, 4); assert.equal(calls.saves, 0);
+assert.deepEqual(calls.calendar, [true], 'loader captures calendar date without constructing hidden DOM');
 assert.deepEqual(raw.todos.map(item => item.id), ['task', 'study-task'], 'loading is not a data replacement');
 const panels = { 'settings-panel': true, 'change-icon-modal': true };
 let inlineDraft = false, foreignDialog = false;
