@@ -38,9 +38,18 @@ const focus = () => page.evaluate(() => document.activeElement?.id || document.a
 const log = () => page.evaluate(() => window.__paletteNav);
 const closed = () => page.waitForSelector('#command-palette.hidden', { state: 'attached' });
 const opened = () => page.waitForSelector('#command-palette:not(.hidden)');
-async function store(data) { await worker.evaluate(value => new Promise(resolve => chrome.storage.local.set(value, resolve)), data); }
+async function store(data) {
+  // First-install initialization uses this same lock. A raw storage.set can
+  // otherwise land between its read and default write, corrupting the fixture.
+  const persisted = await worker.evaluate(value => OpenTabWorkspace.transaction(async ({ write, read }) => {
+    await write(value);
+    return read(Object.keys(value));
+  }), data);
+  assert.deepEqual(persisted, data, 'synthetic fixture is durably installed under the workspace lock');
+}
 async function ready() {
   await page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length && OpenTabCommandPalette?.init && OpenTabSearch?.commandPalette && OpenTabSearch.getState().searchEngine === 'google' && OpenTabSearch.getState().searchHistoryEnabled === false);
+  assert.deepEqual(await page.evaluate(() => OpenTabSearch.commandPalette.listSites('docs').map(site => site.id)), ['docs', 'work-docs'], 'loaded workspace matches the installed fixture before exercising the palette');
   await page.evaluate(() => { window.__paletteNav = []; OpenTabSearch.navigateHook = (url, openInNewTab) => window.__paletteNav.push({ url, openInNewTab }); });
 }
 async function platform(name) {

@@ -32,7 +32,7 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 - Glass clock card with 12-hour / 24-hour formats
 - 23 common time zones
 - Optional seconds
-- Calendar popover with holidays and Chinese solar terms
+- Calendar popover, with Chinese holidays and solar terms in the Chinese interface
 
 ### Theme
 
@@ -54,9 +54,9 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 
 - **Add with +**: a persistent + tile at the end of the current group grid (or right-click empty space)
 - **Drag to reorder**: mouse drag on the desktop grid, or Alt+←/→ when a shortcut is focused
-- **Folders**: hover one shortcut on another for about 500ms to make a folder named 文件夹 (undoable). Drop onto an existing folder to add. Click a folder to open an overlay where you can reorder, drag out, and rename. Middle-click or **Open all** opens every link (confirms in-page above 10). A folder with one leftover icon dissolves.
+- **Folders**: hover one shortcut on another for about 500ms to make a folder named **Folder** in English (undoable). Drop onto an existing folder to add. Click a folder to open an overlay where you can reorder, drag out, and rename. Middle-click or **Open all** opens every link (confirms in-page above 10). A folder with one leftover icon dissolves.
 - **Groups**: tabs above the grid (click, mouse wheel, Alt+1–9). Create, rename, and delete groups in-page; deleting asks whether to move icons to the default group or delete them too (undoable). The old left drawer and 6px edge hover are gone.
-- **Icons**: bundled HD tiles for 40+ common sites; other sites get a letter placeholder (color from the domain). Right-click **更换图标** to re-fetch, upload a picture, or change the placeholder. Cached as local data URLs so a new tab does not contact those sites
+- **Icons**: bundled HD tiles for 40+ common sites; other sites get a letter placeholder (color from the domain). Right-click **Change icon** to re-fetch, upload a picture, or change the placeholder. Cached as local data URLs so first paint stays local; uncached site icons may load after the grid is ready
 - **Real links**: middle-click / Ctrl / Cmd opens a new tab; hover shows the URL
 - **Undo delete**: deleting a shortcut shows a toast with Undo for 6 seconds
 - **Esc**: closes menus, dialogs, folder overlay, settings, and calendar one layer at a time and restores focus
@@ -78,14 +78,14 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 - JSON backup export/import and a local snapshot
 - Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
 - Multi-tab workspace saves preserve unrelated item changes and reject conflicting edits; see [persistence and undo rules](docs/PERSISTENCE.md).
-- Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks 用云端 / 用本机. Settings shows local storage usage
+- Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks **Use cloud copy** / **Use local copy**. Settings shows local storage usage
 
 ### Settings and layout
 
 - Section nav: appearance, wallpaper, shortcuts and layout, search, weather, import/sync, advanced, about. Click a section to jump; the highlight follows scroll. Below 720px the nav becomes a top tab row
-- Search box at the top of the panel filters by labels and help text (Chinese or English, case-insensitive). Empty state: 「没有找到」. Esc clears the query, then closes the panel
+- Search box at the top of the panel filters by labels and help text (Chinese or English, case-insensitive). Empty state: **No results found**. Esc clears the query, then closes the panel
 - Layout: icon size (small/medium/large, or 48–96px), columns (auto or 4–12), show/hide names, grid max width. Changes preview live, survive reload, and join the existing sync keys
-- Each section and the footer have 「恢复默认」 (in-page confirm + the same undo toast). Shortcuts are not reset
+- Each section and the footer have **Reset defaults** (in-page confirm + the same undo toast). Shortcuts are not reset
 - SSH / JSON add-icon entries stay hidden until Advanced is on. Installs that already have SSH or tool shortcuts keep the toggle on
 
 ## Screenshots
@@ -117,7 +117,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 | --- | --- | --- |
 | Bing homepage image API (`www.bing.com`) | Daily wallpaper, **only if you choose Bing wallpaper** | Image URL/metadata. Photo copyright stays with the original authors; OpenTab only displays the image. First install uses a local wallpaper and does not contact Bing. |
 | [wttr.in](https://wttr.in) | Weather pill, only after enabling and saving a city | The city you enter and your network IP. No device coordinates or automatic IP-location fallback. Turning weather off aborts pending requests and stops refreshes. No geolocation permission is requested. |
-| Favicons of sites you add | Shortcut icons | First paint stays local (library tile, cached data URL, or letter). After the grid is ready a normal `<img>` may load that site’s icon (no `fetch`, no CORS). `fetch()` happens only if you click 重新抓取. `connect-src` includes `https:` for that explicit refresh, without extra `host_permissions`. |
+| Favicons of sites you add | Shortcut icons | First paint stays local (library tile, cached data URL, or letter). After the grid is ready a normal `<img>` may load that site’s icon (no `fetch`, no CORS). `fetch()` happens only if you click **Fetch again**. `connect-src` includes `https:` for that explicit refresh, without extra `host_permissions`. |
 
 SSH connections go through a **local** WebSocket gateway you start yourself (`ssh-gateway.mjs`). They are not proxied by an OpenTab cloud service.
 
@@ -151,7 +151,7 @@ npm run test:e2e:headless
 npm run test:ci
 ```
 
-`npm test` runs the Node unit/security suites and the Playwright extension suites (extension, search, first-run, settings-layout, weather, and multi-tab workspace persistence). On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [docs/TESTING.md](docs/TESTING.md).
+`npm test` runs the Python packaging checks, Node unit/security suites, and nine Playwright extension suites: command palette, accessibility, localization, multi-tab workspace persistence, core extension UI, search, first-run, settings/layout, and weather. On Linux without a display, `scripts/run-e2e.sh` wraps headed Chromium with `xvfb` (install the `xvfb` package). `npm run test:ci` is the same command. CI also runs `npm audit --audit-level=high`. Details: [testing guide (Chinese)](docs/TESTING.md).
 
 After you change extension files, click **Reload** on the extension card in `chrome://extensions/`.
 
@@ -175,7 +175,7 @@ export SSH_GATEWAY_EXTENSION_ID='your-extension-id'
 npm run ssh:gateway
 ```
 
-3. The first start prints an **access token** (later starts only print the token file path). Put it in the OpenTab SSH shortcut field “网关访问令牌”.
+3. The first start prints an **access token** (later starts only print the token file path). Put it in the OpenTab SSH shortcut field **Gateway access token**.
 4. Use gateway URL `ws://127.0.0.1:8787/ssh` (or `ws://localhost:8787/ssh`). **Loopback only (`127.0.0.1` / `localhost`):** the extension CSP allows WebSocket only to those hosts. A saved non-loopback gateway URL (including `[::1]`) will be blocked.
 
 The gateway will not start without an extension ID. Arbitrary websites (and clients without an Origin header) cannot connect. A missing or wrong token is rejected at handshake.
@@ -217,7 +217,7 @@ OpenTab/
 ├── search.js                  # new-tab search box (engines, history, URL jump)
 ├── folders.js                 # desktop folders and group tabs
 ├── import.js / sync.js        # backup import and chrome.storage.sync
-├── icons.js                   # shortcut icon library, cache, 更换图标
+├── icons.js                   # shortcut icon library, cache, icon customization
 ├── layout.js / settings-nav.js
 ├── specs/                     # iteration acceptance criteria
 ├── popup.html / popup.css / popup.js
