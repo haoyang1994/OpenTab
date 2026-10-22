@@ -65,7 +65,7 @@ and real-browser coverage.
 ## Required validation before distribution
 
 ```sh
-npm run test:package          # Offline Python regression tests
+npm run test:package          # Offline Python + navigation/fixture regression tests
 npm test                      # Existing 13 Node + 8 MV3 suites, plus package tests
 npm run test:package:smoke    # Additional real MV3 smoke of freshly extracted ZIP
 ```
@@ -78,8 +78,12 @@ The separate packaged smoke requires the existing Playwright installation and
 Chromium. On Linux without a display it uses `xvfb-run`, matching the normal
 headed MV3 strategy. It builds the candidate in `dist/` and extracts a temporary copy, loads **only
 the extracted directory**, checks the installed service worker and manifest,
-opens all five extension pages, checks clock/i18n/vendor initialization and
-rejects page errors or missing extension resources. Temporary profiles and
+opens all five extension pages, verifies actual extension-document identity and
+clock/i18n/vendor initialization, and exercises the JSON/FIX buttons with synthetic
+fixtures. It accepts a nullable navigation Response only alongside the correct
+loaded document, and rejects console/page errors or missing extension resources.
+The SSH page checks terminal initialization and its expected missing-parameter
+state, not a real server connection. Temporary profiles and
 extracted files are removed afterward. It is additive: it does not replace or
 weaken the existing E2E suites. It is not silently skipped when Chromium fails.
 

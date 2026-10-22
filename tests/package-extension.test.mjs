@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { formatConsoleError, isAllowedConsoleError } from './console-allow.mjs';
+import { formatConsoleError } from './console-allow.mjs';
+import { assertPackagedNavigation } from './package-navigation.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'opentab-package-smoke-'));
@@ -19,7 +20,7 @@ try {
   execFileSync('python3', ['-m', 'zipfile', '-e', zip, extension], { stdio: 'inherit' });
   assert.ok(!fs.existsSync(path.join(extension, 'package.json')));
   context = await chromium.launchPersistentContext(path.join(temporary, 'profile'), {
-    headless: false,
+    headless: false, locale: 'en-US', colorScheme: 'light',
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`]
   });
   // No dependence on external weather/background service availability.
@@ -32,18 +33,23 @@ try {
   assert.equal(manifest.version, JSON.parse(fs.readFileSync(path.join(extension, 'manifest.json'))).version);
   const errors = [];
   for (const file of ['home.html', 'popup.html', 'tool.html', 'fixparser.html', 'ssh_terminal.html']) {
+    console.log(`Package smoke: opening ${file}`);
     const page = await context.newPage();
     page.on('console', message => {
-      if (message.type() === 'error' && !isAllowedConsoleError(formatConsoleError(message))) errors.push(`${file}: ${formatConsoleError(message)}`);
+      if (message.type() === 'error') errors.push(`${file}: ${formatConsoleError(message)}`);
     });
     page.on('pageerror', error => errors.push(`${file}: ${error.message}`));
     page.on('requestfailed', request => {
       if (request.url().startsWith(`chrome-extension://${id}/`)) errors.push(`${file}: ${request.url()} ${request.failure()?.errorText}`);
     });
-    const response = await page.goto(`chrome-extension://${id}/${file}`, { waitUntil: 'load' });
-    assert.equal(response.status(), 200, file);
+    const target = `chrome-extension://${id}/${file}`;
+    const response = await page.goto(target, { waitUntil: 'load' });
+    assertPackagedNavigation(response, await page.evaluate(() => ({
+      url: location.href, runtimeId: globalThis.chrome?.runtime?.id, readyState: document.readyState
+    })), target, id);
     if (file === 'home.html') {
       await page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0 && document.querySelector('#weather-pill')?.hasAttribute('data-stale'), undefined, { timeout: 10000 });
+      await page.locator('#time').waitFor({ state: 'visible' });
       assert.match(await page.locator('#time').textContent(), /:/);
       assert.equal(await page.evaluate(() => typeof window.flatpickr), 'function');
       assert.ok(await page.evaluate(() => !!window.OpenTabI18n));
@@ -52,12 +58,29 @@ try {
       // Both asynchronous startup branches must finish, even when activeTab is
       // unavailable in a directly opened popup (an expected unsupported page).
       await page.waitForFunction(() => document.querySelector('#folder-select option[value="folder-home"]') && document.querySelector('#current-url')?.textContent.trim(), undefined, { timeout: 10000 });
+      await page.locator('#folder-select').waitFor({ state: 'visible' });
       assert.equal(await page.evaluate(() => document.querySelector('#status').textContent === OpenTabI18n.t('读取当前页面失败，请重试。')), false, 'packaged popup initialization succeeds');
+    }
+    if (file === 'tool.html') {
+      await page.locator('#input-area').fill('{"packaged":true}');
+      await page.locator('#format-btn').click();
+      assert.deepEqual(JSON.parse(await page.locator('#output-area').inputValue()), { packaged: true });
+    }
+    if (file === 'fixparser.html') {
+      await page.locator('#input-area').fill('8=FIX.4.4|35=0|10=000|');
+      await page.locator('#parse-btn').click();
+      await page.locator('#timeline-container .timeline-item').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('#timeline-container .timeline-item').count(), 1);
+      assert.equal(await page.locator('.timeline-msgtype').textContent(), 'Heartbeat');
+      assert.match(await page.locator('#detail-container').textContent(), /FIX\.4\.4/);
     }
     if (file === 'ssh_terminal.html') {
       assert.equal(await page.evaluate(() => typeof window.Terminal), 'function');
       assert.equal(await page.evaluate(() => typeof window.FitAddon.FitAddon), 'function');
+      await page.locator('#terminal .xterm').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('#status').textContent(), '参数错误');
     }
+    console.log(`Package smoke: verified ${file}`);
     await page.close();
   }
   assert.deepEqual(errors, [], 'Packaged extension pages must load without runtime/missing-asset errors');
