@@ -1,3 +1,4 @@
+import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,7 +64,7 @@ try {
   }
   async function stored() { return worker.evaluate(() => chrome.storage.local.get(['icons', 'folders', 'clockFormat', 'background'])); }
   async function expectNames(page, names) {
-    await page.waitForFunction(async (expected) => {
+    await waitForAsync(page, async (expected) => {
       const { icons = [] } = await chrome.storage.local.get('icons');
       return JSON.stringify(icons.map((item) => item.name).sort()) === JSON.stringify(expected.slice().sort());
     }, names, { timeout: 10000 });
@@ -72,7 +73,8 @@ try {
     await page.click('#add-shortcut-tile');
     await page.fill('#icon-name', name); await page.fill('#icon-url', `https://example.com/${name}`);
   }
-  async function add(page, name) { await addForm(page, name); await page.click('#save-btn'); }
+  async function save(page) { await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden'); }
+  async function add(page, name) { await addForm(page, name); await save(page); }
   async function editForm(page, id, name) {
     await page.locator(`#icons-container .icon-widget[data-id="${id}"]`).click({ button: 'right' });
     await page.click('#edit-icon-btn'); await page.fill('#icon-name', name);
@@ -83,7 +85,7 @@ try {
   }
   async function clock12(page) {
     await page.click('#settings-btn'); await page.selectOption('#time-format', '12h');
-    await page.waitForFunction(async () => (await chrome.storage.local.get('clockFormat')).clockFormat === '12h');
+    await waitForAsync(page, async () => (await chrome.storage.local.get('clockFormat')).clockFormat === '12h');
   }
   async function reloadCheck(names) {
     for (const page of pages) {
@@ -119,13 +121,13 @@ try {
 
   [a, b] = await pair();
   await Promise.all([addForm(a, 'A'), addForm(b, 'B')]);
-  await Promise.all([a.click('#save-btn'), b.click('#save-btn')]);
+  await Promise.all([save(a), save(b)]);
   await expectNames(a, ['x', 'y', 'A', 'B']); await reloadCheck(['x', 'y', 'A', 'B']);
   console.log('workspace: concurrent additions both persist');
 
   [a, b] = await pair();
   await Promise.all([editForm(a, 'x', 'X renamed'), editForm(b, 'y', 'Y renamed')]);
-  await Promise.all([a.click('#save-btn'), b.click('#save-btn')]);
+  await Promise.all([save(a), save(b)]);
   await expectNames(a, ['X renamed', 'Y renamed']); await reloadCheck(['X renamed', 'Y renamed']);
   console.log('workspace: independent renames both persist');
 
@@ -161,7 +163,7 @@ try {
     const input = document.querySelector('#time-format');
     input.value = '12h'; input.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  await b.waitForFunction(async () => (await chrome.storage.local.get('clockFormat')).clockFormat === '12h');
+  await waitForAsync(b, async () => (await chrome.storage.local.get('clockFormat')).clockFormat === '12h');
   await b.waitForFunction(() => document.querySelector('#icons-container .icon-widget[data-id="x"] .icon-name')?.textContent === 'New record winner');
   assert.equal(await b.inputValue('#icon-name'), 'Draft from old record', 'old draft remains distinct from adopted storage');
   await b.click('#save-btn');

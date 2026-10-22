@@ -1,3 +1,4 @@
+import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -1190,7 +1191,7 @@ async function runExtensionE2E() {
       }));
     }
     assert.equal(popupErrors.length, 0, `T11: popup console errors: ${popupErrors.join(' | ')}`);
-    await page.waitForFunction(async () => {
+    await waitForAsync(page, async () => {
       const result = await chrome.storage.local.get(['icons']);
       return (result.icons || []).some(icon => icon.name === 'FromPopupUI' || icon.name === 'FromPopup');
     }, null, { timeout: 8000 });
@@ -1874,7 +1875,7 @@ async function runExtensionE2E() {
       background: { type: 'image', value: TINY_PNG_DATA_URL, source: 'local-upload' },
       clockFormat: '24h'
     });
-    await page.waitForFunction(async () => {
+    await waitForAsync(page, async () => {
       const result = await chrome.storage.local.get(['icons']);
       const ssh = (result.icons || []).find((icon) => icon.id === 'ssh-sync');
       return Boolean(ssh) && !ssh.sshPassword && !ssh.sshGatewayToken;
@@ -1884,7 +1885,7 @@ async function runExtensionE2E() {
     await page.locator('#import-sync-section').scrollIntoViewIfNeeded();
     await page.check('#browser-sync-enabled');
     try {
-      await page.waitForFunction(async () => {
+      await waitForAsync(page, async () => {
         const all = await chrome.storage.sync.get(null);
         return Boolean(all && all['ot.s.meta']);
       }, null, { timeout: 8000 });
@@ -1893,7 +1894,7 @@ async function runExtensionE2E() {
     }
     await page.waitForSelector('#time', { timeout: 10000 });
     await waitForGrid(page);
-    await page.waitForFunction(async () => {
+    await waitForAsync(page, async () => {
       const all = await chrome.storage.sync.get(null);
       return Boolean(all && all['ot.s.meta']);
     }, null, { timeout: 8000 });
@@ -2030,7 +2031,7 @@ async function runExtensionE2E() {
     await page.waitForSelector('#sync-conflict-row:not(.hidden)');
     await page.locator('#import-sync-section').screenshot({ path: path.join(ARTIFACTS, 'sync_conflict_choice.png') });
     await page.click('#sync-use-remote-btn');
-    await page.waitForFunction(async () => {
+    await waitForAsync(page, async () => {
       const result = await chrome.storage.local.get(['icons', 'backupSnapshots']);
       const ids = (result.icons || []).map((icon) => icon.id);
       return ids.includes('cloud-1') && (result.backupSnapshots || []).length > 0;
