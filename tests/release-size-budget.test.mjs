@@ -9,6 +9,17 @@ import { ADDED_RUNTIME_BUDGET_BYTES, RUNTIME_DIRS, runtimePath, checkAddedRuntim
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 assert.equal(ADDED_RUNTIME_BUDGET_BYTES, 300 * 1024, 'the existing numeric ceiling must not increase');
 
+// Actions defaults to a single detached PR merge commit. The budget intentionally
+// fails closed without origin/master, so CI must fetch the actual baseline refs.
+function assertCheckoutBaseline(workflow) {
+  const checkout = workflow.match(/      - name: Checkout\n[\s\S]*?(?=\n      - name:|$)/)?.[0] || '';
+  assert.match(checkout, /^\s+fetch-depth:\s*0\s*$/m, 'CI checkout must retain baseline history and refs');
+}
+const workflow = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+assertCheckoutBaseline(workflow);
+assert.throws(() => assertCheckoutBaseline(workflow.replace('fetch-depth: 0', 'fetch-depth: 1')), /baseline history/);
+assert.throws(() => assertCheckoutBaseline(workflow.replace(/^.*fetch-depth: 0.*\n/m, '')), /baseline history/);
+
 function fixture(files, releaseFiles, addedNames = Object.keys(files)) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'opentab-runtime-budget-'));
   try {
