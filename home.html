@@ -125,7 +125,7 @@
         <button id="add-group-btn" class="group-add-btn" type="button" title="新建分组" data-i18n-title="新建分组" aria-label="新建分组" data-i18n-aria-label="新建分组">+</button>
       </div>
       <div id="icons-container"></div>
-      <p id="icons-empty-hint" class="icons-empty-hint hidden" data-i18n="点击 + 添加常用网站，或在空白处右键">点击 + 添加常用网站，或在空白处右键</p>
+      <div id="icons-empty-hint" class="icons-empty-hint hidden"><p data-i18n="点击 + 添加常用网站，或在空白处右键">点击 + 添加常用网站，或在空白处右键</p><button id="empty-paste-sites" class="site-list-entry" type="button" data-i18n="粘贴网址，批量添加">粘贴网址，批量添加</button></div>
       <div id="drag-live" class="sr-only" aria-live="polite"></div>
     </div>
 
@@ -153,6 +153,7 @@
     <div id="add-icon-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="icon-modal-title">
       <div class="modal-content">
         <h2 id="icon-modal-title" data-i18n="添加快捷图标">添加快捷图标</h2>
+        <button id="modal-paste-sites" class="site-list-entry" type="button" hidden data-i18n="批量添加网站">批量添加网站</button>
         <div class="form-group">
           <label for="icon-type" data-i18n="类型">类型</label>
           <select id="icon-type">
@@ -610,8 +611,28 @@
           <input id="backup-import-file" type="file" accept="application/json,.json" hidden>
         </div>
 
-        <div class="setting-section" id="import-sync-section" data-settings-section="sync" data-settings-search="import sync backup bookmark topsite 导入 同步 备份 书签 常用网站">
+        <div class="setting-section" id="import-sync-section" data-settings-section="sync" data-settings-search="import sync backup bookmark topsite paste url batch 导入 同步 备份 书签 常用网站 粘贴 网址 批量">
           <h3 data-i18n="导入与同步">导入与同步</h3>
+          <form id="site-list-form" class="site-list-form" aria-labelledby="site-list-heading">
+            <h4 id="site-list-heading" data-i18n="批量添加网站">批量添加网站</h4>
+            <label for="site-list-input" data-i18n="网址列表">网址列表</label>
+            <textarea id="site-list-input" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="site-list-hint site-list-status" placeholder="example.com&#10;https://docs.example.com"></textarea>
+            <p id="site-list-hint" class="form-hint" data-i18n="每行一个网址，最多 100 行、32 KiB。预览仅在本机处理，确认前不会访问网站。">每行一个网址，最多 100 行、32 KiB。预览仅在本机处理，确认前不会访问网站。</p>
+            <div class="site-list-target">
+              <label for="site-list-group" data-i18n="添加到分组">添加到分组</label>
+              <select id="site-list-group" disabled></select>
+            </div>
+            <div class="site-list-actions">
+              <button id="site-list-preview-btn" class="btn-small ghost" type="submit" disabled data-i18n="预览网址">预览网址</button>
+              <button id="site-list-confirm" class="btn-small" type="button" disabled data-i18n="确认添加">确认添加</button>
+              <button id="site-list-cancel" class="btn-small ghost" type="button" data-i18n="取消">取消</button>
+            </div>
+            <p id="site-list-status" class="form-hint" tabindex="-1" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="site-list-preview" class="site-list-preview" hidden>
+              <p id="site-list-summary"></p>
+              <ol id="site-list-rows" class="site-list-rows" tabindex="0" aria-label="网址预览结果" data-i18n-aria-label="网址预览结果"></ol>
+            </div>
+          </form>
           <div class="setting-row backup-row">
             <label data-i18n="从其他主页导入">从其他主页导入</label>
             <div class="backup-actions">
@@ -700,6 +721,7 @@
   <script src="sync.js"></script>
   <script src="layout.js"></script>
   <script src="settings-nav.js"></script>
+  <script src="site-list.js"></script>
   <script src="lib/bing-daily.js"></script>
   <script src="bing-cache.js"></script>
   <script src="icons.js"></script>

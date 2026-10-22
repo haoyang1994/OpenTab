@@ -13,6 +13,11 @@
 
 ### 2.1 当前自动化已覆盖（E2E）
 
+文件：`tests/paste-sites.test.mjs`（独立安装扩展上下文）
+
+- URL 清单本地预览、目标分组去重、逐行错误、零预览网络/写入、原生键盘、确认后持久化与安全撤销、首用 Home、重复提交与过期预览、双语深浅色宽窄截图。
+- Node 契约：`tests/url-list-import.test.mjs` 与 `tests/site-list-unit.test.mjs`。原有导入与全部 E2E 继续运行。
+
 文件：`tests/extension.test.mjs`
 
 - 能加载扩展页面（`chrome-extension://<id>/home.html`）

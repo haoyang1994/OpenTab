@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Cmd+K on Mac and Ctrl+K on Windows/Linux focus the existing site search on an active new-tab page, with a platform hint and Escape focus restoration; active drafts and IME input are not intercepted.
+- Preview pasted URL lists locally before adding them to an existing group, with target-scoped deduplication, per-line feedback, a first-use entry, and the existing conflict-safe last-import Undo.
+
+- Cmd+K on Mac and Ctrl+K on Windows/Linux open the dedicated quick-launch dialog on an active new-tab page, with a platform hint and Escape focus restoration; active drafts and IME input are not intercepted.
 
 - Instant local lookup of saved websites across groups and folders in the existing search box, with ranked title/domain matches, location hints, explicit keyboard or mouse selection, and separate search history. No new permissions, requests or stored search index.
 

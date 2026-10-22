@@ -588,10 +588,10 @@
     });
   }
 
-  function open() {
+  function open(options = {}) {
     const el = panel();
     if (!el) return;
-    if (host && host.rememberFocus) host.rememberFocus($('settings-btn'));
+    if (host && host.rememberFocus) host.rememberFocus(options.opener || $('settings-btn'));
     el.classList.remove('hidden');
     buildNav();
     ensureResetButtons();
@@ -614,6 +614,7 @@
   }
 
   function close() {
+    if (globalThis.OpenTabSiteList?.isBusy()) return false;
     const el = panel();
     if (!el || el.classList.contains('hidden')) return false;
     const search = $('settings-search');
@@ -637,6 +638,7 @@
     }
     const el = panel();
     if (!el || el.classList.contains('hidden')) return false;
+    if (globalThis.OpenTabSiteList?.isBusy()) return true;
     const search = $('settings-search');
     if (search && search.value) {
       search.value = '';

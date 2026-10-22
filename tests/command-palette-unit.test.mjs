@@ -177,6 +177,13 @@ for (const [platform, modifier, other] of [['macOS', 'metaKey', 'ctrlKey'], ['Wi
     assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, false, `${id} protects existing modal drafts`);
     overlay.classList.add('hidden');
   }
+  h.window.OpenTabSiteList = { isBusy: () => true };
+  h.opener.focus();
+  assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, false, 'confirmed import cannot open competing actions');
+  assert.equal(h.api.isOpen(), false);
+  h.window.OpenTabSiteList.isBusy = () => false;
+  assert.equal(h.press('k', { [modifier]: true }).defaultPrevented, true, 'failed or finished import releases the shortcut gate');
+  h.press('Escape');
 }
 
 {

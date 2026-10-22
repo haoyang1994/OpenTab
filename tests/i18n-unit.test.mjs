@@ -202,7 +202,7 @@ console.log('i18n unit tests passed');
       } }
     });
   }
-  for (const file of ['home.js', 'folders.js', 'icons.js', 'search.js', 'command-palette.js', 'weather.js', 'import.js', 'sync.js', 'settings-nav.js', 'popup.js', 'workspace-persistence.js', 'bing-cache.js']) {
+  for (const file of ['home.js', 'folders.js', 'icons.js', 'search.js', 'site-list.js', 'command-palette.js', 'weather.js', 'import.js', 'sync.js', 'settings-nav.js', 'popup.js', 'workspace-persistence.js', 'bing-cache.js']) {
     const code = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     for (const match of code.matchAll(/\bt\('((?:\\.|[^'\\])*)'/g)) {
       const key = vm.runInNewContext(`'${match[1]}'`);
