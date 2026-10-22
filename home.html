@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenTab</title>
   <link rel="preload" href="boot.js" as="script">
+  <!-- Discover scene dependencies early without changing classic execution order. -->
+  <link rel="preload" href="locales/scenes-en.js" as="script">
+  <link rel="preload" href="scene-boot.js" as="script">
+  <link rel="preload" href="scene-schema.js" as="script">
+  <link rel="preload" href="scene-sync.js" as="script">
+  <link rel="preload" href="scene-workspace.js" as="script">
+  <link rel="preload" href="scene-controller.js" as="script">
+  <link rel="preload" href="scene-ui.js" as="script">
+  <link rel="preload" href="scene-runtime.js" as="script">
+  <link rel="preload" href="scene-home.js" as="script">
   <script src="i18n.js"></script>
   <script src="locales/static-en.js"></script>
   <script src="locales/core-en.js"></script>

@@ -127,43 +127,43 @@ assert.match(homeHtml, /<script src="bing-cache\.js"><\/script>/, 'home.html mus
 assert.match(homeHtml, /<script src="boot\.js"><\/script>/, 'home.html must load boot.js');
 assert.match(homeHtml, /<script src="icons\.js"><\/script>/, 'home.html must load icons.js');
 assert.ok(
-  homeHtml.indexOf('boot.js') < homeHtml.indexOf('id="content"'),
+  homeHtml.indexOf('<script src="boot.js"></script>') < homeHtml.indexOf('id="content"'),
   'boot.js must load before #content'
 );
 assert.ok(
-  homeHtml.indexOf('search.js') < homeHtml.indexOf('import.js'),
+  homeHtml.indexOf('<script src="search.js"></script>') < homeHtml.indexOf('<script src="import.js"></script>'),
   'search.js must load before import.js'
 );
 assert.ok(
-  homeHtml.indexOf('import.js') < homeHtml.indexOf('sync.js'),
+  homeHtml.indexOf('<script src="import.js"></script>') < homeHtml.indexOf('<script src="sync.js"></script>'),
   'import.js must load before sync.js'
 );
 assert.ok(
-  homeHtml.indexOf('sync.js') < homeHtml.indexOf('layout.js'),
+  homeHtml.indexOf('<script src="sync.js"></script>') < homeHtml.indexOf('<script src="layout.js"></script>'),
   'sync.js must load before layout.js'
 );
 assert.ok(
-  homeHtml.indexOf('layout.js') < homeHtml.indexOf('settings-nav.js'),
+  homeHtml.indexOf('<script src="layout.js"></script>') < homeHtml.indexOf('<script src="settings-nav.js"></script>'),
   'layout.js must load before settings-nav.js'
 );
 assert.ok(
-  homeHtml.indexOf('settings-nav.js') < homeHtml.indexOf('lib/bing-daily.js'),
+  homeHtml.indexOf('<script src="settings-nav.js"></script>') < homeHtml.indexOf('<script src="lib/bing-daily.js"></script>'),
   'settings-nav.js must load before lib/bing-daily.js'
 );
 assert.ok(
-  homeHtml.indexOf('lib/bing-daily.js') < homeHtml.indexOf('bing-cache.js'),
+  homeHtml.indexOf('<script src="lib/bing-daily.js"></script>') < homeHtml.indexOf('<script src="bing-cache.js"></script>'),
   'lib/bing-daily.js must load before bing-cache.js'
 );
 assert.ok(
-  homeHtml.indexOf('bing-cache.js') < homeHtml.indexOf('icons.js'),
+  homeHtml.indexOf('<script src="bing-cache.js"></script>') < homeHtml.indexOf('<script src="icons.js"></script>'),
   'bing-cache.js must load before icons.js'
 );
 assert.ok(
-  homeHtml.indexOf('icons.js') < homeHtml.indexOf('home.js'),
+  homeHtml.indexOf('<script src="icons.js"></script>') < homeHtml.indexOf('<script src="home.js"></script>'),
   'icons.js must load before home.js'
 );
 assert.ok(
-  homeHtml.indexOf('folders.js') < homeHtml.indexOf('home.js'),
+  homeHtml.indexOf('<script src="folders.js"></script>') < homeHtml.indexOf('<script src="home.js"></script>'),
   'folders.js must load before home.js'
 );
 assert.match(homeHtml, /data-settings-section="weather"/, 'weather settings section must exist');

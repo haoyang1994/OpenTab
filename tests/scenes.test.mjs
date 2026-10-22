@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { waitForAsync } from './wait-for-async.mjs';
 import { formatConsoleError } from './console-allow.mjs';
-import { legacyFixture, SCHEMA_KEY, BACKUP_KEY, EPOCH_KEY, DEFAULT_SCENE, PIXEL, SECOND_GRADIENT, graphKeys } from './scenes-fixtures.mjs';
+import { legacyFixture, expectedLegacyFirstLoad, SCHEMA_KEY, BACKUP_KEY, EPOCH_KEY, DEFAULT_SCENE, PIXEL, SECOND_GRADIENT, graphKeys } from './scenes-fixtures.mjs';
 
 // Real unpacked MV3 pages, native inputs and the actual storage coordinator.
 // The only browser API fixture is popup activeTab discovery, whose automation
@@ -157,13 +157,18 @@ async function assertRenderedGradient(p, value) {
 try {
   await phase('explicit migration preserves the complete legacy graph', async () => {
     const legacy = legacyFixture(); await seed(legacy); await page.goto(home); await ready(page, { scenes: false });
+    // Wait for the existing legacy loader's durable Home repair, not merely
+    // first paint. The exact allowlisted normalization is checked below.
+    await waitForAsync(worker, async () => (await chrome.storage.local.get('icons')).icons[0].folderId === 'folder-home');
     const before = await stored();
-    assert.equal(Object.hasOwn(before, SCHEMA_KEY), false, 'loading a legacy workspace does not migrate it');
-    for (const key of ['icons', 'folders', 'todos']) assert.deepEqual(before[key], legacy[key], `legacy ${key} stays byte-for-byte intact before opt-in`);
+    for (const key of [SCHEMA_KEY, 'scenes', 'sceneProfiles']) assert.equal(Object.hasOwn(before, key), false, `loading a legacy workspace does not create ${key}`);
+    assert.ok(['icons', 'folders', 'todos'].every(key => before[key].every(item => !Object.hasOwn(item, 'sceneId'))), 'legacy entities have no scene ownership before opt-in');
+    const expectedLegacy = expectedLegacyFirstLoad();
+    for (const key of ['icons', 'folders', 'todos']) assert.deepEqual(before[key], expectedLegacy[key], `legacy ${key} allows only the exact existing Home normalization before opt-in`);
     await click(page, '#scene-switcher [data-scene-action="open"]');
     // Runtime's native first-use notice must precede, not follow, migration.
     await page.waitForSelector('.scene-introduction:not([hidden]) [data-scene-action="enable"]');
-    assert.equal(Object.hasOwn(await stored(), SCHEMA_KEY), false, 'opening the compatibility notice is read-only');
+    assert.deepEqual(await stored(), before, 'opening the compatibility notice is read-only');
     await click(page, '.scene-introduction [data-scene-action="enable"]'); await page.waitForSelector(dialog); await viewIs(page, DEFAULT_SCENE, 'folder-home');
     const after = await stored(); Schema.validate(after);
     assert.deepEqual(after.icons.map(item => item.id), legacy.icons.map(item => item.id));

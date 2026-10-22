@@ -27,3 +27,20 @@ export function legacyFixture() {
     customLegacyRecord: { retain: ['complete', 'original', 'record'], sshPassword: 'SYNTHETIC_ONLY_NEVER_TRANSMIT' }
   };
 }
+
+// The existing legacy loader materializes the missing Home group/membership
+// when setTodoPanelOpen saves its normalized view. This is not scene migration.
+// Spell out the only permitted additions rather than stripping arbitrary
+// fields from actual records or learning an unchecked baseline from the page.
+export function expectedLegacyFirstLoad() {
+  const expected = legacyFixture();
+  expected.folders.unshift({ id: 'folder-home', name: 'Home' });
+  Object.assign(expected.icons[0], {
+    folderId: 'folder-home', customIconUrl: '', emoji: '', iconSource: 'upload',
+    resolvedIconUrl: expected.icons[0].uploadedIconDataUrl,
+    sshGatewayUrl: '', sshGatewayToken: '', sshHost: '', sshPort: 22,
+    sshUsername: '', sshPassword: '', sshSocksHost: '', sshSocksPort: 1080,
+    sshSocksUsername: '', sshSocksPassword: ''
+  });
+  return expected;
+}

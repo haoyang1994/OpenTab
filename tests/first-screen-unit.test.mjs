@@ -125,6 +125,44 @@ function addDays(date, days) {
 }
 
 {
+  const html = fs.readFileSync(path.join(root, 'home.html'), 'utf8');
+  const shipped = new Set(JSON.parse(fs.readFileSync(path.join(root, 'scripts/release-files.json'), 'utf8')));
+  const sceneScripts = ['locales/scenes-en.js', 'scene-boot.js', 'scene-schema.js', 'scene-sync.js',
+    'scene-workspace.js', 'scene-controller.js', 'scene-ui.js', 'scene-runtime.js', 'scene-home.js'];
+  const attrs = tag => Object.fromEntries([...tag.matchAll(/\b([\w-]+)=["']([^"']*)["']/g)].map(match => [match[1], match[2]]));
+  function verifyPreloads(document, allowlist = shipped) {
+    const scripts = [...document.matchAll(/<script\b[^>]*>/g)].map(match => ({ ...attrs(match[0]), tag: match[0], at: match.index }));
+    const hints = [...document.matchAll(/<link\b[^>]*>/g)]
+      .map(match => ({ ...attrs(match[0]), at: match.index })).filter(link => link.rel === 'preload');
+    assert.equal(new Set(hints.map(link => link.href)).size, hints.length, 'preload URLs must be unique');
+    assert.deepEqual(hints.map(link => link.href).sort(), ['boot.js', ...sceneScripts].sort(), 'only existing boot and new scene scripts are hinted');
+    for (const link of hints) {
+      assert.equal(link.as, 'script');
+      assert.match(link.href, /^(?:[\w-]+\/)*[\w-]+\.js$/, 'preloads are relative same-origin scripts, never remote or traversing paths');
+      assert.ok(allowlist.has(link.href), link.href + ' must be included in the release package');
+      assert.ok(fs.statSync(path.join(root, link.href)).isFile(), link.href + ' exists');
+      assert.ok(link.at < scripts[0].at, 'hints must be discoverable before the first blocking script');
+      const execution = scripts.filter(script => script.src === link.href);
+      assert.equal(execution.length, 1, link.href + ' still executes exactly once');
+      assert.doesNotMatch(execution[0].tag, /\s(?:async|defer|type)(?:[\s=>])/, 'preload must not change classic execution semantics');
+    }
+    const order = scripts.map(script => script.src);
+    assert.deepEqual(order.filter(src => sceneScripts.includes(src)), sceneScripts, 'scene dependency execution order is unchanged');
+    assert.ok(order.indexOf('scene-boot.js') < order.indexOf('boot.js'));
+    assert.ok(order.indexOf('scene-schema.js') < order.indexOf('workspace-persistence.js'));
+    assert.ok(order.indexOf('scene-sync.js') < order.indexOf('sync.js'));
+    assert.ok(order.indexOf('scene-home.js') < order.indexOf('home.js'));
+  }
+  verifyPreloads(html);
+  const hint = '<link rel="preload" href="scene-runtime.js" as="script">';
+  assert.throws(() => verifyPreloads(html.replace(hint, hint + hint)), /unique/, 'duplicate hints fail closed');
+  assert.throws(() => verifyPreloads(html.replace(hint, hint.replace('scene-runtime.js', 'https://example.test/runtime.js'))), /hinted/, 'remote hints fail closed');
+  assert.throws(() => verifyPreloads(html, new Set([...shipped].filter(file => file !== 'scene-runtime.js'))), /release package/, 'missing package inclusion fails closed');
+  assert.throws(() => verifyPreloads(html.replace('<script src="scene-runtime.js"></script>', '')), /exactly once/, 'orphan hints fail closed');
+  console.log('U5 scene startup preloads passed: local packaged dependencies, early discovery, unchanged execution order and negative controls');
+}
+
+{
   const code = fs.readFileSync(path.join(root, 'boot.js'), 'utf8');
   const el = {
     style: { setProperty() {}, background: '', backgroundImage: '', backgroundSize: '', backgroundPosition: '' },
