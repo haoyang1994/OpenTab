@@ -303,7 +303,12 @@ async function writeHomeStorage(page, payload, clear) {
 async function resetHome(page, payload, options = {}) {
   const homeUrl = page.url();
   await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 15000 });
-  await writeHomeStorage(page, payload, options.clear !== false);
+  // Unrelated grid/import cases must not depend on live Bing responses.
+  // Explicit background fixtures still override this local, offline default.
+  await writeHomeStorage(page, {
+    background: { type: 'image', value: 'assets/default_background/default.webp', source: 'preset' },
+    ...payload
+  }, options.clear !== false);
   await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForSelector('#time', { timeout: 10000 });
   await waitForGrid(page);
@@ -1555,6 +1560,58 @@ async function runExtensionE2E() {
     await assertNestedFolderKept(page, 'BUG-021 import');
     console.log('BUG-021 import passed');
 
+    // Deliberately deliver an old wallpaper request after an import commits.
+    // Check real extension storage, not only the current page's rendered grid.
+    for (const otherTab of [false, true]) {
+      await resetHome(page, {
+        icons: [], folders: folders(), currentFolderId: HOME,
+        background: { type: 'gradient', value: 'linear-gradient(#123, #456)', source: 'gradient' }
+      });
+      const stalePage = otherTab ? await context.newPage() : page;
+      if (otherTab) {
+        await stalePage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+        await waitForGrid(stalePage);
+      }
+      await stalePage.evaluate(() => {
+        const original = chrome.runtime.sendMessage.bind(chrome.runtime);
+        const test = window.__lateBingTest = { original, response: null, changed: false };
+        test.listener = (changes, area) => {
+          if (area === 'local' && changes.background) test.changed = true;
+        };
+        chrome.storage.onChanged.addListener(test.listener);
+        chrome.runtime.sendMessage = (message, callback) => {
+          if (message.action === 'fetchBingImage') test.response = callback;
+          else return original(message, callback);
+        };
+        test.pending = OpenTabBingCache.fetchRandomBackground();
+      });
+      await stalePage.waitForFunction(() => typeof window.__lateBingTest.response === 'function');
+      await page.evaluate(async (payload) => {
+        OpenTabImport.setReloader(() => {});
+        try { await OpenTabImport.applyOpenTabBackup(payload); }
+        finally { OpenTabImport.setReloader(null); }
+      }, exportedPayload);
+      await stalePage.waitForFunction(() => window.__lateBingTest.changed);
+      await stalePage.evaluate(async () => {
+        const test = window.__lateBingTest;
+        test.response({ success: true, url: 'assets/default_background/bg-mountain-dawn.jpg',
+          startdate: '20260101', nextIndex: 1, title: 'Synthetic late wallpaper' });
+        await test.pending;
+        chrome.runtime.sendMessage = test.original;
+        chrome.storage.onChanged.removeListener(test.listener);
+        delete window.__lateBingTest;
+      });
+      assert.deepEqual(await storageIconIds(page), ['pack', 'p1', 'p2', 'solo'],
+        `late Bing response (${otherTab ? 'other tab' : 'same tab'}): imported icons persisted`);
+      const savedBackground = await page.evaluate(async () => (await chrome.storage.local.get('background')).background);
+      assert.deepEqual(savedBackground, exportedPayload.background, 'late Bing response cannot overwrite imported wallpaper');
+      if (otherTab) await stalePage.close();
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await waitForGrid(page);
+      await assertNestedFolderKept(page, 'late Bing import reload');
+    }
+    console.log('Delayed Bing responses preserve imported folders and wallpaper in same/other tabs');
+
     await resetHome(page, nestedFolderFixture());
     await page.click('#settings-btn');
     await page.waitForSelector('#settings-panel:not(.hidden)');
@@ -2258,6 +2315,27 @@ async function runExtensionE2E() {
 
 
     console.log('E2E passed: extension newtab UI loaded and core interactions work.');
+  } catch (error) {
+    // Preserve synthetic-fixture state before closing the browser on CI failure.
+    for (const [index, target] of context.pages().entries()) {
+      if (!target.url().includes('/home.html')) continue;
+      try {
+        console.error('E2E failure state', await target.evaluate(async () => {
+          const stored = await chrome.storage.local.get(['icons', 'currentFolderId', 'background']);
+          return {
+            storedIcons: (stored.icons || []).map(({ id, type, parentId, folderId }) => ({ id, type, parentId, folderId })),
+            currentFolderId: stored.currentFolderId,
+            backgroundType: stored.background?.type,
+            desktopIds: [...document.querySelectorAll('#icons-container [data-id]')].map((node) => node.dataset.id),
+            backupStatus: document.getElementById('backup-status')?.textContent
+          };
+        }));
+        await target.screenshot({ animations: 'disabled', path: path.join(ARTIFACTS, `failure-home-${index}.png`) });
+      } catch (diagnosticError) {
+        console.error('Unable to capture failure state:', diagnosticError.message);
+      }
+    }
+    throw error;
   } finally {
     await context.close();
   }

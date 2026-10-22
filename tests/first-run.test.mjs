@@ -465,7 +465,13 @@ async function run() {
     assert.equal(ext.net.bing.filter((url) => url.includes('HPImageArchive')).length, 0, 'E5 reload API');
     await ext.context.setOffline(true);
     await ext.page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
-    await ext.page.waitForTimeout(400);
+    // Boot intentionally paints a local LQIP before Cache Storage/image decoding
+    // finishes. Wait for the required offline wallpaper, not a fixed CI-speed delay.
+    // E10 above independently retains its first-paint performance budget.
+    await ext.page.waitForFunction(() => {
+      const layer = document.getElementById('background-layer');
+      return /blob:|TEST/.test(layer?.style.backgroundImage || '');
+    }, null, { timeout: 5000 });
     const bg = await ext.page.evaluate(() => {
       const layer = document.getElementById('background-layer');
       return (layer.style.backgroundImage || '') + (layer.getAttribute('style') || '');

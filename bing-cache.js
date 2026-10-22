@@ -7,6 +7,34 @@
   let paintGen = 0;
   let dailyInflight = null;
   let pendingAfterState = false;
+  let requestGeneration = 0;
+  let suspended = false;
+
+  // A backup replacement owns storage until reload. Invalidate old responses,
+  // but allow callers to resume after a failed replacement.
+  function invalidatePending() {
+    requestGeneration += 1;
+    paintGen += 1;
+    dailyInflight = null;
+  }
+
+  function suspendUpdates() {
+    suspended = true;
+    invalidatePending();
+    return function resumeUpdates() { suspended = false; };
+  }
+
+  function requestIsCurrent(generation, background) {
+    return !suspended && generation === requestGeneration
+      && JSON.stringify(ctx.state.background || {}) === background;
+  }
+
+  // Network completions own wallpaper keys, never the rest of the workspace.
+  function saveBackground() {
+    chrome.storage.local.set({ background: ctx.state.background, bingIndex: ctx.state.bingIndex }, () => {
+      if (chrome.runtime.lastError && ctx.showToast) ctx.showToast('背景保存失败，请重试');
+    });
+  }
 
   function revokeBlob(url) {
     if (!url) return;
@@ -233,6 +261,9 @@
   }
 
   async function fetchRandomBackground() {
+    if (suspended) return;
+    const generation = ++requestGeneration;
+    const background = JSON.stringify(ctx.state.background || {});
     const btn = ctx.elements.refreshBgBtn;
     const layer = ctx.elements.backgroundLayer;
     if (btn) btn.classList.add('loading');
@@ -240,6 +271,7 @@
     try {
       const index = Number.isInteger(ctx.state.bingIndex) ? ctx.state.bingIndex : 0;
       const result = await send('fetchBingImage', { index: index });
+      if (!requestIsCurrent(generation, background)) return;
       if (!result || !result.success) throw new Error((result && result.error) || 'Unknown Bing fetch error');
       ctx.state.bingIndex = result.nextIndex || ((index + 1) % 8);
       const today = g.OpenTabBing.ymd(new Date());
@@ -256,7 +288,7 @@
           pinnedDate: today
         }
       };
-      ctx.saveState();
+      saveBackground();
       setButtonCaption(result.title, result.copyright);
       await updateBackground({ fade: true });
     } catch (e) {
@@ -269,13 +301,16 @@
 
   async function doRefreshDailyIfNeeded() {
     const bg = ctx.state.background || {};
-    if (bg.type !== 'bing') return;
+    if (suspended || bg.type !== 'bing') return;
+    const generation = requestGeneration;
+    const background = JSON.stringify(bg);
     if (!g.OpenTabBing.shouldCheck(bg.bing, new Date())) {
       await updateBackground({ fade: false });
       return;
     }
     try {
       const result = await send('refreshBingDaily');
+      if (!requestIsCurrent(generation, background)) return;
       if (!result || !result.success) {
         console.warn('Failed to refresh background:', result && result.error);
         await updateBackground({ fade: false });
@@ -288,7 +323,7 @@
           title: result.title || prev.title,
           copyright: result.copyright || prev.copyright
         });
-        ctx.saveState();
+        saveBackground();
         setButtonCaption(result.title, result.copyright);
         await updateBackground({ fade: false });
         return;
@@ -305,19 +340,24 @@
           pinnedDate: prev.pinnedDate
         }
       };
-      ctx.saveState();
+      saveBackground();
       setButtonCaption(result.title, result.copyright);
       await updateBackground({ fade: true });
     } catch (e) {
+      if (!requestIsCurrent(generation, background)) return;
       console.warn('Failed to refresh background:', e);
       await updateBackground({ fade: false });
     }
   }
 
   function refreshDailyIfNeeded() {
+    if (suspended) return Promise.resolve();
     if (dailyInflight) return dailyInflight;
-    dailyInflight = doRefreshDailyIfNeeded().finally(() => { dailyInflight = null; });
-    return dailyInflight;
+    const pending = doRefreshDailyIfNeeded().finally(() => {
+      if (dailyInflight === pending) dailyInflight = null;
+    });
+    dailyInflight = pending;
+    return pending;
   }
 
   function afterStateLoaded() {
@@ -369,10 +409,26 @@
   g.OpenTabBingCache = {
     init: function (c) {
       ctx = c;
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        if (['icons', 'folders'].some((key) => changes[key]
+          && JSON.stringify(changes[key].newValue) !== JSON.stringify(ctx.state[key]))) {
+          invalidatePending();
+        }
+        if (!changes.background) return;
+        const next = changes.background.newValue || { type: 'image', value: g.OpenTabBoot.DEFAULT_BG };
+        // Our own scoped saves already match state. Other tabs' choices supersede
+        // pending network work and must become the baseline for later refreshes.
+        if (JSON.stringify(next) !== JSON.stringify(ctx.state.background)) {
+          invalidatePending();
+          ctx.state.background = next;
+        }
+      });
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) onVisible();
       });
     },
+    suspendUpdates: suspendUpdates,
     updateBackground: updateBackground,
     fetchRandomBackground: fetchRandomBackground,
     refreshDailyIfNeeded: refreshDailyIfNeeded,

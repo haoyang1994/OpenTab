@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Opt-in city weather settings with Celsius/Fahrenheit, manual refresh, 30-minute cache reuse, and a bounded offline fallback; weather state remains local-only.
 - Weather unit and mocked-network extension regressions for opt-in privacy, storage failures, cross-tab units and cancelled/late requests.
 
+### Fixed
+
+- Delayed Bing wallpaper responses no longer save an old shortcut workspace over a newly imported backup; importing or changing wallpaper invalidates pending responses.
+- Offline wallpaper tests wait for the cached full image instead of racing a fixed delay. Import regressions cover delayed wallpaper responses in the same and a second tab, persisted data, and reload.
+
 ### Privacy
 
 - Weather no longer reads device location or falls back to an automatic IP-location request. It is off until explicitly enabled with a saved city, and the unused `geolocation` permission is removed.
