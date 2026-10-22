@@ -153,14 +153,20 @@ assert.ok(
   homeHtml.indexOf('folders.js') < homeHtml.indexOf('home.js'),
   'folders.js must load before home.js'
 );
-assert.match(homeHtml, /data-settings-section="weather"/, 'weather section placeholder must exist for iter-3');
-assert.match(homeHtml, /id="weather-settings-slot"/, 'iter-3 weather slot must stay in the weather section');
+assert.match(homeHtml, /data-settings-section="weather"/, 'weather settings section must exist');
+for (const id of ['weather-enabled', 'weather-city', 'weather-save', 'weather-unit', 'weather-refresh', 'weather-status']) {
+  assert.ok(homeHtml.includes(`id="${id}"`), `weather control ${id} must exist`);
+}
+assert.ok(homeHtml.indexOf('src="weather.js"') < homeHtml.indexOf('src="home.js"'), 'weather module loads before home initialization');
+assert.match(homeHtml, /<script src="weather\.js"><\/script>/);
+assert.doesNotMatch(homeHtml, /weather-settings-slot|此分区先占位/);
+assert.doesNotMatch(fs.readFileSync(path.join(root, 'home.js'), 'utf8'), /navigator\.geolocation|function fetchWeather\(/);
 
 assert.equal(manifest.permissions.includes('tabs'), false, 'BUG-005/AC7: tabs permission must be removed');
 assert.ok(manifest.permissions.includes('activeTab'), 'popup uses activeTab');
 assert.deepEqual(
   manifest.permissions.slice().sort(),
-  ['activeTab', 'geolocation', 'storage'].sort(),
+  ['activeTab', 'storage'].sort(),
   'must not add new permissions'
 );
 
@@ -302,7 +308,7 @@ const projectJs = [];
 walkJs(root, projectJs);
 const fetchAllow = {
   'icons.js': () => true,
-  'home.js': (src) => /wttr\.in/.test(src),
+  'weather.js': (src) => /fetch\(`https:\/\/wttr\.in\/\$\{encodeURIComponent\(city\)\}/.test(src),
   'background.js': (src) => /bing\.com/.test(src)
 };
 projectJs.forEach((rel) => {

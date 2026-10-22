@@ -1138,11 +1138,11 @@ async function runExtensionE2E() {
     assert.ok(!localManifest.permissions.includes('topSites'), 'T10: topSites not required');
     const masterManifest = readMasterManifest();
     if (masterManifest) {
-      const expectedPerms = masterManifest.permissions.filter((item) => item !== 'contextMenus' && item !== 'tabs');
+      const expectedPerms = masterManifest.permissions.filter((item) => item !== 'contextMenus' && item !== 'tabs' && item !== 'geolocation');
       assert.deepEqual(localManifest.permissions, expectedPerms, 'T10: permissions otherwise match master');
       assert.deepEqual(localManifest.host_permissions, masterManifest.host_permissions, 'T10: host_permissions unchanged');
     } else {
-      assert.deepEqual(localManifest.permissions, ['storage', 'activeTab', 'geolocation']);
+      assert.deepEqual(localManifest.permissions, ['storage', 'activeTab']);
       assert.deepEqual(localManifest.host_permissions, ['https://www.bing.com/*', 'https://wttr.in/*']);
     }
     console.log('T10 passed');

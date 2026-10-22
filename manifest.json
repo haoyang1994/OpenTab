@@ -5,8 +5,7 @@
   "description": "OpenTab new tab page with clock, customizable backgrounds, and shortcut icons",
   "permissions": [
     "storage",
-    "activeTab",
-    "geolocation"
+    "activeTab"
   ],
   "optional_permissions": [
     "bookmarks",

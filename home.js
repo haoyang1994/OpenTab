@@ -268,8 +268,6 @@
   let gridEventsBound = false;
   const ICON_DND_TYPE = 'application/x-opentab-icon';
   let clockTimerId = null;
-  let weatherTimerId = null;
-  let weatherAbortController = null;
 
   function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -590,120 +588,10 @@
     elements.welcomeText.textContent = getWelcomeText(now, hour, minute);
   }
 
-  function mapWeatherToIcon(weatherCode, descText) {
-    const code = Number(weatherCode);
-    const desc = String(descText || '');
-
-    if ([113].includes(code)) return '☀';
-    if ([116].includes(code)) return '⛅';
-    if ([119, 122].includes(code)) return '☁';
-    if ([143, 248, 260].includes(code)) return '🌫';
-    if ([176, 263, 266, 293, 296, 299, 302, 305, 308, 311, 314, 317, 353, 356, 359, 362, 365].includes(code)) return '☔';
-    if ([179, 182, 185, 227, 230, 320, 323, 326, 329, 332, 335, 338, 350, 368, 371, 374, 377].includes(code)) return '❄';
-    if ([200, 386, 389, 392, 395].includes(code)) return '⚡';
-
-    if (/晴/.test(desc)) return '☀';
-    if (/雷/.test(desc)) return '⚡';
-    if (/雪|冰/.test(desc)) return '❄';
-    if (/雨/.test(desc)) return '☔';
-    if (/雾|霾/.test(desc)) return '🌫';
-    if (/云|阴/.test(desc)) return '☁';
-    return '☁';
-  }
-
-  function mapWeatherToTag(weatherCode, descText) {
-    const code = Number(weatherCode);
-    const desc = String(descText || '');
-    if ([113].includes(code) || /晴/.test(desc)) return 'sunny';
-    if ([200, 386, 389, 392, 395].includes(code) || /雷/.test(desc)) return 'storm';
-    if ([179, 182, 185, 227, 230, 320, 323, 326, 329, 332, 335, 338, 350, 368, 371, 374, 377].includes(code) || /雪|冰/.test(desc)) return 'snowy';
-    if ([176, 263, 266, 293, 296, 299, 302, 305, 308, 311, 314, 317, 353, 356, 359, 362, 365].includes(code) || /雨/.test(desc)) return 'rainy';
-    if ([143, 248, 260].includes(code) || /雾|霾/.test(desc)) return 'fog';
-    if ([116, 119, 122].includes(code) || /云|阴/.test(desc)) return 'cloudy';
-    return 'unknown';
-  }
-
-  function getCurrentPosition(timeoutMs = 4500) {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('geolocation unavailable'));
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (position) => resolve(position),
-        (error) => reject(error),
-        { enableHighAccuracy: false, timeout: timeoutMs, maximumAge: 10 * 60 * 1000 }
-      );
-    });
-  }
-
-  async function fetchWeatherByUrl(url, signal) {
-    const response = await fetch(url, { signal });
-    if (!response.ok) throw new Error(`weather status ${response.status}`);
-    return response.json();
-  }
-
-  async function fetchWeather() {
-    if (weatherAbortController) weatherAbortController.abort();
-    weatherAbortController = new AbortController();
-    const { signal } = weatherAbortController;
-
-    try {
-      let data;
-      try {
-        const pos = await getCurrentPosition();
-        const lat = pos.coords.latitude.toFixed(4);
-        const lon = pos.coords.longitude.toFixed(4);
-        data = await fetchWeatherByUrl(`https://wttr.in/${lat},${lon}?format=j1&lang=zh-cn`, signal);
-      } catch (geoError) {
-        data = await fetchWeatherByUrl('https://wttr.in/?format=j1&lang=zh-cn', signal);
-      }
-
-      const current = data?.current_condition?.[0];
-      const area = data?.nearest_area?.[0];
-      const city = area?.areaName?.[0]?.value || '当前位置';
-      const region = area?.region?.[0]?.value || '';
-      const location = region && region !== city ? `${city} · ${region}` : city;
-      const temp = current?.temp_C ? `${current.temp_C}°C` : '--°';
-      const desc = current?.lang_zh?.[0]?.value || current?.weatherDesc?.[0]?.value || '天气信息不可用';
-      const icon = mapWeatherToIcon(current?.weatherCode, desc);
-      const weatherTag = mapWeatherToTag(current?.weatherCode, desc);
-
-      elements.weatherIcon.textContent = icon;
-      elements.weatherLocationInline.textContent = location;
-      elements.weatherTemp.textContent = temp;
-      elements.weatherPill.title = `${location} · ${desc}`;
-      state.weatherTag = weatherTag;
-      state.weatherDesc = desc;
-      state.weatherLocation = location;
-      updateClock();
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      elements.weatherIcon.textContent = '☁';
-      elements.weatherLocationInline.textContent = '定位失败';
-      elements.weatherTemp.textContent = '--°';
-      elements.weatherPill.title = '天气获取失败';
-      state.weatherTag = 'unknown';
-      state.weatherDesc = '';
-      state.weatherLocation = '';
-      updateClock();
-    } finally {
-      weatherAbortController = null;
-    }
-  }
-
   function cleanupRuntimeResources() {
     if (clockTimerId) {
       clearInterval(clockTimerId);
       clockTimerId = null;
-    }
-    if (weatherTimerId) {
-      clearInterval(weatherTimerId);
-      weatherTimerId = null;
-    }
-    if (weatherAbortController) {
-      weatherAbortController.abort();
-      weatherAbortController = null;
     }
     if (elements.backgroundVideo) {
       elements.backgroundVideo.pause();
@@ -2131,8 +2019,12 @@
 
   applyBootMirror();
   loadState();
-  fetchWeather();
-  weatherTimerId = setInterval(fetchWeather, 30 * 60 * 1000);
+  OpenTabWeather.init({ onUpdate: (data) => {
+    state.weatherTag = data?.tag || 'unknown';
+    state.weatherDesc = data?.description || '';
+    state.weatherLocation = data?.location || '';
+    updateClock();
+  } });
   clockTimerId = setInterval(updateClock, 1000);
   window.addEventListener('beforeunload', cleanupRuntimeResources);
 })();

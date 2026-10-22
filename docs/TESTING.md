@@ -184,3 +184,11 @@ npm run test:ssh-gateway
 1. 引入 Playwright Test runner，产出 HTML 报告与 trace。
 2. 为图标 CRUD、时区切换、背景切换补齐自动化用例。
 3. 增加离线模式和 API 失败可视化提示测试。
+
+
+## 10. 天气隐私与可靠性回归
+
+- `node tests/weather-unit.test.mjs`：默认关闭、城市校验、显式偏好保留、缓存复用与过期、服务/数据异常、超时、关闭后迟到响应、同标签与跨标签单位切换、存储读取/写入失败。测试使用隔离 VM 和合成数据，不读取定位或请求真实天气。
+- `tests/weather.test.mjs` 已加入 `npm test` / headed E2E 链：真实 MV3 页面中检查默认无天气请求、城市保存后主动启用、刷新与故障降级、跨重载缓存、关闭与输入校验；全部 HTTP 请求拦截，城市为 `Test City`。
+- 权限回归要求不新增权限，并明确移除 `geolocation`。CSP 比较对新旧基线对称规范化，避免图标迭代合并后误报。
+- 当前云工作区的 Node 单元与 SSH 安全检查通过；完整 `npm test` 在 E2E 启动前因缺少 `xvfb-run` 退出。浏览器扩展验收尚未通过，不能据此宣布可发布。请在支持 MV3 的 Chromium 与显示环境下运行完整测试，检查浅色/深色、窄屏、键盘及恢复默认/撤销。

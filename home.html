@@ -39,7 +39,7 @@
 
         <div id="welcome-text" aria-live="polite"></div>
         <button id="date" class="date-btn" title="查看日历"></button>
-        <div id="weather-pill" class="weather-pill" title="天气">
+        <div id="weather-pill" class="weather-pill" title="天气" hidden>
           <span id="weather-icon" class="weather-icon" aria-hidden="true">☁</span>
           <span id="weather-temp"></span>
           <span id="weather-location-inline" class="weather-location-inline"></span>
@@ -562,8 +562,24 @@
 
         <div class="setting-section" id="settings-section-weather" data-settings-section="weather" data-settings-search="weather city location temperature unit 天气 城市 定位 温度">
           <h3>天气</h3>
-          <p class="form-hint">天气城市、单位和显示开关由首屏迭代接入。此分区先占位，后合入时两边改动都保留。</p>
-          <div id="weather-settings-slot"></div>
+          <div class="setting-row">
+            <label for="weather-enabled">显示天气</label>
+            <input type="checkbox" id="weather-enabled" aria-describedby="weather-privacy">
+          </div>
+          <p id="weather-privacy" class="form-hint">开启后，城市名称和网络 IP 将发送至 wttr.in 获取天气。不读取设备定位；关闭后停止请求。</p>
+          <form id="weather-city-form" class="weather-city-form">
+            <label for="weather-city">城市</label>
+            <div class="weather-city-controls">
+              <input id="weather-city" type="text" maxlength="80" placeholder="上海 / London" autocomplete="off" aria-describedby="weather-status">
+              <button id="weather-save" class="btn-small" type="submit">保存城市</button>
+            </div>
+          </form>
+          <div class="setting-row">
+            <label for="weather-unit">温度单位</label>
+            <select id="weather-unit"><option value="c">摄氏度 °C</option><option value="f">华氏度 °F</option></select>
+          </div>
+          <button id="weather-refresh" class="btn-small ghost" type="button" disabled>刷新天气</button>
+          <p id="weather-status" class="form-hint" role="status" aria-live="polite"></p>
         </div>
 
         <div class="setting-section" data-settings-section="sync" data-settings-search="import sync backup snapshot restore 导入 同步 备份 快照 恢复 数据">
@@ -627,7 +643,7 @@
         <div class="setting-section" id="settings-section-about" data-settings-section="about" data-settings-search="about version license apache github 关于 版本 许可证">
           <h3>关于</h3>
           <p class="about-line">OpenTab <span id="about-version"></span></p>
-          <p class="form-hint">Apache License 2.0。布局设置走迭代 6 的同步键；分片按存储后 JSON 大小计费。</p>
+          <p class="form-hint">开源、免费，无广告。你的新标签页，由你做主。Apache License 2.0。</p>
           <p class="form-hint"><a id="about-github" href="https://github.com/haoyang1994/OpenTab" target="_blank" rel="noopener noreferrer">GitHub 仓库</a></p>
         </div>
           </div>
@@ -650,6 +666,7 @@
   <script src="lib/bing-daily.js"></script>
   <script src="bing-cache.js"></script>
   <script src="icons.js"></script>
+  <script src="weather.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

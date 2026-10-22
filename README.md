@@ -67,7 +67,7 @@ First paint applies the saved theme, clock, and wallpaper from a local boot mirr
 - Tab / Shift+Tab cycles engines; `/` or typing focuses search when nothing else is focused
 - Local search history (up to 20 items, can be disabled or cleared)
 - Option to open search results in a new tab (also Ctrl/Cmd+Enter and middle-click)
-- Weather pill via geolocation and [wttr.in](https://wttr.in)
+- Optional weather: off by default. Enable it and save a city in Settings → Weather; choose °C / °F or refresh manually. No device location is read. Fresh weather is cached for 30 minutes, with up to 24-hour-old data retained during an outage. Weather preferences and cache stay local, outside sync and JSON backups.
 - Side-drawer todos with a progress bar
 - JSON backup export/import and a local snapshot
 - Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
@@ -75,7 +75,7 @@ First paint applies the saved theme, clock, and wallpaper from a local boot mirr
 
 ### Settings and layout
 
-- Section nav: appearance, wallpaper, shortcuts and layout, search, weather (placeholder for the first-screen iteration), import/sync, advanced, about. Click a section to jump; the highlight follows scroll. Below 720px the nav becomes a top tab row
+- Section nav: appearance, wallpaper, shortcuts and layout, search, weather, import/sync, advanced, about. Click a section to jump; the highlight follows scroll. Below 720px the nav becomes a top tab row
 - Search box at the top of the panel filters by labels and help text (Chinese or English, case-insensitive). Empty state: 「没有找到」. Esc clears the query, then closes the panel
 - Layout: icon size (small/medium/large, or 48–96px), columns (auto or 4–12), show/hide names, grid max width. Changes preview live, survive reload, and join the existing sync keys
 - Each section and the footer have 「恢复默认」 (in-page confirm + the same undo toast). Shortcuts are not reset
@@ -109,7 +109,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 | Service | Purpose | Data |
 | --- | --- | --- |
 | Bing homepage image API (`www.bing.com`) | Daily wallpaper, **only if you choose Bing wallpaper** | Image URL/metadata. Photo copyright stays with the original authors; OpenTab only displays the image. First install uses a local wallpaper and does not contact Bing. |
-| [wttr.in](https://wttr.in) | Weather pill | Approximate location from the browser geolocation permission. |
+| [wttr.in](https://wttr.in) | Weather pill, only after enabling and saving a city | The city you enter and your network IP. No device coordinates or automatic IP-location fallback. Turning weather off aborts pending requests and stops refreshes. No geolocation permission is requested. |
 | Favicons of sites you add | Shortcut icons | First paint stays local (library tile, cached data URL, or letter). After the grid is ready a normal `<img>` may load that site’s icon (no `fetch`, no CORS). `fetch()` happens only if you click 重新抓取. `connect-src` includes `https:` for that explicit refresh, without extra `host_permissions`. |
 
 SSH connections go through a **local** WebSocket gateway you start yourself (`ssh-gateway.mjs`). They are not proxied by an OpenTab cloud service.
