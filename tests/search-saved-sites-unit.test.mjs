@@ -4,6 +4,24 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../search.js', import.meta.url), 'utf8');
 
+// Raising only the list child cannot escape its parent's low stacking context.
+// Keep the lift tied to an open dropdown and preserve calendar/root modal order.
+const css = fs.readFileSync(new URL('../home.css', import.meta.url), 'utf8');
+const rule = (selector) => {
+  const start = css.indexOf(`${selector} {`);
+  assert.ok(start >= 0, `missing CSS contract: ${selector}`);
+  return css.slice(start, css.indexOf('}', start));
+};
+const layer = (selector) => Number(rule(selector).match(/z-index:\s*(\d+)/)?.[1]);
+const closedSearch = layer('#search-widget-wrap');
+const openSearch = layer('body:not(.minimal-mode) #search-widget-wrap:has(.search-history:not(.hidden))');
+assert.ok(closedSearch < layer('.group-tabs-bar'), 'closed search does not permanently cover workspace controls');
+assert.ok(openSearch > layer('.group-tabs-bar'), 'open dropdown raises its ancestor above group tabs');
+assert.ok(openSearch < layer('#clock-widget:has(.calendar-popover:not(.hidden))'), 'open calendar retains priority');
+for (const overlay of ['.folder-overlay', '.settings-panel', '.inline-dialog']) {
+  assert.ok(layer('#content') < layer(overlay), `${overlay} stays above the search ancestor context`);
+}
+
 // Small DOM/event harness runs the whole production module, including callbacks,
 // rendering and keyboard/pointer activation, without browser sockets or packages.
 function harness({ icons = [], folders = [], settings = {}, legacy = false, omitFolders = false, platform = 'Linux' } = {}) {

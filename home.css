@@ -506,6 +506,13 @@ body.theme-light .date-btn:hover {
   margin-top: 24px;
 }
 
+/* Raise the autocomplete's containing context only while results are open.
+   Group tabs are 1260; an open calendar is 1270. Root-level dialogs remain
+   above the entire #content context, and a closed search returns to layer 6. */
+body:not(.minimal-mode) #search-widget-wrap:has(.search-history:not(.hidden)) {
+  z-index: 1265;
+}
+
 #search-widget {
   display: flex;
   align-items: center;
