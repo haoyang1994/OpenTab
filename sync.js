@@ -50,6 +50,7 @@
   const wrappedAreas = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
 
   let chromeRef = null;
+  let workspaceRef = null;
   let keyStoreRef = null;
   let pendingVault = {};
   let flushChain = Promise.resolve();
@@ -71,6 +72,7 @@
 
   function setChrome(api) {
     chromeRef = api || null;
+    workspaceRef = null;
     deviceId = '';
     lastPushedHash = '';
     lastAppliedHash = '';
@@ -85,6 +87,16 @@
       pushTimer = 0;
     }
     wrapLocalSet();
+  }
+
+  function getWorkspace() {
+    if (workspaceRef) return workspaceRef;
+    if (typeof module === 'object' && module.exports && chromeRef) {
+      workspaceRef = require('./workspace-persistence.js').forChrome(chromeRef);
+      return workspaceRef;
+    }
+    if (typeof OpenTabWorkspace !== 'undefined') return OpenTabWorkspace;
+    throw new Error('Workspace persistence is unavailable.');
   }
 
   function setKeyStore(api) {
@@ -484,14 +496,17 @@
 
   async function getDeviceId() {
     if (deviceId) return deviceId;
-    const stored = await areaGet('local', [DEVICE_KEY]);
-    if (stored[DEVICE_KEY]) {
-      deviceId = stored[DEVICE_KEY];
+    return getWorkspace().transaction(async ({ read, write }) => {
+      const stored = await read([DEVICE_KEY]);
+      if (stored[DEVICE_KEY]) {
+        deviceId = stored[DEVICE_KEY];
+        return deviceId;
+      }
+      const next = 'dev-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      await write({ [DEVICE_KEY]: next });
+      deviceId = next;
       return deviceId;
-    }
-    deviceId = 'dev-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-    await areaSet('local', { [DEVICE_KEY]: deviceId });
-    return deviceId;
+    });
   }
 
   function chunkKey(index) {
@@ -729,25 +744,49 @@
     }
   }
 
-  async function applyRemotePayload(payload) {
+  async function applyRemotePayload(payload, options) {
     if (!payload) return false;
     await getDeviceId();
     if (payload.deviceId && payload.deviceId === deviceId) return false;
     if (payload.hash && payload.hash === lastAppliedHash) return false;
     applyingRemote = true;
     try {
-      const local = await areaGet('local', ['icons']);
-      const mergedIcons = mergeRemoteIcons(payload.icons, local.icons);
-      const toSet = {
-        icons: mergedIcons,
-        folders: groupsToFolders(foldersToGroups(payload.folders))
-      };
-      const settings = payload.settings || {};
-      SYNC_SETTING_KEYS.forEach((key) => {
-        if (settings[key] !== undefined) toSet[key] = settings[key];
+      let snapshot = null;
+      let undoBefore = null;
+      const workspace = getWorkspace();
+      const applied = await workspace.replace((local) => {
+        const toSet = {
+          icons: mergeRemoteIcons(payload.icons, local.icons),
+          folders: groupsToFolders(foldersToGroups(payload.folders))
+        };
+        const settings = payload.settings || {};
+        SYNC_SETTING_KEYS.forEach((key) => {
+          if (settings[key] !== undefined) toSet[key] = settings[key];
+        });
+        if (options && options.snapshotReason && typeof OpenTabImport !== 'undefined' && OpenTabImport.prepareSnapshotRecord) {
+          const prepared = OpenTabImport.prepareSnapshotRecord(options.snapshotReason, local);
+          toSet[OpenTabImport.BACKUP_SNAPSHOTS_KEY] = prepared.records;
+          snapshot = prepared.record;
+          // The compact backup drops local icon data. Keep a separate, bounded
+          // in-memory inverse containing exactly the fields this pull replaces.
+          undoBefore = {
+            icons: Array.isArray(local.icons) ? local.icons : [],
+            folders: Array.isArray(local.folders) ? local.folders : []
+          };
+          SYNC_SETTING_KEYS.forEach((key) => {
+            if (settings[key] !== undefined && local[key] !== undefined) undoBefore[key] = local[key];
+          });
+        }
+        return toSet;
       });
-      await areaSet('local', toSet);
       lastAppliedHash = payload.hash || lastAppliedHash;
+      if (snapshot && options && typeof options.onSnapshot === 'function') {
+        const after = {};
+        Object.keys(undoBefore).forEach((key) => { after[key] = applied[key]; });
+        after[workspace.EPOCH_KEY] = applied[workspace.EPOCH_KEY];
+        undoBefore[workspace.EPOCH_KEY] = applied[workspace.EPOCH_KEY];
+        options.onSnapshot(snapshot, JSON.parse(JSON.stringify({ before: undoBefore, after })));
+      }
       notifyApplied();
       return true;
     } finally {
@@ -778,20 +817,36 @@
     setSyncStatus('云端已有另一台设备的数据。请选择用云端或用本机；用云端会先备份本机。', false);
   }
 
-  function showSyncUndoToast(snapshot) {
-    if (typeof document === 'undefined' || !snapshot) return;
+  async function undoRemotePayload(undo) {
+    if (!undo || !undo.before || !undo.after) throw new Error('没有可安全撤销的同步记录。');
+    const saved = await getWorkspace().commit(undo.after, undo.before);
+    setSyncStatus('已撤销云端替换，保留了之后的其他修改。', false);
+    notifyApplied();
+    return saved;
+  }
+
+  function showSyncUndoToast(undo) {
+    if (typeof document === 'undefined' || !undo) return;
     const toast = document.getElementById('toast');
     if (!toast) return;
     toast.textContent = '已用云端数据替换本机。';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = '撤销';
-    btn.onclick = () => {
-      toast.classList.add('hidden');
-      if (typeof OpenTabImport !== 'undefined' && OpenTabImport.applyOpenTabBackup) {
-        OpenTabImport.applyOpenTabBackup(snapshot.data || {}).catch(() => {
-          setSyncStatus('撤销失败。', true);
-        });
+    btn.onclick = async () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try {
+        await undoRemotePayload(undo);
+        toast.classList.add('hidden');
+      } catch (error) {
+        const message = error && error.code === 'WORKSPACE_CONFLICT'
+          ? '同步后相关内容已被修改，无法安全撤销。现有数据未改动。' : '撤销失败，请重试。';
+        setSyncStatus(message, true);
+        toast.textContent = message;
+        toast.appendChild(btn);
+        toast.classList.remove('hidden');
+        btn.disabled = false;
       }
     };
     toast.appendChild(btn);
@@ -805,13 +860,14 @@
     if (choice === 'remote') {
       if (!remote) return { ok: false, reason: 'no-conflict' };
       let snapshot = null;
-      if (typeof OpenTabImport !== 'undefined' && OpenTabImport.saveSnapshotRecord) {
-        snapshot = await OpenTabImport.saveSnapshotRecord('before-sync-pull');
-      }
-      const pulled = await applyRemotePayload(remote);
+      let undo = null;
+      const pulled = await applyRemotePayload(remote, {
+        snapshotReason: 'before-sync-pull',
+        onSnapshot: (record, inverse) => { snapshot = record; undo = inverse; }
+      });
       if (pulled) {
         setSyncStatus('已用云端数据替换本机快捷方式，可撤销。', false);
-        showSyncUndoToast(snapshot);
+        showSyncUndoToast(undo);
       }
       await refreshUsage();
       return { ok: true, pulled: !!pulled, snapshotId: snapshot && snapshot.id };
@@ -823,15 +879,17 @@
   }
 
   async function migratePlaintextSecrets() {
-    const local = await areaGet('local', ['icons']);
-    if (!iconsHavePlaintextSecrets(local.icons)) return false;
-    applyingRemote = true;
-    try {
-      await areaSet('local', { icons: local.icons });
-      return true;
-    } finally {
-      applyingRemote = false;
-    }
+    return getWorkspace().transaction(async ({ read, write }) => {
+      const local = await read(['icons']);
+      if (!iconsHavePlaintextSecrets(local.icons)) return false;
+      applyingRemote = true;
+      try {
+        await write({ icons: local.icons });
+        return true;
+      } finally {
+        applyingRemote = false;
+      }
+    });
   }
 
   async function setEnabled(next) {
@@ -880,8 +938,8 @@
         if (changes[META_KEY]) {
           readRemotePayload().then((payload) => {
             if (!payload) return;
-            applyRemotePayload(payload);
-          });
+            return applyRemotePayload(payload);
+          }).catch(() => setSyncStatus('读取或保存云端数据失败，请重试。', true));
         }
         return;
       }
@@ -895,7 +953,7 @@
     if (typeof document === 'undefined') return;
     if (!document.getElementById('import-sync-section')) return;
     wrapLocalSet();
-    migratePlaintextSecrets();
+    migratePlaintextSecrets().catch(() => setSyncStatus('保护本地凭据时保存失败，请重试。', true));
     const checkbox = document.getElementById('browser-sync-enabled');
     const useRemoteBtn = document.getElementById('sync-use-remote-btn');
     const useLocalBtn = document.getElementById('sync-use-local-btn');
@@ -973,6 +1031,7 @@
     resolveSyncChoice,
     pushLocalToSync,
     applyRemotePayload,
+    undoRemotePayload,
     sanitizeIconForSync,
     getWriteCount: () => writeCount,
     getDeviceId

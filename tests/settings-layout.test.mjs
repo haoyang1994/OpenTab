@@ -1,3 +1,4 @@
+import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -411,7 +412,7 @@ async function runSettingsLayoutE2E() {
     assert.match((await page.locator('#inline-dialog').textContent()) || '', /会关闭浏览器同步/);
     await page.locator('#inline-dialog-actions button', { hasText: '恢复默认' }).click();
     await page.waitForFunction(() => document.getElementById('inline-dialog').classList.contains('hidden'));
-    await page.waitForFunction(async () => {
+    await waitForAsync(page, async () => {
       const result = await chrome.storage.local.get(['browserSyncEnabled']);
       return result.browserSyncEnabled === false;
     });

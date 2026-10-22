@@ -256,6 +256,8 @@
 
   let calendarPicker = null;
   let editingIconId = null;
+  let iconDraftIntent = null;
+  const iconSaveGate = OpenTabIcons.createSaveGate();
   let contextMenuIconId = null;
   let pendingIconUploadDataUrl = '';
   let iconSwitchToken = 0;
@@ -380,6 +382,7 @@
     const opts = options || {};
     toast.textContent = text;
     if (opts.actionLabel && opts.onAction) {
+      const actionIntent = opts.intent || workspace.captureIntent();
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = opts.actionLabel;
@@ -387,6 +390,7 @@
         clearTimeout(toastTimer);
         toast.classList.add('hidden');
         pendingUndo = null;
+        if (!workspace.isIntentCurrent(actionIntent)) { showToast('内容已变化，无法执行旧操作。'); return; }
         opts.onAction();
       };
       toast.appendChild(btn);
@@ -659,12 +663,17 @@
   function setTodoPanelOpen(open) {
     if (open) rememberFocus(elements.todoToggleBtn);
     state.todoPanelOpen = open;
+    renderTodoPanel();
+    saveState();
+  }
+
+  function renderTodoPanel() {
+    const open = state.todoPanelOpen;
     elements.todoWidget.classList.toggle('hidden', !open);
     elements.todoToggleBtn.classList.toggle('active', open);
     elements.todoCollapseBtn.textContent = '×';
     elements.todoCollapseBtn.title = '关闭待办';
     elements.todoCollapseBtn.setAttribute('aria-label', '关闭待办');
-    saveState();
   }
 
   function toggleTodoPanel() {
@@ -1000,12 +1009,7 @@
     });
   }
 
-  function persistOrRollback(beforeIcons) {
-    saveState(() => {
-      state.icons = beforeIcons;
-      refreshIconViews();
-    });
-  }
+  function persistOrRollback() { return saveState(); }
 
   function commitFolderReorder(iconId, insertIndex, announce) {
     const before = state.icons.slice();
@@ -1228,9 +1232,10 @@
 
     const before = state.icons.slice();
     state.icons.push(newIcon);
-    persistOrRollback(before);
+    const saved = persistOrRollback(before);
     refreshIconViews();
     if (window.OpenTabIcons) OpenTabIcons.resolveLater(newIcon.id);
+    return saved;
   }
 
   function updateIcon(iconId, payload) {
@@ -1265,22 +1270,24 @@
     else if (window.OpenTabIcons) OpenTabIcons.prepareRecord(icon);
     else icon.resolvedIconUrl = payload.uploadedIconDataUrl || payload.customIconUrl || '';
 
-    saveState();
+    const saved = saveState();
     refreshIconViews();
     if (window.OpenTabIcons && !isSsh) OpenTabIcons.resolveLater(icon.id);
+    return saved;
   }
 
-  function undoDelete(snapshot) {
+  async function undoDelete(snapshot) {
+    if (state.icons.some((item) => item.id === snapshot.icon.id)) return;
     const before = state.icons.slice();
     const next = before.slice();
     next.splice(Math.min(snapshot.index, next.length), 0, snapshot.icon);
     state.icons = next;
-    persistOrRollback(before);
+    const saved = persistOrRollback(before);
     refreshIconViews();
-    showToast('已恢复', { duration: 1500 });
+    if (await saved) showToast('已恢复', { duration: 1500 });
   }
 
-  function deleteIcon(iconId) {
+  async function deleteIcon(iconId) {
     if (window.OpenTabFolders && OpenTabFolders.handleDeleteIcon(iconId)) return;
     const index = state.icons.findIndex((icon) => icon.id === iconId);
     if (index < 0) return;
@@ -1288,50 +1295,51 @@
     const before = state.icons.slice();
     state.icons = before.filter((icon) => icon.id !== iconId);
     pendingUndo = snapshot;
-    persistOrRollback(before);
+    const intent = workspace.captureIntent(), saved = persistOrRollback(before);
     refreshIconViews();
+    if (!(await saved) || !workspace.isIntentCurrent(intent)) return;
     showToast(`已删除「${snapshot.icon.name}」`, {
       actionLabel: '撤销',
-      onAction: () => undoDelete(snapshot),
+      onAction: () => undoDelete(snapshot), intent,
       duration: 6000
     });
   }
 
-  function saveState(rollback, onOk) {
-    chrome.storage.local.set({
-      icons: state.icons,
-      folders: state.folders,
-      currentFolderId: state.currentFolderId,
-      todos: state.todos,
-      todoPanelOpen: state.todoPanelOpen,
-      background: state.background,
-      clockFormat: state.clockFormat,
-      showSeconds: state.showSeconds,
-      uiOpacity: state.uiOpacity,
-      uiBlur: state.uiBlur,
-      iconFrameEnabled: state.iconFrameEnabled,
-      openInNewTab: state.openInNewTab,
-      timezone: state.timezone,
-      bingIndex: state.bingIndex,
-      themeMode: state.themeMode,
-      accentHue: state.accentHue,
-      particlesEnabled: state.particlesEnabled,
-      gradientFlow: state.gradientFlow,
-      minimalMode: state.minimalMode
-    }, () => {
-      if (chrome.runtime.lastError) {
-        showToast('保存失败，请重试');
-        if (typeof rollback === 'function') rollback();
-        return;
-      }
-      if (typeof onOk === 'function') onOk();
-      writeBootMirror();
-    });
+  function renderWorkspaceSettings() {
+    const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
+    elements.timezoneLabel.textContent = tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
+    applyUiOpacitySetting();
+    applyUiBlurSetting();
+    applyIconFrameSetting();
+    applyThemeMode();
+    applyAccentColor();
+    applyParticles();
+    applyGradientFlow();
+    applyMinimalMode();
+    if (window.OpenTabSettingsNav) {
+      OpenTabSettingsNav.syncFromState();
+      OpenTabSettingsNav.noteIcons(state.icons);
+    }
   }
+
+  const workspace = OpenTabWorkspace.connect({
+    state,
+    onChange: () => {
+      refreshIconViews(false);
+      renderTodos();
+      updateClock();
+      renderWorkspaceSettings();
+      renderTodoPanel();
+      updateBackground({ fade: false });
+    },
+    onError: (error) => showToast(error.message || '保存失败，请重试'),
+    onSaved: writeBootMirror
+  });
+  const saveState = workspace.save;
 
   function loadState() {
     chrome.storage.local.get(
-      ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode'].concat(
+      OpenTabWorkspace.KEYS.concat(
         window.OpenTabLayout ? OpenTabLayout.STORAGE_KEYS : []
       ),
       (result) => {
@@ -1400,25 +1408,12 @@
         const requestedFolderId = result.currentFolderId || HOME_FOLDER_ID;
         state.currentFolderId = getFolderById(requestedFolderId) ? requestedFolderId : HOME_FOLDER_ID;
 
-        const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
-        elements.timezoneLabel.textContent = tz ? `${tz.name} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
-
         updateClock();
         renderTimezoneList();
         initCalendar();
 
-        applyUiOpacitySetting();
-        applyUiBlurSetting();
-        applyIconFrameSetting();
-        applyThemeMode();
-        applyAccentColor();
-        applyParticles();
-        applyGradientFlow();
-        applyMinimalMode();
-        if (window.OpenTabSettingsNav) {
-          OpenTabSettingsNav.syncFromState();
-          OpenTabSettingsNav.noteIcons(state.icons);
-        }
+        renderWorkspaceSettings();
+        workspace.seed(result, { ...OpenTabWorkspace.migrationOverrides(result, state), ...(backgroundChanged ? { background: result.background } : {}) });
         refreshIconViews(false);
         renderTodos();
         setTodoPanelOpen(state.todoPanelOpen);
@@ -1432,6 +1427,8 @@
   }
 
   function openAddIconModal() {
+    iconSaveGate.release();
+    iconDraftIntent = workspace.captureIntent();
     editingIconId = null;
     pendingIconUploadDataUrl = '';
 
@@ -1464,7 +1461,9 @@
     const icon = state.icons.find((item) => item.id === iconId);
     if (!icon) return;
 
+    iconSaveGate.release();
     editingIconId = iconId;
+    iconDraftIntent = workspace.captureIntent({ icons: [iconId], folders: [icon.folderId] });
     pendingIconUploadDataUrl = '';
 
     const iconType = normalizeIconType(icon.type);
@@ -1496,12 +1495,18 @@
   }
 
   function closeAddIconModal() {
+    iconSaveGate.release();
+    iconDraftIntent = null;
     editingIconId = null;
     pendingIconUploadDataUrl = '';
     elements.addIconModal.classList.add('hidden');
   }
 
   async function handleSaveIcon() {
+    if (iconSaveGate.has(iconDraftIntent)) return;
+    if (!workspace.isIntentCurrent(iconDraftIntent)) {
+      closeAddIconModal(); showToast('内容已变化，请重新编辑。'); return;
+    }
     const iconType = normalizeIconType(elements.iconType.value);
     const isSsh = iconType === ICON_TYPE_SSH;
     const isTool = iconType === ICON_TYPE_TOOL;
@@ -1588,9 +1593,7 @@
         customIconUrl = normalizeOptionalUrl(rawCustomUrl);
       }
     } catch (error) {
-      if (isTool) {
-        // tool 类型不需要验证
-      } else {
+      if (!isTool) {
         if (isSsh) alert('请输入有效的 SSH 配置。');
         else showToast('请输入有效的网址。');
         if (isSsh) elements.sshGatewayUrl.focus();
@@ -1600,52 +1603,22 @@
       }
     }
 
-    if (editingIconId) {
-      const current = state.icons.find((item) => item.id === editingIconId);
-      updateIcon(editingIconId, {
-        name,
-        url,
-        type: iconType,
-        sshGatewayUrl,
-        sshGatewayToken,
-        sshHost,
-        sshPort,
-        sshUsername,
-        sshPassword,
-        sshSocksHost,
-        sshSocksPort,
-        sshSocksUsername,
-        sshSocksPassword,
-        folderId: current?.folderId || state.currentFolderId || HOME_FOLDER_ID,
-        customIconUrl,
-        emoji: '',
-        uploadedIconDataUrl: isSsh ? '' : (pendingIconUploadDataUrl || (current?.uploadedIconDataUrl || '')),
-        toolSubtype: isTool ? toolSubtype : ''
-      });
-    } else {
-      addIcon({
-        name,
-        url,
-        type: iconType,
-        sshGatewayUrl,
-        sshGatewayToken,
-        sshHost,
-        sshPort,
-        sshUsername,
-        sshPassword,
-        sshSocksHost,
-        sshSocksPort,
-        sshSocksUsername,
-        sshSocksPassword,
-        folderId,
-        customIconUrl,
-        emoji: '',
-        uploadedIconDataUrl: isSsh ? '' : pendingIconUploadDataUrl,
-        toolSubtype: isTool ? toolSubtype : ''
-      });
+    const id = editingIconId, draft = iconDraftIntent;
+    const current = state.icons.find((item) => item.id === id);
+    const payload = {
+      name, url, type: iconType, sshGatewayUrl, sshGatewayToken, sshHost, sshPort,
+      sshUsername, sshPassword, sshSocksHost, sshSocksPort, sshSocksUsername, sshSocksPassword,
+      folderId: current?.folderId || folderId, customIconUrl, emoji: '',
+      uploadedIconDataUrl: isSsh ? '' : (pendingIconUploadDataUrl || current?.uploadedIconDataUrl || ''),
+      toolSubtype: isTool ? toolSubtype : ''
+    };
+    try {
+      await iconSaveGate.run(draft, elements.addIconModal,
+        () => id ? updateIcon(id, payload) : addIcon(payload),
+        () => { if (iconDraftIntent === draft) closeAddIconModal(); });
+    } catch (error) {
+      showToast('保存失败，请重试。');
     }
-
-    closeAddIconModal();
   }
 
   async function handleIconFileChange() {
@@ -1928,6 +1901,7 @@
 
   if (window.OpenTabIcons) {
     OpenTabIcons.init({
+      ...workspace,
       getIcons: () => state.icons,
       saveState,
       refreshIconViews,
@@ -1959,6 +1933,7 @@
   });
   if (window.OpenTabSettingsNav) {
     OpenTabSettingsNav.init({
+      ...workspace,
       state,
       saveState,
       showToast,
@@ -1984,6 +1959,7 @@
   }
   if (window.OpenTabFolders) {
     OpenTabFolders.init({
+      ...workspace,
       state,
       HOME_FOLDER_ID,
       ICON_DND_TYPE,

@@ -1,3 +1,4 @@
+import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +63,7 @@ try {
   await page.locator('#weather-unit').selectOption('f');
   await page.waitForFunction(() => document.querySelector('#weather-temp').textContent.includes('68'));
   assert.equal(requests, 1, 'unit switch reuses cache');
-  await page.waitForFunction(async () => (await chrome.storage.local.get('weatherUnit')).weatherUnit === 'f');
+  await waitForAsync(page, async () => (await chrome.storage.local.get('weatherUnit')).weatherUnit === 'f');
   await page.reload();
   await page.waitForFunction(() => document.querySelector('#weather-temp').textContent.includes('68'));
   assert.equal(requests, 1, 'reload reuses fresh cache');
@@ -95,7 +96,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#weather-refresh').disabled);
   await page.locator('#weather-enabled').uncheck();
   releasePending?.();
-  await page.waitForFunction(async () => (await chrome.storage.local.get('weatherEnabled')).weatherEnabled === false);
+  await waitForAsync(page, async () => (await chrome.storage.local.get('weatherEnabled')).weatherEnabled === false);
   assert.equal(await page.locator('#weather-pill').isVisible(), false, 'disable hides weather immediately');
   await page.reload();
   await page.waitForFunction(() => window.OpenTabWeather && document.querySelector('#weather-status').textContent.includes('天气已关闭'));

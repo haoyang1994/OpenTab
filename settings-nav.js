@@ -369,7 +369,7 @@
     const weather = typeof OpenTabWeather !== 'undefined' && OpenTabWeather.getBackupSlice
       ? OpenTabWeather.getBackupSlice()
       : null;
-    return {
+    return cloneSnapshot({
       appearance: {
         clockFormat: state.clockFormat,
         showSeconds: state.showSeconds,
@@ -396,7 +396,60 @@
       advanced: { developerToolsEnabled: developerToolsEnabled },
       weather: weather,
       browserSyncEnabled: !!(typeof document !== 'undefined' && $('browser-sync-enabled') && $('browser-sync-enabled').checked)
-    };
+    });
+  }
+
+  function cloneSnapshot(value) {
+    if (Array.isArray(value)) return value.map(cloneSnapshot);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).map((key) => [key, cloneSnapshot(value[key])]));
+    }
+    return value;
+  }
+
+  function sameSnapshotValue(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  function resetInverse(before, after) {
+    const grouped = new Set(['appearance', 'shortcuts', 'layout', 'search', 'advanced', 'weather']);
+    const inverse = {};
+    Object.keys(before).forEach((section) => {
+      if (sameSnapshotValue(before[section], after[section])) return;
+      if (grouped.has(section) && before[section] && after[section]) {
+        const fields = {};
+        Object.keys(before[section]).forEach((key) => {
+          if (!sameSnapshotValue(before[section][key], after[section][key])) {
+            fields[key] = { before: before[section][key], after: after[section][key] };
+          }
+        });
+        if (Object.keys(fields).length) inverse[section] = { fields };
+      } else {
+        inverse[section] = { before: before[section], after: after[section] };
+      }
+    });
+    return inverse;
+  }
+
+  function applyResetInverse(inverse) {
+    const current = takeSnapshot();
+    const patch = {};
+    for (const [section, change] of Object.entries(inverse)) {
+      if (change.fields) {
+        const values = Object.assign({}, current[section]);
+        for (const [key, field] of Object.entries(change.fields)) {
+          if (!sameSnapshotValue(values[key], field.after) && !sameSnapshotValue(values[key], field.before)) return false;
+          values[key] = cloneSnapshot(field.before);
+        }
+        patch[section] = values;
+      } else {
+        if (!sameSnapshotValue(current[section], change.after) && !sameSnapshotValue(current[section], change.before)) return false;
+        patch[section] = cloneSnapshot(change.before);
+      }
+    }
+    // Validate every changed field before touching state or any independent module.
+    applySnapshot(patch);
+    return true;
   }
 
   function applyAppearance(values) {
@@ -491,6 +544,8 @@
   }
 
   function resetWithConfirm(sectionId) {
+    const intent = host && host.captureIntent ? host.captureIntent() : null;
+    const intentIsCurrent = () => !intent || !host || !host.isIntentCurrent || host.isIntentCurrent(intent);
     const message = sectionId === 'sync'
       ? '恢复该分区的默认设置？会关闭浏览器同步。快捷方式不会改动。'
       : sectionId
@@ -498,15 +553,27 @@
         : '恢复全部设置为默认？快捷方式不会改动。';
     return confirmDialog(message).then((ok) => {
       if (!ok) return false;
+      if (!intentIsCurrent()) {
+        if (host && host.showToast) host.showToast('内容已变化，请重新选择恢复默认。');
+        return false;
+      }
       const snap = takeSnapshot();
       if (sectionId) resetSection(sectionId);
       else resetAll();
+      const after = takeSnapshot();
+      // setEnabled updates its checkbox only after storage resolves.
+      if (sectionId === 'sync') after.browserSyncEnabled = false;
+      const inverse = resetInverse(snap, after);
       if (host && host.showToast) {
         host.showToast('已恢复默认', {
           actionLabel: '撤销',
           onAction: () => {
-            applySnapshot(snap);
+            if (!intentIsCurrent() || !applyResetInverse(inverse)) {
+              if (host.showToast) host.showToast('相关设置已变化，无法安全撤销。');
+              return false;
+            }
             if (host.showToast) host.showToast('已恢复', { duration: 1500 });
+            return true;
           },
           duration: 6000
         });

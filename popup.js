@@ -1,6 +1,5 @@
 (() => {
   const HOME_FOLDER_ID = 'folder-home';
-  const LEGACY_PRESET_FOLDER_IDS = new Set(['folder-blog', 'folder-tools', 'folder-ops']);
   const DEFAULT_FOLDERS = [{ id: HOME_FOLDER_ID, name: '主页' }];
 
   const elements = {
@@ -13,14 +12,15 @@
 
   const state = {
     tab: null,
-    folders: []
+    folders: [],
+    saving: false
   };
 
   function ensureFolders(folders) {
     const normalized = Array.isArray(folders)
       ? folders
-          .filter((item) => item && item.id && item.name && !LEGACY_PRESET_FOLDER_IDS.has(item.id))
-          .map((item) => ({ id: item.id, name: item.name }))
+          .filter((item) => item && item.id && item.name)
+          .map((item) => ({ ...item }))
       : [];
 
     const byId = new Map(normalized.map((item) => [item.id, item]));
@@ -80,18 +80,14 @@
     elements.siteName.select();
   }
 
-  function loadFolders() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['folders'], (result) => {
-        state.folders = ensureFolders(result.folders);
-        renderFolderOptions();
-        resolve();
-      });
-    });
+  async function loadFolders() {
+    const result = await OpenTabWorkspace.transaction(({ read }) => read(['folders']));
+    state.folders = ensureFolders(result.folders);
+    renderFolderOptions();
   }
 
-  function saveCurrentTab() {
-    if (!state.tab || !state.tab.url) return;
+  async function saveCurrentTab() {
+    if (state.saving || !state.tab || !state.tab.url) return;
 
     const name = elements.siteName.value.trim();
     if (!name) {
@@ -104,32 +100,40 @@
     const tabUrl = state.tab.url;
     const iconCandidates = getFaviconCandidates(tabUrl);
 
-    chrome.storage.local.get(['icons', 'folders'], (result) => {
-      const icons = Array.isArray(result.icons) ? result.icons : [];
-      const folders = ensureFolders(result.folders);
-      const validFolderIds = new Set(folders.map((folder) => folder.id));
-      const targetFolderId = validFolderIds.has(folderId) ? folderId : HOME_FOLDER_ID;
+    state.saving = true;
+    elements.saveBtn.disabled = true;
+    try {
+      await OpenTabWorkspace.transaction(async ({ read, write }) => {
+        const result = await read(['icons', 'folders']);
+        const icons = Array.isArray(result.icons) ? result.icons.slice() : [];
+        const folders = ensureFolders(result.folders);
+        const validFolderIds = new Set(folders.map((folder) => folder.id));
+        const targetFolderId = validFolderIds.has(folderId) ? folderId : HOME_FOLDER_ID;
 
-      const record = {
-        id: generateId(),
-        name,
-        url: tabUrl,
-        folderId: targetFolderId,
-        parentId: '',
-        customIconUrl: '',
-        emoji: '',
-        uploadedIconDataUrl: '',
-        resolvedIconUrl: '',
-        iconCandidates
-      };
-      if (window.OpenTabIcons && OpenTabIcons.prepareRecord) OpenTabIcons.prepareRecord(record);
-      icons.push(record);
+        const record = {
+          id: generateId(),
+          name,
+          url: tabUrl,
+          folderId: targetFolderId,
+          parentId: '',
+          customIconUrl: '',
+          emoji: '',
+          uploadedIconDataUrl: '',
+          resolvedIconUrl: '',
+          iconCandidates
+        };
+        if (window.OpenTabIcons && OpenTabIcons.prepareRecord) OpenTabIcons.prepareRecord(record);
+        icons.push(record);
 
-      chrome.storage.local.set({ icons, folders }, () => {
-        setStatus('已添加到 OpenTab。');
-        setTimeout(() => window.close(), 550);
+        await write({ icons, folders });
       });
-    });
+      setStatus('已添加到 OpenTab。');
+      setTimeout(() => window.close(), 550);
+    } catch (error) {
+      state.saving = false;
+      elements.saveBtn.disabled = false;
+      setStatus('保存失败，请重试。', true);
+    }
   }
 
   elements.saveBtn.addEventListener('click', saveCurrentTab);

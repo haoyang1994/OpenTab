@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Save workspace changes by settings key and item ID under a shared cross-tab lock, instead of overwriting shortcuts with stale tab snapshots. Reject conflicting edits and pre-restore shortcut changes rather than resurrecting deleted data.
+- Preserve unrelated later changes when undoing a deletion or import; coordinate popup additions and incoming workspace sync with page saves.
+- Add deterministic merge/failure checks and real two-tab extension regressions with persisted-storage and reload assertions.
+
 - Delayed Bing wallpaper responses no longer save an old shortcut workspace over a newly imported backup; importing or changing wallpaper invalidates pending responses.
 - Offline wallpaper tests wait for the cached full image instead of racing a fixed delay. Import regressions cover delayed wallpaper responses in the same and a second tab, persisted data, and reload.
 
