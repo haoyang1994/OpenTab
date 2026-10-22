@@ -68,9 +68,20 @@ try {
       assert.equal(retained.length, 1);
       for (const [key, value] of Object.entries(legacy)) assert.equal(retained[0][key], value);
       const editLegacy = async () => {
-        const box = await tile.boundingBox();
-        assert.ok(box);
-        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+        // This legacy tile is intentionally aria-disabled, so use a native
+        // pointer action after proving its center is on-screen and reachable.
+        // Visibility alone does not imply an absolute mouse coordinate is safe.
+        await tile.scrollIntoViewIfNeeded();
+        await tile.hover();
+        const point = await tile.evaluate(el => {
+          const rect = el.getBoundingClientRect();
+          const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+          return { x, y, inViewport: x >= 0 && x < innerWidth && y >= 0 && y < innerHeight,
+            hit: el.contains(document.elementFromPoint(x, y)) };
+        });
+        assert.equal(point.inViewport, true, 'legacy shortcut center is inside the viewport');
+        assert.equal(point.hit, true, 'legacy shortcut wins the actual right-click hit test');
+        await page.mouse.click(point.x, point.y, { button: 'right' });
         await page.locator('#edit-icon-btn').click();
         await page.locator('#add-icon-modal:not(.hidden)').waitFor({ state: 'visible' });
       };
@@ -130,6 +141,20 @@ try {
   }
   assert.deepEqual(errors, [], 'Packaged extension pages must load without runtime/missing-asset errors');
   console.log('Packaged MV3 smoke passed: extracted ZIP, worker and four extension pages.');
+} catch (error) {
+  const failedPage = context?.pages().findLast(page => page.url().includes('/home.html'));
+  if (failedPage) {
+    console.error('Package smoke failure geometry', await failedPage.evaluate(() => {
+      const tile = document.querySelector('[data-id="removed-tool-fixture"]');
+      const rect = tile?.getBoundingClientRect();
+      return { viewport: [innerWidth, innerHeight], tile: rect?.toJSON(),
+        centerHit: rect ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.id : null,
+        menuClass: document.querySelector('#icon-context-menu')?.className };
+    }).catch(() => null));
+    fs.mkdirSync(path.join(root, 'artifacts'), { recursive: true });
+    await failedPage.screenshot({ path: path.join(root, 'artifacts/package-home-failure.png'), animations: 'disabled' }).catch(() => {});
+  }
+  throw error;
 } finally {
   await context?.close();
   fs.rmSync(temporary, { recursive: true, force: true });
