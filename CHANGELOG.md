@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Wait for the selected local image before saving a shortcut; keep failed uploads editable without overwriting the saved image, and reject cancelled or duplicate submissions.
+- Exclude closed panels from keyboard navigation, restore Add/Edit focus, make timezone and image-upload controls keyboard-operable, and improve hint/placeholder contrast.
+
 - Ignore stale local-icon upload completions after a newer file selection, dialog close/reopen, or conflicting record update; cover each race with delayed-file regressions.
 
 

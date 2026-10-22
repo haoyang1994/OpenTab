@@ -239,7 +239,7 @@ assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
   const handler = source.slice(start, source.indexOf('  function hideIconContextMenu()', start));
   const reads = [], firstDraft = {}, nextDraft = {};
   const context = vm.createContext({
-    iconFileGeneration: 0, iconDraftIntent: firstDraft, pendingIconUploadDataUrl: '',
+    iconUploadGate: OpenTabIcons.createUploadGate(), iconDraftIntent: firstDraft, pendingIconUploadDataUrl: '',
     elements: { iconFile: { files: [] }, iconUploadStatus: { textContent: '' } },
     workspace: { isIntentCurrent: (draft) => draft !== null },
     t: (s, params) => s.replace(/\{(\w+)\}/g, (match, key) => params?.[key] ?? match),
@@ -287,6 +287,146 @@ assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
   context.workspace.isIntentCurrent = () => false;
   reads.shift().resolve('invalid-image'); await invalidRead;
   assert.equal(context.pendingIconUploadDataUrl, '', 'workspace-invalidated draft ignores delayed image completion');
+}
+
+// Exercise the shipped Save/upload/close handlers together, not a model of them.
+{
+  const source = fs.readFileSync(path.join(root, 'home.js'), 'utf8');
+  const handlers = source.slice(source.indexOf('  function closeAddIconModal()'), source.indexOf('  function hideIconContextMenu()'));
+  function fixture(existing = '') {
+    const reads = [], writes = [], controls = [];
+    const elements = new Proxy({
+      iconFile: { files: [] }, iconUploadStatus: { textContent: '' },
+      addIconModal: {
+        hidden: false,
+        classList: { contains() { return elements.addIconModal.hidden; }, add() { elements.addIconModal.hidden = true; } },
+        querySelectorAll: () => controls
+      }
+    }, { get(target, key) { return target[key] ||= { value: '', focus() {} }; } });
+    elements.iconName.value = 'Example';
+    elements.iconUrl.value = 'https://example.com';
+    elements.iconType.value = 'shortcut';
+    const cancel = { id: 'cancel-btn', disabled: false };
+    const save = { id: 'save-btn', disabled: false };
+    controls.push(cancel, save);
+    elements.cancelBtn = cancel;
+    const context = vm.createContext({
+      elements, iconUploadGate: OpenTabIcons.createUploadGate(), iconSaveGate: OpenTabIcons.createSaveGate(),
+      iconDraftIntent: {}, editingIconId: existing ? 'existing' : null, pendingIconUploadDataUrl: '',
+      state: { icons: existing ? [{ id: 'existing', uploadedIconDataUrl: existing }] : [] },
+      workspace: { isIntentCurrent: (draft) => !!draft },
+      ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'home',
+      normalizeIconType: (v) => v, normalizeUrl: (v) => v, normalizeOptionalUrl: (v) => v,
+      t: (s, params) => s.replace(/\{(\w+)\}/g, (match, key) => params?.[key] ?? match),
+      showToast() {}, restoreFocus() {}, window: { OpenTabIcons: true },
+      OpenTabIcons: { readAndCompressFile: () => new Promise((resolve, reject) => reads.push({ resolve, reject })) },
+      addIcon: async (payload) => { writes.push(payload); return true; },
+      updateIcon: async (id, payload) => { writes.push({ id, ...payload }); return true; }
+    });
+    vm.runInContext(handlers, context);
+    return { context, reads, writes, elements, save, cancel,
+      select(name) { elements.iconFile.files = [{ name }]; return context.handleIconFileChange(); },
+      reopen() {
+        context.iconDraftIntent = {};
+        context.editingIconId = null;
+        elements.addIconModal.hidden = false;
+        context.iconUploadGate.reset();
+      }
+    };
+  }
+  for (const existing of ['', 'image-A']) {
+    const f = fixture(existing);
+    const read = f.select('B.png');
+    assert.equal(f.elements.iconUploadStatus.textContent, '正在读取图片…');
+    const save = f.context.handleSaveIcon();
+    await f.context.handleSaveIcon(); // repeated click/Enter cannot duplicate the pending save
+    assert.equal(f.writes.length, 0, 'Save must not persist before compression finishes');
+    assert.equal(f.save.disabled, true, 'pending Save is visibly gated');
+    assert.equal(f.cancel.disabled, false, 'Cancel stays available while waiting');
+    f.reads.shift().resolve('image-B');
+    await Promise.all([read, save]);
+    assert.equal(f.writes.length, 1);
+    assert.equal(f.writes[0].uploadedIconDataUrl, 'image-B', 'fresh and replacement saves use selected image');
+    assert.equal(f.elements.addIconModal.hidden, true);
+    assert.equal(f.save.disabled, false);
+  }
+  {
+    const f = fixture('image-A');
+    const read = f.select('bad.png'), save = f.context.handleSaveIcon();
+    f.reads.shift().reject(new Error('compression failed'));
+    await Promise.all([read, save]);
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.context.state.icons[0].uploadedIconDataUrl, 'image-A');
+    assert.equal(f.elements.addIconModal.hidden, false, 'failure leaves editor open');
+    assert.equal(f.save.disabled, false, 'failed read releases Save controls');
+    assert.match(f.elements.iconUploadStatus.textContent, /读取失败/);
+    await f.context.handleSaveIcon();
+    assert.equal(f.writes.length, 0, 'retrying Save cannot silently accept failed upload');
+    const retry = f.select('good.png');
+    f.reads.shift().resolve('image-good'); await retry;
+    await f.context.handleSaveIcon();
+    assert.equal(f.writes[0].uploadedIconDataUrl, 'image-good');
+  }
+  for (const outcome of [true, false, 'reject']) for (const initiallyDisabled of [false, true]) {
+    const f = fixture();
+    f.cancel.disabled = initiallyDisabled;
+    let beginWrite, finishWrite, rejectWrite;
+    const writing = new Promise(resolve => { beginWrite = resolve; });
+    const persisted = new Promise((resolve, reject) => { finishWrite = resolve; rejectWrite = reject; });
+    f.context.addIcon = () => { beginWrite(); return persisted; };
+    const read = f.select('phase.png'), save = f.context.handleSaveIcon();
+    assert.equal(f.cancel.disabled, initiallyDisabled, 'read phase preserves Cancel availability');
+    f.reads.shift().resolve('image-phase');
+    await read; await writing;
+    assert.equal(f.cancel.disabled, true, 'Cancel cannot imply an already-issued write was withdrawn');
+    if (outcome === 'reject') rejectWrite(new Error('storage failed')); else finishWrite(outcome);
+    await save;
+    assert.equal(f.cancel.disabled, initiallyDisabled, 'success and failure restore original Cancel state');
+    assert.equal(f.save.disabled, false);
+    assert.equal(f.elements.addIconModal.hidden, outcome === true);
+  }
+  for (const reopen of [false, true]) {
+    const f = fixture('image-A');
+    const read = f.select('old.png'), save = f.context.handleSaveIcon();
+    f.context.closeAddIconModal();
+    if (reopen) f.reopen();
+    await save; // cancellation must not wait for an obsolete decoder
+    f.reads.shift().resolve('stale-image');
+    await read;
+    assert.equal(f.writes.length, 0, 'cancel invalidates waiting Save, even after reopening');
+    assert.equal(f.context.pendingIconUploadDataUrl, '');
+    assert.equal(f.elements.addIconModal.hidden, !reopen);
+    assert.equal(f.save.disabled, false);
+  }
+  {
+    const f = fixture('image-A');
+    const older = f.select('older.png'), save = f.context.handleSaveIcon();
+    const newer = f.select('newer.png');
+    f.reads[0].resolve('older-image'); await older;
+    assert.equal(f.writes.length, 0, 'pending Save follows a newer file selection');
+    f.reads[1].resolve('newer-image');
+    await Promise.all([newer, save]);
+    assert.equal(f.writes.length, 1);
+    assert.equal(f.writes[0].uploadedIconDataUrl, 'newer-image');
+  }
+  {
+    const f = fixture('image-A');
+    const older = f.select('older.png'), save = f.context.handleSaveIcon();
+    const newer = f.select('newer.png');
+    f.reads[1].resolve('newer-image');
+    await Promise.all([newer, save]);
+    assert.equal(f.writes[0].uploadedIconDataUrl, 'newer-image', 'latest read does not wait on obsolete decoder');
+    f.reads[0].resolve('older-image'); await older;
+    assert.equal(f.writes.length, 1);
+  }
+  {
+    const f = fixture('image-A');
+    const read = f.select('pending.png'), save = f.context.handleSaveIcon();
+    f.context.workspace.isIntentCurrent = () => false;
+    f.reads.shift().resolve('invalid-image');
+    await Promise.all([read, save]);
+    assert.equal(f.writes.length, 0, 'workspace invalidation cancels pending Save');
+  }
 }
 
 function addedFileBytes() {

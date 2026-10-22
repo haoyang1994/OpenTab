@@ -832,7 +832,7 @@ async function runExtensionE2E() {
     await page.fill('#icon-name', 'Example A');
     await page.fill('#icon-url', 'https://example.com/a');
     await page.click('#save-btn');
-    await page.waitForSelector('#add-icon-modal.hidden', { timeout: 5000 });
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached', timeout: 5000 });
     const t1Order = await desktopOrder(page);
     assert.equal(t1Order.length, 1, 'T1: one icon after save');
     const t1Names = await page.$$eval('#icons-container .icon-widget[data-id] .icon-name', els => els.map(el => el.textContent));
@@ -859,7 +859,7 @@ async function runExtensionE2E() {
     await page.locator('#welcome-text').click({ button: 'right' });
     await page.waitForSelector('#add-icon-modal:not(.hidden)', { timeout: 5000 });
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#add-icon-modal.hidden', { timeout: 5000 });
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached', timeout: 5000 });
     await page.keyboard.down('Alt');
     await page.locator('#welcome-text').click({ button: 'right' });
     await page.keyboard.up('Alt');
@@ -1000,10 +1000,10 @@ async function runExtensionE2E() {
     await page.click('#add-shortcut-tile');
     await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     assert.equal(await page.locator('#settings-panel').evaluate(el => el.classList.contains('hidden')), false, 'T7: settings still open');
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#settings-panel.hidden');
+    await page.waitForSelector('#settings-panel.hidden', { state: 'attached' });
 
     await resetHome(page, {
       folders: folders({ id: 'folder-x', name: 'X' }),
@@ -1034,7 +1034,7 @@ async function runExtensionE2E() {
     await page.click('#add-shortcut-tile');
     await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#add-icon-modal.hidden', { timeout: 5000 });
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached', timeout: 5000 });
     console.log('T7 passed');
 
     // --- invalid URL keyboard ---
@@ -1248,7 +1248,7 @@ async function runExtensionE2E() {
     await page.click('#add-shortcut-tile');
     await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     assert.equal(await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden')), false);
     assert.equal(
       await page.evaluate(() => document.activeElement && document.activeElement.id),
@@ -1256,7 +1256,7 @@ async function runExtensionE2E() {
       'focus stack: closing modal restores the add tile'
     );
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#settings-panel.hidden');
+    await page.waitForSelector('#settings-panel.hidden', { state: 'attached' });
     assert.equal(
       await page.evaluate(() => document.activeElement && document.activeElement.id),
       'settings-btn',
@@ -1268,7 +1268,7 @@ async function runExtensionE2E() {
     await page.locator('#folder-icons-container .add-shortcut-tile').click();
     await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     assert.equal(
       await page.locator('#folder-overlay').evaluate((el) => el.classList.contains('hidden')),
       false,
@@ -1991,7 +1991,7 @@ async function runExtensionE2E() {
       '已保存，留空则不修改'
     );
     await page.click('#cancel-btn');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
 
     const conflictResult = await page.evaluate(async () => {
       await OpenTabSync.setEnabled(false);
@@ -2157,7 +2157,7 @@ async function runExtensionE2E() {
     assert.equal(afterPlaceholder.iconSource, 'placeholder');
     assert.equal((afterPlaceholder.placeholderLetter || '').toUpperCase(), 'Z');
     await page.click('#change-icon-close');
-    await page.waitForSelector('#change-icon-modal.hidden');
+    await page.waitForSelector('#change-icon-modal.hidden', { state: 'attached' });
     console.log('AC4 change-icon placeholder passed');
 
     await resetHome(page, { icons: [], folders: folders(), currentFolderId: HOME });
@@ -2166,7 +2166,7 @@ async function runExtensionE2E() {
     await page.fill('#icon-name', 'GitHub HD');
     await page.fill('#icon-url', 'https://github.com');
     await page.click('#save-btn');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     const addedSrc = await page.locator('#icons-container .icon-widget[data-id] img.icon-image').getAttribute('src');
     assert.ok(
       addedSrc && !/^https?:/i.test(addedSrc),
@@ -2180,7 +2180,7 @@ async function runExtensionE2E() {
     await page.fill('#icon-name', 'NoCORS Add');
     await page.fill('#icon-url', 'https://cors-blocked.test/added');
     await page.click('#save-btn');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     await page.waitForFunction(() => {
       const img = document.querySelector('#icons-container .icon-widget[data-id] img.icon-image');
       return img && /^https:\/\//i.test(img.getAttribute('src') || '');
@@ -2262,7 +2262,7 @@ async function runExtensionE2E() {
     await page.fill('#icon-url', 'https://github.com');
     await page.fill('#icon-custom-url', 'https://cdn.custom-gh.test/logo.png');
     await page.click('#save-btn');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     await page.waitForFunction(() => {
       const img = document.querySelector('#icons-container .icon-widget[data-id] img.icon-image');
       const src = img && img.getAttribute('src');
@@ -2279,7 +2279,7 @@ async function runExtensionE2E() {
     await page.fill('#icon-url', 'https://example.com/custom');
     await page.fill('#icon-custom-url', 'https://cdn.custom-ex.test/logo.png');
     await page.click('#save-btn');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     await page.waitForFunction(() => {
       const img = document.querySelector('#icons-container .icon-widget[data-id] img.icon-image');
       const src = img && img.getAttribute('src');
@@ -2303,7 +2303,7 @@ async function runExtensionE2E() {
       return status && /已选择/.test(status.textContent || '');
     }, null, { timeout: 5000 });
     await page.click('#save-btn');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
     const uploadSrc = await page.locator('#icons-container .icon-widget[data-id] img.icon-image').getAttribute('src');
     assert.ok(uploadSrc && uploadSrc.startsWith('data:'), `AC4 upload must paint a data URL, got ${uploadSrc}`);
     console.log('AC4 upload local image passed');

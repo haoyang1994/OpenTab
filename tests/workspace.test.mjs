@@ -74,7 +74,7 @@ try {
     await page.click('#add-shortcut-tile');
     await page.fill('#icon-name', name); await page.fill('#icon-url', `https://example.com/${name}`);
   }
-  async function save(page) { await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden'); }
+  async function save(page) { await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' }); }
   async function add(page, name) { await addForm(page, name); await save(page); }
   async function editForm(page, id, name) {
     await page.locator(`#icons-container .icon-widget[data-id="${id}"]`).click({ button: 'right' });
@@ -301,7 +301,7 @@ try {
   assert.equal(await b.locator('#save-btn').isDisabled(), true, 'pending save cannot be submitted twice');
   assert.deepEqual((await stored()).icons.map((item) => item.name), ['x', 'y'], 'waiting writer has not bypassed the held lock');
   await a.close();
-  await b.waitForSelector('#add-icon-modal.hidden');
+  await b.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
   await expectNames(b, ['x', 'y', 'After lock owner closed']); await reloadCheck(['x', 'y', 'After lock owner closed']);
   console.log('workspace: closing lock owner releases waiting save');
 

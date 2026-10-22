@@ -212,3 +212,10 @@ user-title preservation, import/undo, weather and popup, and captures wide/600px
 screenshots. Existing browser suites explicitly select `zh-CN`; their original
 behavior, performance and size assertions remain in force. See LOCALIZATION.md
 for the intentionally excluded standalone developer-tool pages.
+
+
+## Core release-readiness regressions
+
+`tests/core-accessibility-unit.test.mjs` covers hidden-surface CSS and focus restoration, including re-rendered shortcut openers. `tests/icons.test.mjs` executes the actual Save/upload/close handlers with delayed image reads: fresh and replacement images, failure/retry, duplicate Save, newer files, and cancelled/reopened drafts.
+
+`tests/accessibility.test.mjs` runs real Chromium MV3 keyboard navigation, native file selection, persisted image saves and timezone selection. It checks computed foreground/background compositing for core panel hints in light and dark themes, captures wide/600px screenshots, and retains all existing regression suites and startup budgets. This is targeted verification, not a claim of complete WCAG conformance or readability over every user wallpaper. Existing canvas particles are not yet governed by reduced-motion preference; CSS transitions already are.

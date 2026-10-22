@@ -261,7 +261,7 @@ async function runSettingsLayoutE2E() {
     await page.waitForFunction(() => document.getElementById('settings-search').value === '');
     assert.equal(await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden')), false, 'AC2 first Esc clears search');
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#settings-panel.hidden');
+    await page.waitForSelector('#settings-panel.hidden', { state: 'attached' });
     console.log('AC2 settings search + Esc passed');
 
     await openSettings(page);
@@ -284,7 +284,7 @@ async function runSettingsLayoutE2E() {
       '更换图标 preview follows layout icon size'
     );
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#change-icon-modal.hidden');
+    await page.waitForSelector('#change-icon-modal.hidden', { state: 'attached' });
     assert.equal(
       await page.locator('#settings-panel').evaluate((el) => el.classList.contains('hidden')),
       false,
@@ -420,13 +420,13 @@ async function runSettingsLayoutE2E() {
     assert.equal(await page.locator('#browser-sync-enabled').isChecked(), false, 'BUG-032 sync-section restore turns sync off');
 
     await page.click('#close-settings');
-    await page.waitForSelector('#settings-panel.hidden');
+    await page.waitForSelector('#settings-panel.hidden', { state: 'attached' });
     await page.click('#add-shortcut-tile');
     await page.waitForSelector('#add-icon-modal:not(.hidden)');
     const sshHidden = await page.locator('#icon-type option[value="ssh"]').evaluate((el) => el.hidden || el.disabled);
     assert.equal(sshHidden, true, 'AC5 ssh option hidden by default');
     await page.keyboard.press('Escape');
-    await page.waitForSelector('#add-icon-modal.hidden');
+    await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
 
     await openSettings(page);
     await page.click('#settings-nav-advanced');

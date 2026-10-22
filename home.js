@@ -262,14 +262,14 @@
   const iconSaveGate = OpenTabIcons.createSaveGate();
   let contextMenuIconId = null;
   let pendingIconUploadDataUrl = '';
-  let iconFileGeneration = 0;
+  const iconUploadGate = OpenTabIcons.createUploadGate();
   let iconSwitchToken = 0;
   let draggingIconId = null;
   let dragPointerY = 0;
   let dragScrollRaf = 0;
   let toastTimer = 0;
   let pendingUndo = null;
-  const focusStack = [];
+  const { rememberFocus, restoreFocus } = OpenTabAccessibility.createFocus();
   let gridEventsBound = false;
   const ICON_DND_TYPE = 'application/x-opentab-icon';
   let clockTimerId = null;
@@ -397,26 +397,6 @@
     toastTimer = setTimeout(() => { toast.classList.add('hidden'); pendingUndo = null; }, opts.duration || 6000);
   }
 
-  function isFocusable(el) {
-    if (!el || !document.contains(el) || typeof el.focus !== 'function' || el.disabled) return false;
-    if (el.closest && el.closest('.hidden')) return false;
-    const style = window.getComputedStyle(el);
-    return style.display !== 'none' && style.visibility !== 'hidden';
-  }
-  function rememberFocus(el) {
-    const target = el || document.activeElement;
-    if (target && target !== document.body) focusStack.push(target);
-  }
-  function restoreFocus() {
-    while (focusStack.length) {
-      const el = focusStack.pop();
-      if (isFocusable(el)) {
-        el.focus();
-        return el;
-      }
-    }
-    return null;
-  }
   function hideDropIndicator() {
     if (elements.dropIndicator) elements.dropIndicator.style.display = 'none';
   }
@@ -458,7 +438,9 @@
   function renderTimezoneList() {
     elements.timezoneList.innerHTML = '';
     COMMON_TIMEZONES.forEach((tz) => {
-      const item = document.createElement('div');
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.setAttribute('aria-pressed', tz.id === state.timezone);
       item.className = `timezone-item${tz.id === state.timezone ? ' active' : ''}`;
       item.dataset.tz = tz.id;
       item.innerHTML = `
@@ -475,6 +457,7 @@
     saveState();
     document.querySelectorAll('.timezone-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.tz === tzId);
+      item.setAttribute('aria-pressed', item.dataset.tz === tzId);
     });
     const tz = COMMON_TIMEZONES.find((item) => item.id === tzId);
     elements.timezoneLabel.textContent = tz ? `${t(tz.name)} (${formatTimezoneOffset(tz.offset)})` : tzId;
@@ -486,8 +469,11 @@
     const open = typeof forceOpen === 'boolean'
       ? forceOpen
       : elements.timezoneSelector.classList.contains('hidden');
-    if (open) rememberFocus(elements.timezoneBtn);
+    const focused = elements.timezoneSelector.contains(document.activeElement);
     elements.timezoneSelector.classList.toggle('hidden', !open);
+    elements.timezoneBtn.setAttribute('aria-expanded', open);
+    if (open) (elements.timezoneList.querySelector('.active') || elements.timezoneList.firstChild)?.focus();
+    else if (focused) elements.timezoneBtn.focus();
   }
 
   function getTimePartsInTimezone(date, timeZone) {
@@ -1411,6 +1397,7 @@
 
   function openAddIconModal() {
     iconSaveGate.release();
+    iconUploadGate.reset();
     iconDraftIntent = workspace.captureIntent();
     editingIconId = null;
     pendingIconUploadDataUrl = '';
@@ -1445,6 +1432,7 @@
     if (!icon) return;
 
     iconSaveGate.release();
+    iconUploadGate.reset();
     editingIconId = iconId;
     iconDraftIntent = workspace.captureIntent({ icons: [iconId], folders: [icon.folderId] });
     pendingIconUploadDataUrl = '';
@@ -1479,10 +1467,13 @@
 
   function closeAddIconModal() {
     iconSaveGate.release();
+    iconUploadGate.reset();
     iconDraftIntent = null;
     editingIconId = null;
     pendingIconUploadDataUrl = '';
+    const wasOpen = !elements.addIconModal.classList.contains('hidden');
     elements.addIconModal.classList.add('hidden');
+    if (wasOpen) restoreFocus();
   }
 
   async function handleSaveIcon() {
@@ -1591,12 +1582,16 @@
       name, url, type: iconType, sshGatewayUrl, sshGatewayToken, sshHost, sshPort,
       sshUsername, sshPassword, sshSocksHost, sshSocksPort, sshSocksUsername, sshSocksPassword,
       folderId: current?.folderId || folderId, customIconUrl, emoji: '',
-      uploadedIconDataUrl: isSsh ? '' : (pendingIconUploadDataUrl || current?.uploadedIconDataUrl || ''),
       toolSubtype: isTool ? toolSubtype : ''
     };
     try {
       await iconSaveGate.run(draft, elements.addIconModal,
-        () => id ? updateIcon(id, payload) : addIcon(payload),
+        async () => {
+          if (!await iconUploadGate.wait(draft) || draft !== iconDraftIntent || !workspace.isIntentCurrent(draft)) return false;
+          elements.cancelBtn.disabled = true;
+          payload.uploadedIconDataUrl = isSsh ? '' : (pendingIconUploadDataUrl || current?.uploadedIconDataUrl || '');
+          return id ? updateIcon(id, payload) : addIcon(payload);
+        },
         () => { if (iconDraftIntent === draft) closeAddIconModal(); });
     } catch (error) {
       showToast(t('保存失败，请重试。'));
@@ -1604,26 +1599,10 @@
   }
 
   async function handleIconFileChange() {
-    const generation = ++iconFileGeneration, draft = iconDraftIntent;
-    const current = () => generation === iconFileGeneration && draft === iconDraftIntent && workspace.isIntentCurrent(draft);
-    const [file] = elements.iconFile.files || [];
-    if (!file) {
-      pendingIconUploadDataUrl = '';
-      elements.iconUploadStatus.textContent = t('支持 PNG / JPG / SVG / WebP。');
-      return;
-    }
-    try {
-      const data = window.OpenTabIcons
-        ? await OpenTabIcons.readAndCompressFile(file)
-        : await readFileAsDataUrl(file);
-      if (!current()) return;
-      pendingIconUploadDataUrl = data;
-      elements.iconUploadStatus.textContent = t('已选择：{name}', { name: file.name });
-    } catch (error) {
-      if (!current()) return;
-      pendingIconUploadDataUrl = '';
-      elements.iconUploadStatus.textContent = t('读取失败，请重新选择。');
-    }
+    const draft = iconDraftIntent;
+    await iconUploadGate.select(draft, elements, OpenTabIcons.readAndCompressFile,
+      (data) => { pendingIconUploadDataUrl = data; },
+      () => draft === iconDraftIntent && workspace.isIntentCurrent(draft), t);
   }
 
   function hideIconContextMenu() {
@@ -1647,7 +1626,6 @@
     endDesktopDrag();
     if (window.OpenTabIcons && OpenTabIcons.handleEscape()) {
       event.preventDefault();
-      restoreFocus();
       return;
     }
     if (window.OpenTabFolders && OpenTabFolders.handleEscape()) {
@@ -1674,7 +1652,8 @@
       if (el && !el.classList.contains('hidden')) {
         event.preventDefault();
         close();
-        restoreFocus();
+        if (el === elements.timezoneSelector) elements.timezoneBtn.focus();
+        else if (el !== elements.addIconModal) restoreFocus();
         return;
       }
     }
