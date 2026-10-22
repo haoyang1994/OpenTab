@@ -214,9 +214,15 @@ try {
   [a, b] = await pair();
   await remove(a, 'x'); await expectNames(a, ['y']);
   await backup(b, [icon('imported', 'Imported')]);
-  await clock12(a);
+  // This case tests an old Undo intent across a settings rebase, not sidebar
+  // navigation. Invoke the real change handler without opening/closing the
+  // sidebar inside the six-second Undo window; native settings is covered above.
+  await a.evaluate(() => {
+    const input = document.querySelector('#time-format');
+    input.value = '12h'; input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await waitForAsync(a, async () => (await chrome.storage.local.get('clockFormat')).clockFormat === '12h');
   await a.waitForFunction(() => document.querySelector('#icons-container .icon-widget[data-id="imported"] .icon-name')?.textContent === 'Imported');
-  await a.locator('#close-settings').click();
   await a.locator('#toast button').click();
   await a.waitForFunction(() => /其他标签页|冲突|重试|已变化|已更新|失效/.test(document.querySelector('#toast')?.textContent || ''));
   await expectNames(a, ['Imported']); await reloadCheck(['Imported']);
