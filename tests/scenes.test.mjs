@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { waitForAsync } from './wait-for-async.mjs';
 import { formatConsoleError } from './console-allow.mjs';
+import { verifySceneControlFixture } from './scenes-controls-fixture.mjs';
 import { legacyFixture, expectedLegacyFirstLoad, SCHEMA_KEY, BACKUP_KEY, EPOCH_KEY, DEFAULT_SCENE, PIXEL, SECOND_GRADIENT, graphKeys } from './scenes-fixtures.mjs';
 
 // Real unpacked MV3 pages, native inputs and the actual storage coordinator.
@@ -13,6 +14,7 @@ import { legacyFixture, expectedLegacyFirstLoad, SCHEMA_KEY, BACKUP_KEY, EPOCH_K
 // page cannot receive a toolbar click's activeTab grant. No UI, controller,
 // rendering, save, lock or storage implementation is replaced.
 const require = createRequire(import.meta.url);
+verifySceneControlFixture();
 const Schema = require('../scene-schema.js');
 const Imports = require('../import.js');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -160,6 +162,17 @@ async function releaseLock(p) { await p.evaluate(async () => { window.__scenesRe
 async function reloadAfter(p, task, options) {
   const navigation = p.waitForEvent('framenavigated', { predicate: frame => frame === p.mainFrame() });
   await task(); await navigation; await ready(p, options);
+}
+async function retryUnchangedRecovery(p) {
+  // Observe completed Retry reporting, not the dialog that was already open.
+  // This observer never changes application state or resolves its storage work.
+  await p.evaluate(() => {
+    window.__scenesRetryReported = false;
+    const observer = new MutationObserver(() => { window.__scenesRetryReported = true; observer.disconnect(); });
+    observer.observe(document.querySelector('#scene-recovery .scene-status'), { childList: true, characterData: true, subtree: true });
+  });
+  await click(p, '#scene-recovery [data-scene-action="retry"]');
+  await p.waitForFunction(() => window.__scenesRetryReported);
 }
 async function assertProfile(sceneId, expected) {
   await waitForAsync(worker, async ({ sceneId, expected }) => {
@@ -341,7 +354,7 @@ try {
 
   await phase('separate appearance profiles and shared theme search privacy', async () => {
     const originalDefault = (await stored('sceneProfiles')).sceneProfiles.find(item => item.id === DEFAULT_SCENE);
-    await switchTo(workScene); await settings('layout');
+    await switchTo(workScene); await settings('shortcuts');
     await click(page, '.layout-size-preset[data-size="80"]'); await page.locator('#layout-columns').selectOption('4');
     await page.locator('#layout-show-names').uncheck(); await page.locator('#layout-max-width').focus(); await page.keyboard.press('Home');
     await assertProfile(workScene, { layoutIconSize: 80, layoutColumns: 4, layoutShowNames: false, layoutMaxWidth: 640 });
@@ -364,7 +377,7 @@ try {
     assert.equal((await stored('searchHistoryEnabled')).searchHistoryEnabled, false);
     assert.equal(await page.evaluate(() => document.body.classList.contains('hide-todo-entry')), true, 'to-do entry visibility is global, not part of a scene profile');
     assert.ok((await stored('sceneProfiles')).sceneProfiles.every(item => !Object.hasOwn(item, 'todoButtonVisible')));
-    await settings('layout'); await page.locator('#todo-button-visible').check();
+    await settings('shortcuts'); await page.locator('#todo-button-visible').check();
     await waitForAsync(worker, async () => (await chrome.storage.local.get('todoButtonVisible')).todoButtonVisible === true); await closeSettings();
     await switchTo(workScene); await page.reload(); await ready(page); await viewIs(page, workScene);
     await assertRenderedGradient(page, SECOND_GRADIENT);
@@ -409,6 +422,7 @@ try {
   await phase('native paste import and popup append only to the selected scene', async () => {
     await selectGroup('research'); await settings('sync');
     await page.locator('#site-list-input').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => { const group = document.querySelector('#site-list-group'); return !group.disabled && [...group.options].some(option => option.value === 'research'); });
     const choices = await page.locator('#site-list-group option').evaluateAll(nodes => nodes.map(node => node.value));
     assert.ok(choices.includes('research')); assert.ok(!choices.includes('folder-home'));
     const before = await graph();
@@ -525,7 +539,7 @@ try {
     assert.match(await page.locator('#scene-recovery .scene-status-error').textContent(), /data|recover|version|数据|恢复|版本/i);
     assert.deepEqual(await stored(), unsupported, 'unknown version load does not normalize, migrate, drop or overwrite data');
     assert.equal(await page.evaluate(() => globalThis.OpenTabSceneNavigation?.getView() || null), null);
-    await click(page, '#scene-recovery [data-scene-action="retry"]');
+    await retryUnchangedRecovery(page);
     assert.deepEqual(await stored(), unsupported, 'Retry cannot treat unknown data as legacy');
     await worker.evaluate(({ key, version }) => OpenTabWorkspace.transaction(() => chrome.storage.local.set({ [key]: version })), { key: SCHEMA_KEY, version: original[SCHEMA_KEY] }); await page.reload(); await ready(page);
     Schema.validate(await stored());
@@ -593,15 +607,7 @@ try {
       assert.equal(await editing.evaluate(() => !!document.activeElement.closest('#scene-recovery[open]')), true);
       assert.equal(await editing.inputValue('.group-rename-input'), 'Keep this unsaved rename');
     }
-    // Observe a real status update to distinguish completed Retry from the
-    // already-open recovery dialog. This observer does not drive application state.
-    await editing.evaluate(() => {
-      window.__scenesRetryReported = false;
-      const observer = new MutationObserver(() => { window.__scenesRetryReported = true; observer.disconnect(); });
-      observer.observe(document.querySelector('#scene-recovery .scene-status'), { childList: true, characterData: true, subtree: true });
-    });
-    await click(editing, '#scene-recovery [data-scene-action="retry"]');
-    await editing.waitForFunction(() => window.__scenesRetryReported);
+    await retryUnchangedRecovery(editing);
     assert.equal(await currentView(editing), null); assert.equal(await editing.inputValue('.group-rename-input'), 'Keep this unsaved rename');
     assert.deepEqual(await local(graphKeys), originalGraph, 'Retry preserves the migrated graph and the unsaved legacy draft');
     await click(editing, '#scene-recovery [data-scene-action="discard-draft"]');

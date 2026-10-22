@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { verifySceneRefreshFixture } from './scenes-refresh-fixture.mjs';
+import { verifySceneControlFixture } from './scenes-controls-fixture.mjs';
 import { legacyFixture, expectedLegacyFirstLoad, DEFAULT_SCENE, PIXEL, SCHEMA_KEY } from './scenes-fixtures.mjs';
 const require = createRequire(import.meta.url);
 const Schema = require('../scene-schema.js');
@@ -60,3 +61,17 @@ for (const key of [SCHEMA_KEY, 'scenes', 'sceneProfiles']) assert.equal(Object.h
 assert.ok(['icons', 'folders', 'todos'].every(key => persisted[key].every(item => !Object.hasOwn(item, 'sceneId'))));
 await verifySceneRefreshFixture();
 console.log('Scenes E2E fixtures: implicit Home, stable IDs/order/assets, nested group move and scene ownership preflight passed.');
+
+const nativeSuite = fs.readFileSync(new URL('./scenes.test.mjs', import.meta.url), 'utf8');
+const controlReport = verifySceneControlFixture(nativeSuite);
+for (const [before, after, error] of [
+  ["settings('shortcuts')", "settings('layout')", /unknown settings section: layout/],
+  ['#layout-columns', '#layout-columns-missing', /unknown native selector/],
+  ["locator('#layout-columns').selectOption('4')", "locator('#layout-show-names').selectOption('4')", /correct control type/],
+  ['.layout-size-preset[data-size="80"]', '.layout-size-preset[data-size="79"]', /nonexistent preset/],
+  ["selectOption('4')", "selectOption('3')", /nonexistent option/]
+]) {
+  assert.ok(nativeSuite.includes(before), `negative control targets an actual suite operation: ${before}`);
+  assert.throws(() => verifySceneControlFixture(nativeSuite.replace(before, after)), error);
+}
+console.log(`Scenes control preflight: ${controlReport.sections} real sections, ${controlReport.checkedIds} native IDs, control types/options/presets and five invalid-fixture negative controls passed.`);
