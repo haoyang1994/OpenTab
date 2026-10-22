@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { formatConsoleError, unexpectedErrors } from './console-allow.mjs';
+import { verifySavedSites } from './search-saved-sites.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -486,6 +487,8 @@ async function runSearchE2E() {
     await page.locator('#search-input').press('Enter');
     log = await navLog(page);
     assert.equal(log.at(-1)?.openInNewTab, false, 'AC6 Enter stays in this tab when the setting is off');
+
+    await verifySavedSites(page, serviceWorker);
 
     const leftover = unexpectedErrors(consoleErrors);
     assert.equal(leftover.length, 0, `AC8 console errors: ${leftover.join(' | ')}`);

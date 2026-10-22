@@ -506,6 +506,13 @@ body.theme-light .date-btn:hover {
   margin-top: 24px;
 }
 
+/* Raise the autocomplete's containing context only while results are open.
+   Group tabs are 1260; an open calendar is 1270. Root-level dialogs remain
+   above the entire #content context, and a closed search returns to layer 6. */
+body:not(.minimal-mode) #search-widget-wrap:has(.search-history:not(.hidden)) {
+  z-index: 1265;
+}
+
 #search-widget {
   display: flex;
   align-items: center;
@@ -626,6 +633,21 @@ body.theme-light .engine-btn.active {
   box-shadow: none;
 }
 
+.search-shortcut-hint {
+  flex: none;
+  margin-right: 8px;
+  padding: 3px 5px;
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  background: var(--panel-bg-solid);
+  color: var(--text-hint);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .search-hint {
   margin: 8px 18px 0;
   min-height: 1.2em;
@@ -648,10 +670,12 @@ body.theme-light .engine-btn.active {
   display: flex;
   flex-direction: column;
   padding: 6px;
-  overflow: hidden;
+  max-height: min(440px, 60vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  background: var(--panel-bg);
+  background: var(--panel-bg-solid);
   box-shadow: var(--shadow-panel);
 }
 
@@ -659,7 +683,7 @@ body.theme-light .engine-btn.active {
   display: none;
 }
 
-.search-history-item {
+.search-result-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -674,9 +698,45 @@ body.theme-light .engine-btn.active {
   cursor: pointer;
 }
 
-.search-history-item:hover,
-.search-history-item.active {
+.search-result-item:hover,
+.search-result-item.active {
   background: var(--control-hover);
+}
+
+.search-result-group + .search-result-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--section-border);
+}
+
+.search-result-heading {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.search-site-item {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.search-site-name,
+.search-site-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-site-name {
+  font-size: 13px;
+}
+
+.search-site-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .search-history-q {
@@ -2800,6 +2860,23 @@ body.minimal-mode #todo-toggle-btn,
 body.minimal-mode #refresh-bg-btn,
 body.minimal-mode #todo-widget {
   display: none !important;
+}
+
+/* The in-page shortcut borrows the existing search UI without changing the
+   saved clock-only preference or revealing other minimal-mode controls. */
+body.minimal-mode.search-shortcut-active #search-widget-wrap {
+  display: block !important;
+  position: fixed;
+  top: clamp(24px, 10vh, 96px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, 90vw);
+  margin-top: 0;
+  z-index: 1300;
+}
+
+body.minimal-mode.search-shortcut-active #search-widget {
+  display: flex !important;
 }
 
 body.minimal-mode #content {

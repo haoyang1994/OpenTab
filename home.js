@@ -1834,7 +1834,7 @@
     });
   }
   OpenTabSearch.init({
-    getIcons: () => state.icons,
+    getState: () => state,
     openMatchedIcon: (icon) => {
       if (window.OpenTabFolders && OpenTabFolders.isFolder(icon)) {
         OpenTabFolders.openOverlay(icon.id);
