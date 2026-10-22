@@ -20,16 +20,17 @@
     <main class="tool-main">
       <section class="input-section">
         <div class="input-header">
-          <span class="input-label">输入</span>
+          <label class="input-label" for="input-area">输入</label>
           <span id="input-status" class="input-status"></span>
         </div>
-        <textarea id="input-area" placeholder="粘贴 JSON 内容..."></textarea>
+        <p id="input-keyboard-hint" class="keyboard-hint">Tab 切换控件；Ctrl+] 插入缩进。</p>
+        <textarea id="input-area" placeholder="粘贴 JSON 内容..." aria-describedby="input-keyboard-hint" aria-keyshortcuts="Control+]"></textarea>
       </section>
 
       <section class="result-section">
         <div class="panel">
           <div class="panel-header">
-            <span>输出</span>
+            <label for="output-area">输出</label>
             <div style="display: flex; gap: 8px; align-items: center;">
               <span id="output-status" class="input-status"></span>
               <button id="copy-btn">复制</button>

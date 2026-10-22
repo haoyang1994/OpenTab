@@ -23,7 +23,7 @@ First paint applies the saved theme, clock, and wallpaper from a local boot mirr
 
 ## Interface languages
 
-The main new-tab, settings, import/weather, and add-page popup support English and Simplified Chinese. They follow your browser language; change it in Settings → Language. Existing shortcut titles and other personal content are never translated. New installations start in light appearance; existing themes are preserved. Standalone SSH/JSON/FIX tool pages are not yet fully bilingual. [Coverage and behavior](docs/LOCALIZATION.md).
+The main new-tab, settings, import/weather, and add-page popup support English and Simplified Chinese. They follow your browser language; change it in Settings → Language. Existing shortcut titles and other personal content are never translated. New installations start in light appearance; existing themes are preserved. Standalone SSH/JSON tool pages are not yet fully bilingual. [Coverage and behavior](docs/LOCALIZATION.md).
 
 ## Features
 
@@ -61,7 +61,7 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 - **Undo delete**: deleting a shortcut shows a toast with Undo for 6 seconds
 - **Esc**: closes menus, dialogs, folder overlay, settings, and calendar one layer at a time and restores focus
 - Built-in SSH terminal (needs the local gateway described below)
-- Local JSON formatter and FIX parser
+- Local JSON formatter
 - Toolbar popup to save the current tab as a shortcut (choose a group)
 
 ### Search, weather, todos, backup
@@ -84,7 +84,7 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 - Search box at the top of the panel filters by labels and help text (Chinese or English, case-insensitive). Empty state: 「没有找到」. Esc clears the query, then closes the panel
 - Layout: icon size (small/medium/large, or 48–96px), columns (auto or 4–12), show/hide names, grid max width. Changes preview live, survive reload, and join the existing sync keys
 - Each section and the footer have 「恢复默认」 (in-page confirm + the same undo toast). Shortcuts are not reset
-- SSH / JSON / FIX add-icon entries stay hidden until Advanced is on. Installs that already have SSH or tool shortcuts keep the toggle on
+- SSH / JSON add-icon entries stay hidden until Advanced is on. Installs that already have SSH or tool shortcuts keep the toggle on
 
 ## Screenshots
 
@@ -220,7 +220,6 @@ OpenTab/
 ├── specs/                     # iteration acceptance criteria
 ├── popup.html / popup.css / popup.js
 ├── tool.html / tool.css / tool.js
-├── fixparser.html / fixparser.js
 ├── ssh_terminal.html / ssh_terminal.css / ssh_terminal.js
 ├── ssh-gateway.mjs            # local SSH WebSocket gateway
 ├── vendor/                    # vendored flatpickr / xterm (with LICENSE files)

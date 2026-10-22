@@ -22,7 +22,7 @@
     { id: 'search', label: '搜索', keywords: 'search engine history custom 搜索 引擎 历史 自定义' },
     { id: 'weather', label: '天气', keywords: 'weather city location temperature unit 天气 城市 定位 温度' },
     { id: 'sync', label: '导入与同步', keywords: 'import sync backup bookmark snapshot 导入 同步 备份 书签 快照' },
-    { id: 'advanced', label: '高级/开发者工具', keywords: 'advanced developer ssh json fix parser 高级 开发者 工具' },
+    { id: 'advanced', label: '高级/开发者工具', keywords: 'advanced developer ssh json 高级 开发者 工具' },
     { id: 'about', label: '关于', keywords: 'about version license apache github 关于 版本 许可证' }
   ];
 

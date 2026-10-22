@@ -53,6 +53,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(first).hexdigest(), hashlib.sha256(second).hexdigest())
         with zipfile.ZipFile(self.build()) as archive:
             self.assertEqual(archive.namelist(), self.names)
+            self.assertNotIn('fixparser.html', archive.namelist())
+            self.assertNotIn('fixparser.js', archive.namelist())
             self.assertIsNone(archive.testzip())
             for item in archive.infolist():
                 self.assertEqual(item.date_time, (1980, 1, 1, 0, 0, 0))
@@ -71,6 +73,8 @@ class ReleaseTests(unittest.TestCase):
             target.write_text('not runtime')
         with zipfile.ZipFile(self.build()) as archive:
             self.assertEqual(archive.namelist(), self.names)
+            self.assertNotIn('fixparser.html', archive.namelist())
+            self.assertNotIn('fixparser.js', archive.namelist())
 
     def test_missing_file(self):
         (self.root / 'home.js').unlink()

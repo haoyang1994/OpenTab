@@ -18,7 +18,7 @@ language; the in-page preference controls OpenTab pages, not Chrome's UI.
 - Optional weather controls/status and the add-current-page popup.
 - Main add/edit and Advanced navigation/form labels.
 
-The separate SSH terminal and JSON/FIX tool pages are not yet fully localized.
+The separate SSH terminal and JSON tool pages are not yet fully localized.
 Their existing behavior remains available through Advanced; this iteration does
 not claim full bilingual coverage of those separate tools. Website titles,
 provider weather descriptions and Bing attribution remain third-party content.
