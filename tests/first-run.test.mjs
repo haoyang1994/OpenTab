@@ -208,7 +208,16 @@ async function openHome(page, extensionId) {
 // Inspect the active rendered base source, not the persisted URL. Distinct
 // synthetic colors catch reused cache/blob pixels even when URLs differ.
 async function assertActiveBingColor(page, expected, label) {
-  await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('background-layer')).opacity) === 1);
+  // home.css transitions the background shorthand for 600ms. Chromium can
+  // report cross-fade(old, new) even after opacity has reached 1; wait for the
+  // committed single source rather than parsing an intermediate animation.
+  await page.waitForFunction(() => {
+    const layer = document.getElementById('background-layer');
+    const style = getComputedStyle(layer);
+    return Number(style.opacity) === 1
+      && /^url\((?:"[^"]*"|'[^']*'|[^()]*)\)$/.test(style.backgroundImage)
+      && style.backgroundImage === layer.style.backgroundImage;
+  }, null, { timeout: 5000 });
   const rendered = await page.evaluate(async () => {
     const layer = document.getElementById('background-layer');
     const style = getComputedStyle(layer);

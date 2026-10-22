@@ -7,18 +7,56 @@ set -euo pipefail
 
 export PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1
 
+run_command() {
+  local child_pid='' status
+  # Separate process groups let cancellation reach xvfb, Chromium, and any
+  # descendants, not just the shell waiting for them. Never start another suite
+  # after a cancellation, even if the interrupted command happens to exit zero.
+  # Use TERM for cleanup because background descendants can inherit ignored INT.
+  trap '[[ -z "${child_pid:-}" ]] || kill -TERM -- "-$child_pid" 2>/dev/null || true; exit 129' HUP
+  trap '[[ -z "${child_pid:-}" ]] || kill -TERM -- "-$child_pid" 2>/dev/null || true; exit 130' INT
+  trap '[[ -z "${child_pid:-}" ]] || kill -TERM -- "-$child_pid" 2>/dev/null || true; exit 143' TERM
+  set -m
+  "$@" &
+  child_pid=$!
+  if wait "$child_pid"; then status=0; else status=$?; fi
+  child_pid=''
+  set +m
+  return "$status"
+}
+
 run_headed() {
-  env HEADLESS=false node tests/site-selection.test.mjs
-  env HEADLESS=false node tests/paste-sites.test.mjs
-  env HEADLESS=false node tests/command-palette.test.mjs
-  env HEADLESS=false node tests/accessibility.test.mjs
-  env HEADLESS=false node tests/i18n.test.mjs
-  env HEADLESS=false node tests/workspace.test.mjs
-  env HEADLESS=false node tests/extension.test.mjs
-  env HEADLESS=false node tests/search.test.mjs
-  env HEADLESS=false node tests/first-run.test.mjs
-  env HEADLESS=false node tests/settings-layout.test.mjs
-  env HEADLESS=false node tests/weather.test.mjs
+  local suites=(
+    tests/site-selection.test.mjs
+    tests/paste-sites.test.mjs
+    tests/command-palette.test.mjs
+    tests/accessibility.test.mjs
+    tests/i18n.test.mjs
+    tests/workspace.test.mjs
+    tests/extension.test.mjs
+    tests/search.test.mjs
+    tests/first-run.test.mjs
+    tests/settings-layout.test.mjs
+    tests/weather.test.mjs
+  )
+  local failures=() suite status
+  for suite in "${suites[@]}"; do
+    echo "E2E: running $suite"
+    if run_command env HEADLESS=false node "$suite"; then status=0; else status=$?; fi
+    echo "E2E: $suite exited $status"
+    if (( status >= 128 )); then
+      echo "E2E: interrupted; stopping remaining suites ($suite exited $status)" >&2
+      return "$status"
+    elif (( status != 0 )); then
+      failures+=("$suite (exit $status)")
+    fi
+  done
+  if (( ${#failures[@]} > 0 )); then
+    printf 'E2E: %s suite(s) failed:\n' "${#failures[@]}" >&2
+    printf '  %s\n' "${failures[@]}" >&2
+    return 1
+  fi
+  echo "E2E: all ${#suites[@]} suites passed"
 }
 
 run_with_xvfb() {
@@ -30,7 +68,8 @@ run_with_xvfb() {
     exit 1
   fi
   echo "$reason"
-  xvfb-run -a bash -c 'export PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1 HEADLESS=false; node tests/site-selection.test.mjs && node tests/paste-sites.test.mjs && node tests/command-palette.test.mjs && node tests/accessibility.test.mjs && node tests/i18n.test.mjs && node tests/workspace.test.mjs && node tests/extension.test.mjs && node tests/search.test.mjs && node tests/first-run.test.mjs && node tests/settings-layout.test.mjs && node tests/weather.test.mjs'
+  export -f run_headed run_command
+  run_command xvfb-run -a bash -euo pipefail -c run_headed
 }
 
 if [[ "${CI:-}" == "true" ]]; then
