@@ -30,6 +30,29 @@ await context.route('**/*', route => {
 const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
 const base = `chrome-extension://${worker.url().split('/')[2]}`;
 const page = await context.newPage();
+// Keep interception subscribed before navigation, not concurrently with the first
+// low-level key press. Playwright enables its first subscription asynchronously.
+const chooserEvents = [], browserMessages = [];
+let lastChooserTrace = [];
+page.on('filechooser', chooser => chooserEvents.push({ multiple: chooser.isMultiple() }));
+page.on('console', message => { if (['error', 'warning'].includes(message.type())) browserMessages.push(message.text()); });
+await page.addInitScript(() => {
+  window.__nativeUploadTrace = [];
+  for (const type of ['keydown', 'keyup', 'click', 'change']) document.addEventListener(type, event => {
+    if (!event.target?.closest?.('#change-icon-upload, #change-icon-file')) return;
+    const row = { type, key: event.key || null, target: event.target.id, trusted: event.isTrusted,
+      activation: navigator.userActivation?.isActive, active: document.activeElement?.id, disabled: !!event.target.disabled };
+    window.__nativeUploadTrace.push(row);
+    queueMicrotask(() => { row.defaultPrevented = event.defaultPrevented; row.activeAfter = document.activeElement?.id; });
+  }, true);
+});
+async function recordChooserEvidence() {
+  const events = await page.evaluate(() => window.__nativeUploadTrace || []);
+  if (events.length) lastChooserTrace = events;
+  const evidence = { chooserEvents, browserMessages, pageErrors: errors, events: lastChooserTrace };
+  fs.writeFileSync(path.join(artifacts, 'accessibility-chooser.json'), JSON.stringify(evidence, null, 2));
+  return evidence;
+}
 const ready = () => page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0 && document.querySelector('#weather-pill')?.hasAttribute('data-stale'));
 const focused = selector => page.evaluate(s => document.activeElement?.matches(s) === true, selector);
 async function assertNotHidden() {
@@ -222,11 +245,14 @@ try {
   assert.equal(await page.locator('#change-icon-upload').evaluate(el => el.tagName), 'BUTTON');
   for (const key of ['Enter', 'Space']) {
     await tabTo('#change-icon-upload');
-    const chooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press(key);
-    const chooser = await chooserPromise; await chooser.setFiles(upload(`chooser-${key}.png`));
+    console.log(`Accessibility: native upload ${key}`);
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press(key)]);
+    await chooser.setFiles(upload(`chooser-${key}.png`));
     await page.waitForFunction(() => document.querySelector('#change-icon-file').files.length === 0);
   }
+  const chooserEvidence = await recordChooserEvidence();
+  for (const key of ['Enter', ' ']) assert.ok(chooserEvidence.events.some(event => event.type === 'keydown' && event.key === key && event.trusted), 'upload activation uses trusted native keyboard events');
+  assert.equal(chooserEvents.length, 2, 'Enter and Space each open the actual native chooser');
   await page.keyboard.press('Escape'); await closed('#change-icon-modal', tile);
   await sweepClosed();
 
@@ -260,6 +286,7 @@ try {
   assert.deepEqual(errors, [], 'core release workflows have no uncaught page errors');
   console.log('Accessibility: real keyboard, hidden surfaces, focus restoration, timezone persistence, native upload, pending image saves and computed contrast passed');
 } catch (error) {
+  try { console.error('Native chooser evidence:', JSON.stringify(await recordChooserEvidence())); } catch {}
   try { await page.screenshot({ path: path.join(artifacts, 'accessibility-failure.png'), animations: 'disabled' }); } catch {}
   throw error;
 } finally { await context.close(); }
