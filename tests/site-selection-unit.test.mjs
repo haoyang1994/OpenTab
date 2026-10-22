@@ -71,7 +71,7 @@ function harness() {
   document = { body, activeElement: body, createElement: tag => new Element(tag), getElementById: id => elements.get(id), querySelectorAll: selector => body.querySelectorAll(selector), addEventListener(type, fn) { const list = handlers.get(type) || []; list.push(fn); handlers.set(type, list); } };
   for (const id of ['icons-container', 'folder-icons-container', 'folder-overlay', 'site-selection-toolbar', 'site-selection-dialog']) body.appendChild(new Element('div', id));
   const dialog = elements.get('site-selection-dialog');
-  for (const [tag, id] of [['select', 'site-selection-destination'], ['button', 'site-selection-confirm'], ['button', 'site-selection-dialog-cancel'], ['p', 'site-selection-error']]) dialog.appendChild(new Element(tag, id));
+  for (const [tag, id] of [['select', 'site-selection-destination'], ['button', 'site-selection-dialog-cancel'], ['button', 'site-selection-confirm'], ['p', 'site-selection-error']]) dialog.appendChild(new Element(tag, id));
   const entry = new Element('button', 'select-sites'); entry.entry = true; body.appendChild(entry);
   const root = elements.get('icons-container');
   for (const id of ['a', 'b']) { const tile = new Element('a'); tile.className = 'icon-widget'; tile.dataset.id = id; tile.setAttribute('href', `https://${id}.example/`); root.appendChild(tile); }
@@ -109,6 +109,13 @@ function harness() {
     assert.equal(event.defaultPrevented, false, 'native Tab and select defaults remain available');
   }
   assert.equal(backgroundShortcuts, 0);
+  el('site-selection-confirm').focus();
+  assert.equal(h.dispatch(el('site-selection-confirm'), 'keydown', { key: 'Tab' }).defaultPrevented, true);
+  assert.equal(h.document.activeElement, el('site-selection-destination'));
+  assert.equal(h.dispatch(el('site-selection-destination'), 'keydown', { key: 'Tab', shiftKey: true }).defaultPrevented, true);
+  assert.equal(h.document.activeElement, el('site-selection-confirm'));
+  el('site-selection-dialog-cancel').focus();
+  assert.equal(h.dispatch(el('site-selection-dialog-cancel'), 'keydown', { key: 'Tab' }).defaultPrevented, false, 'middle control keeps native Tab default');
   const menu = h.dispatch(el('site-selection-dialog'), 'contextmenu');
   assert.equal(menu.stopped, true); assert.equal(menu.defaultPrevented, true, 'chooser does not open a background Add modal or native menu');
   h.dispatch(el('site-selection-confirm')); assert.equal(h.selection.isPending(), true);
@@ -137,6 +144,11 @@ console.log('Site selection real-module UI pending, duplicate-submit, failure, s
   h.invalidateDestination(); h.dispatch(el('site-selection-destination'), 'change');
   assert.equal(el('site-selection-confirm').disabled, true, 'an old destination option cannot recapture a changed entity');
   assert.match(el('site-selection-error').textContent, /变化/);
+  el('site-selection-dialog-cancel').focus();
+  assert.equal(h.dispatch(el('site-selection-dialog-cancel'), 'keydown', { key: 'Tab' }).defaultPrevented, true);
+  assert.equal(h.document.activeElement, el('site-selection-destination'));
+  assert.equal(h.dispatch(el('site-selection-destination'), 'keydown', { key: 'Tab', shiftKey: true }).defaultPrevented, true);
+  assert.equal(h.document.activeElement, el('site-selection-dialog-cancel'), 'disabled Confirm is excluded from the loop');
   h.dispatch(el('site-selection-confirm')); assert.equal(h.counts().moves, 0, 'invalid destination never reaches the durable operation');
   assert.equal(h.selection.isActive(), true); assert.equal(el('site-selection-dialog').open, true);
 }

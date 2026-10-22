@@ -187,9 +187,23 @@ try {
     const bounds = await page.locator('#site-selection-dialog').evaluate(el => { const rect = el.getBoundingClientRect(), css = getComputedStyle(el); return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight, bg: css.backgroundColor, opacity: css.opacity }; });
     assert.ok(bounds.left >= 0 && bounds.right <= bounds.width && bounds.bottom <= bounds.height);
     assert.equal(bounds.opacity, '1'); assert.match(bounds.bg, /^rgb\(/);
-    for (let i = 0; i < 8; i++) { await page.keyboard.press('Tab'); assert.equal(await page.evaluate(() => document.querySelector('#site-selection-dialog').contains(document.activeElement)), true); }
+    for (const key of ['Tab', 'Shift+Tab']) {
+      const ids = key === 'Tab'
+        ? ['site-selection-dialog-cancel', 'site-selection-confirm', 'site-selection-destination']
+        : ['site-selection-confirm', 'site-selection-dialog-cancel', 'site-selection-destination'];
+      for (let i = 0; i < 9; i++) {
+        await page.keyboard.press(key);
+        const focus = await page.evaluate(() => ({ id: document.activeElement.id, tag: document.activeElement.tagName, inside: document.querySelector('#site-selection-dialog').contains(document.activeElement) }));
+        assert.equal(focus.inside, true, JSON.stringify({ key, i, focus }));
+        assert.equal(focus.id, ids[i % ids.length], `${key} follows the exact dialog control sequence`);
+      }
+    }
     await page.screenshot({ path: path.join(artifacts, `site-selection-${languagePreference}-${themeMode}-narrow.png`) });
   }
   assert.deepEqual(errors, []);
   console.log('Site selection native pointer, keyboard, durable moves, Undo, pending and failure flow passed');
+} catch (error) {
+  console.error('Site selection failure state:', await page.evaluate(() => ({ activeId: document.activeElement?.id, activeTag: document.activeElement?.tagName, dialogOpen: document.querySelector('#site-selection-dialog')?.open })).catch(() => null));
+  await page.screenshot({ path: path.join(artifacts, 'site-selection-failure.png') }).catch(() => {});
+  throw error;
 } finally { await context.close(); }

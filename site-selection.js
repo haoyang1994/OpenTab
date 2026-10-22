@@ -171,6 +171,13 @@
         // Keep native Tab/select behavior, but never let document shortcuts
         // switch groups or activate a surface behind the modal chooser.
         event.stopImmediatePropagation();
+        if (event.key === 'Tab') {
+          const controls = [...dialog.querySelectorAll('select, button')].filter(node => !node.disabled);
+          const first = controls[0], last = controls[controls.length - 1];
+          if (first && (event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last)) {
+            event.preventDefault(); (event.shiftKey ? last : first).focus();
+          }
+        }
         if (event.key === 'Escape') { event.preventDefault(); closeDestination(); }
       }
       return;
