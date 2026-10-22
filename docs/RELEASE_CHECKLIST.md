@@ -28,3 +28,11 @@
 1. 任一 P0/P1 缺陷未解决
 2. 自动化测试失败
 3. 核心流程手测失败（加载、时钟、设置）
+
+## 可复现扩展 ZIP（发布前必须）
+
+1. 按 [离线打包说明](RELEASE_PACKAGING.md) 审查运行时文件白名单。
+2. `npm run test:package`，然后 `npm test`。
+3. `npm run package:release`，检查打印的 SHA-256 和 ZIP 内容。
+4. `npm run test:package:smoke`，用解压后的 ZIP 完成真实 MV3 验证。
+5. 保留 LICENSE / NOTICE；打包不代表已签名、上传、发布或通过商店审核。
