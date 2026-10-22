@@ -11,4 +11,6 @@ await assert.rejects(waitForAsync({ evaluate: async () => 'truthy' }, async () =
   undefined, { interval: 1, timeout: 5 }), /did not resolve to true/, 'only boolean true is accepted');
 await assert.rejects(waitForAsync({ evaluate: async () => { throw new Error('storage unavailable'); } },
   async () => true), /storage unavailable/, 'evaluation failures must not be swallowed');
+await assert.rejects(waitForAsync({ evaluate: () => new Promise(() => {}) }, async () => true,
+  undefined, { timeout: 5 }), /did not resolve to true/, 'hung evaluation must time out without another poll');
 console.log('async browser wait tests passed: false promises retry, strict true, timeout and evaluation failure');

@@ -295,7 +295,7 @@ try {
     });
   });
   await a.waitForFunction(() => window.__workspaceLockHeld);
-  await add(b, 'After lock owner closed');
+  await addForm(b, 'After lock owner closed'); await b.click('#save-btn');
   assert.equal(await b.locator('#add-icon-modal').isVisible(), true, 'save remains pending while lock is held');
   assert.equal(await b.locator('#save-btn').isDisabled(), true, 'pending save cannot be submitted twice');
   assert.deepEqual((await stored()).icons.map((item) => item.name), ['x', 'y'], 'waiting writer has not bypassed the held lock');
