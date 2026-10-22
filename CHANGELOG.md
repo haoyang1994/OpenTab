@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Update only the locked versions of `ws` (8.20.0 → 8.22.0), `ip-address` (10.1.0 → 10.7.4), and `brace-expansion` (1.1.15 → 1.1.21) within existing dependency ranges, addressing the three affected packages reported by the 2026-10-22 npm audit.
+- Keep the gateway, extension assets, permissions, dependency ranges, and packaging unchanged; updated tarballs resolve through the official npm registry.
+- Check the installed dependency tree with `npm audit --audit-level=high` in CI, alongside the full existing test suite.
+
 ### Added
 
 - Opt-in city weather settings with Celsius/Fahrenheit, manual refresh, 30-minute cache reuse, and a bounded offline fallback; weather state remains local-only.
