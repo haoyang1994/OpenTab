@@ -81,17 +81,24 @@
     get storageError() { return storageError; }
   };
   g.OpenTabI18n = api;
-  api.ready = storage('get', STORAGE_KEY).then(saved => {
+  // Catalog scripts and the static shell finish parsing before runtime consumers start.
+  const domReady = new Promise(resolve => {
+    if (g.document?.readyState === 'loading') {
+      g.document.addEventListener('DOMContentLoaded', resolve, { once: true });
+    } else resolve();
+  });
+  const storageReady = storage('get', STORAGE_KEY).then(saved => {
     preference = valid(saved?.[STORAGE_KEY]) ? saved[STORAGE_KEY] : 'auto';
     locale = resolve(preference);
     mirror();
-  }).catch(error => { storageError = error; }).then(() => {
+  }).catch(error => { storageError = error; });
+  api.ready = Promise.all([storageReady, domReady]).then(() => {
+    // Apply exactly once at startup, before any ready consumer can render dynamic UI.
     apply();
+    initializeShell();
     return locale;
   });
-  async function initializeShell() {
-    await api.ready;
-    apply();
+  function initializeShell() {
     const select = g.document?.getElementById('language-preference');
     const status = g.document?.getElementById('language-status');
     if (!select) return;
@@ -111,6 +118,4 @@
       }
     });
   }
-  if (g.document?.readyState === 'loading') g.document.addEventListener('DOMContentLoaded', initializeShell, { once: true });
-  else if (g.document) initializeShell();
 })(globalThis);

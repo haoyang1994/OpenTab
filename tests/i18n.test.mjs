@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = path.join(root, 'artifacts');
 fs.mkdirSync(artifacts, { recursive: true });
 const pixel = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-const ready = page => page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0);
+const ready = page => page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0 && document.querySelector('#weather-pill')?.hasAttribute('data-stale'));
 const cjk = /[\u3400-\u9fff]/;
 async function start(locale) {
   const context = await chromium.launchPersistentContext('', {
@@ -83,13 +83,13 @@ try {
   assert.equal(await page.locator('#toast').textContent(), 'Enter a valid URL.', 'add validation is in English');
   const title = '设置 · My link';
   await page.fill('#icon-name', title); await page.fill('#icon-url', 'https://example.com/mine');
-  await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden');
+  await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
   const item = await page.evaluate(async () => (await chrome.storage.local.get('icons')).icons[0]);
   assert.equal(item.name, title, 'user title is not interpreted as a translation key');
   await page.locator(`.icon-widget[data-id="${item.id}"]`).click({ button: 'right' });
   assert.ok(!cjk.test(await page.locator('#edit-icon-btn').textContent()));
   await page.click('#edit-icon-btn'); await page.fill('#icon-name', `${title} 保存`);
-  await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden');
+  await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
   await page.fill('#search-input', `${title} 保存`);
   assert.equal(await page.inputValue('#search-input'), `${title} 保存`);
   await page.keyboard.press('Escape');
@@ -111,7 +111,9 @@ try {
 
   await settings(page, 'weather');
   assert.ok(!cjk.test(await page.locator('#weather-status').textContent()));
-  await page.fill('#weather-city', 'Test City'); await page.click('#weather-save'); await page.check('#weather-enabled');
+  await page.fill('#weather-city', 'Test City'); await page.click('#weather-save');
+  await waitForAsync(page, async () => (await chrome.storage.local.get('weatherCity')).weatherCity === 'Test City');
+  await page.check('#weather-enabled');
   await page.waitForFunction(() => document.querySelector('#weather-temp').textContent.includes('20'));
   assert.ok(!cjk.test(await page.locator('#weather-status').textContent()));
   assert.equal(main.weatherRequests(), 1);
@@ -123,6 +125,7 @@ try {
 
   await language(page, 'zh-CN', 'zh-CN');
   assert.equal(await page.getAttribute('#settings-btn', 'title'), '设置');
+  await page.waitForFunction(() => document.querySelector('#weather-pill').title.includes('晴'));
   assert.match(await page.getAttribute('#weather-pill', 'title'), /晴/, 'cached condition switches to Chinese without a request');
   assert.equal(main.weatherRequests(), 1);
   assert.equal((await worker.evaluate(() => chrome.storage.local.get('icons'))).icons[0].name, `${title} 保存`, 'switching language preserves user data');
@@ -136,6 +139,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 800 });
   await language(page, 'en', 'en'); await page.reload(); await ready(page);
   await assertEnglishShell(page);
+  await page.waitForFunction(() => document.querySelector('#weather-pill').title.includes('Sunny'));
   assert.match(await page.getAttribute('#weather-pill', 'title'), /Sunny/, 'cached condition switches back to English');
   assert.equal(main.weatherRequests(), 1);
 

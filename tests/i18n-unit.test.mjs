@@ -3,27 +3,102 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 const source = readFileSync(new URL('../i18n.js', import.meta.url), 'utf8');
 const catalog = readFileSync(new URL('../locales/static-en.js', import.meta.url), 'utf8');
-function create({ language = 'en-US', saved, mirror, readError = false, writeError = false, noStorage = false } = {}) {
+function create({ language = 'en-US', saved, mirror, readError = false, writeError = false, noStorage = false, delayedDOM = false, delayedStorage = false, noDocument = false } = {}) {
   const data = saved === undefined ? {} : { languagePreference: saved };
   const cache = new Map(mirror ? [['opentab.language.v1', mirror]] : []);
   const element = {
     textContent: '', innerHTML: 'unchanged',
     getAttribute: () => '你好，{name}',
   };
+  const listeners = new Map();
+  let finishStorage;
+  const weather = { title: '天气', writes: 0,
+    getAttribute: () => '天气',
+    setAttribute(name, value) { this[name] = value; this.writes++; },
+  };
   const context = {
     navigator: { language }, setTimeout, clearTimeout,
     localStorage: { getItem: key => cache.get(key), setItem: (key, value) => cache.set(key, value) },
     chrome: noStorage ? undefined : { runtime: {}, storage: { local: {
-      get(key, callback) { if (readError) throw new Error('Read denied'); callback({ ...data }); },
+      get(key, callback) {
+        if (readError) throw new Error('Read denied');
+        finishStorage = () => callback({ ...data });
+        if (!delayedStorage) finishStorage();
+      },
       set(value, callback) { if (writeError) throw new Error('Write denied'); Object.assign(data, value); callback(); }
     } } },
-    document: { readyState: 'loading', documentElement: {}, addEventListener() {},
-      querySelectorAll: selector => selector === '[data-i18n]' ? [element] : [], },
+    document: noDocument ? undefined : {
+      readyState: delayedDOM ? 'loading' : 'complete', documentElement: {},
+      getElementById() { return null; },
+      addEventListener(name, callback) { listeners.set(name, callback); },
+      querySelectorAll: selector => selector === '[data-i18n]' ? [element]
+        : selector === '[data-i18n-title]' ? [weather] : [],
+    },
   };
   vm.createContext(context);
   vm.runInContext(source, context);
   vm.runInContext(catalog, context);
-  return { api: context.OpenTabI18n, context, data, cache, element };
+  function fireDOMContentLoaded() {
+    context.document.readyState = 'interactive';
+    const listener = listeners.get('DOMContentLoaded');
+    listeners.delete('DOMContentLoaded');
+    listener?.();
+  }
+  return { api: context.OpenTabI18n, context, data, cache, element, weather, fireDOMContentLoaded, finishStorage };
+}
+// Storage may settle before parsing finishes. No runtime consumer may start yet.
+{
+  const { api, weather, fireDOMContentLoaded } = create({ delayedDOM: true });
+  let consumerStarted = false;
+  const consumer = api.ready.then(() => {
+    consumerStarted = true;
+    assert.equal(weather.title, 'Weather');
+    weather.title = 'Sunny';
+  });
+  // Drain the known storage promise chain without timers or browser timing assumptions.
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(consumerStarted, false, 'ready waits for DOM and catalog parsing');
+  assert.equal(weather.writes, 0, 'no premature static pass');
+  api.register({ '迟到的目录': 'Late catalog' });
+  fireDOMContentLoaded();
+  await consumer;
+  assert.equal(api.t('迟到的目录'), 'Late catalog');
+  assert.equal(weather.title, 'Sunny');
+  assert.equal(weather.writes, 1, 'static localization runs exactly once');
+  fireDOMContentLoaded();
+  await Promise.resolve();
+  assert.equal(weather.title, 'Sunny', 'later DOM activity cannot overwrite runtime title');
+  assert.equal(weather.writes, 1);
+}
+// DOM can finish before Chrome storage. Saved preference must win before rendering.
+{
+  const { api, weather, fireDOMContentLoaded, finishStorage } = create({
+    delayedDOM: true, delayedStorage: true, saved: 'zh-CN', language: 'en-US',
+  });
+  let settled = false;
+  api.ready.then(() => { settled = true; });
+  fireDOMContentLoaded();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(settled, false);
+  assert.equal(weather.writes, 0);
+  finishStorage();
+  assert.equal(await api.ready, 'zh-CN');
+  assert.equal(weather.title, '天气');
+  assert.equal(weather.writes, 1);
+  weather.title = '晴';
+  await Promise.resolve();
+  assert.equal(weather.title, '晴');
+  assert.equal(weather.writes, 1);
+}
+{
+  const { api } = create({ noDocument: true });
+  assert.equal(await api.ready, 'en', 'document-absent contexts settle');
+}
+{
+  const { api, fireDOMContentLoaded } = create({ delayedDOM: true, readError: true });
+  fireDOMContentLoaded();
+  assert.equal(await api.ready, 'en', 'storage failure still settles after DOM readiness');
+  assert.ok(api.storageError);
 }
 for (const [language, expected] of [['en-US', 'en'], ['zh-CN', 'zh-CN'], ['zh-TW', 'zh-CN'], ['fr-FR', 'en'], ['', 'en']]) {
   const { api } = create({ language });
