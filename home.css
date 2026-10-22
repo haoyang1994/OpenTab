@@ -675,7 +675,7 @@ body.theme-light .engine-btn.active {
   overscroll-behavior: contain;
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  background: var(--panel-bg);
+  background: var(--panel-bg-solid);
   box-shadow: var(--shadow-panel);
 }
 

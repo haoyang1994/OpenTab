@@ -199,7 +199,7 @@ export async function verifySavedSites(page, worker) {
       assert.ok(bounds.rows.every(row => row.width <= bounds.width && row.tabIndex === -1));
       assert.ok(bounds.inputWidth >= 64, 'platform key hint leaves usable input width on narrow screens');
       await assertVisibleResultHits(page);
-      await page.screenshot({ path: path.join(artifacts, `search-saved-sites-${preference}-${width}.png`), animations: 'disabled' });
+      await captureSearchThemes(page, `search-saved-sites-${preference}-${width}`);
     }
   }
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -346,7 +346,7 @@ async function verifySearchShortcut(page) {
       assert.ok(minimalBounds.top >= 0 && minimalBounds.bottom <= minimalBounds.height, 'minimal-mode results stay inside narrow viewport');
       await assertVisibleResultHits(page);
       assert.equal(await page.locator('#search-widget-wrap').evaluate(wrap => getComputedStyle(wrap).zIndex), '1300', 'minimal-mode temporary surface retains its independent layer');
-      await page.screenshot({ path: path.join(artifacts, `search-shortcut-minimal-${platform.replace(/[^a-z0-9]/gi, '-')}-360.png`), animations: 'disabled' });
+      await captureSearchThemes(page, `search-shortcut-minimal-${platform.replace(/[^a-z0-9]/gi, '-')}-360`);
       await page.keyboard.press('Escape');
       assert.equal(await currentFocus(), 'settings-btn');
       assert.equal(await page.locator('#search-widget-wrap').isVisible(), false);
@@ -378,6 +378,37 @@ async function verifySearchShortcut(page) {
       delete window.__nextShortcutOrigin;
       OpenTabSearch.applyFromStorage();
     });
+  }
+}
+
+async function assertOpaqueSearchSurface(page) {
+  const surface = await page.locator('#search-history').evaluate(list => {
+    const style = getComputedStyle(list);
+    return { color: style.backgroundColor, opacity: style.opacity };
+  });
+  const channels = /^rgba?\(([^)]+)\)$/.exec(surface.color)?.[1].split(',').map(Number);
+  assert.ok(channels?.length === 3 || channels?.length === 4, `expected an RGB search surface, received ${surface.color}`);
+  assert.equal(channels[3] ?? 1, 1, 'computed search background alpha must be fully opaque');
+  assert.equal(Number(surface.opacity), 1, 'search panel opacity must not reveal underlying text');
+}
+
+async function captureSearchThemes(page, basename) {
+  const originalLight = await page.locator('body').evaluate(body => body.classList.contains('theme-light'));
+  const persistedTheme = await page.evaluate(() => chrome.storage.local.get('themeMode'));
+  try {
+    await assertOpaqueSearchSurface(page);
+    // Preserve the existing screenshot, then exercise both visual CSS themes.
+    // This fixture does not call settings or change the user's stored theme.
+    await page.screenshot({ path: path.join(artifacts, `${basename}.png`), animations: 'disabled' });
+    for (const theme of ['dark', 'light']) {
+      await page.locator('body').evaluate((body, theme) => body.classList.toggle('theme-light', theme === 'light'), theme);
+      await assertOpaqueSearchSurface(page);
+      await assertVisibleResultHits(page);
+      await page.screenshot({ path: path.join(artifacts, `${basename}-${theme}.png`), animations: 'disabled' });
+    }
+  } finally {
+    await page.locator('body').evaluate((body, light) => body.classList.toggle('theme-light', light), originalLight);
+    assert.deepEqual(await page.evaluate(() => chrome.storage.local.get('themeMode')), persistedTheme, 'visual theme fixtures must not persist a preference');
   }
 }
 

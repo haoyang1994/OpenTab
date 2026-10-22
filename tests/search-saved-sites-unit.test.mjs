@@ -12,6 +12,10 @@ const rule = (selector) => {
   assert.ok(start >= 0, `missing CSS contract: ${selector}`);
   return css.slice(start, css.indexOf('}', start));
 };
+assert.match(rule('.search-history'), /background:\s*var\(--panel-bg-solid\);/, 'dense search results must block underlying group/clock text');
+for (const theme of [':root', 'body.theme-light']) {
+  assert.match(rule(theme), /--panel-bg-solid:\s*#[0-9a-f]{6};/i, `${theme} supplies an opaque search surface`);
+}
 const layer = (selector) => Number(rule(selector).match(/z-index:\s*(\d+)/)?.[1]);
 const closedSearch = layer('#search-widget-wrap');
 const openSearch = layer('body:not(.minimal-mode) #search-widget-wrap:has(.search-history:not(.hidden))');
