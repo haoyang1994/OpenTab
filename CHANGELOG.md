@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Offline, reproducible unsigned extension ZIP candidates with a reviewed runtime allowlist, asset/license closure checks, and a real MV3 smoke of the exact extracted archive. CI retains tested ZIP bytes and SHA-256 without publishing a release.
+
 - English and Simplified Chinese for the main new-tab, settings, import/sync/weather and add-page popup, with browser-language default, persistent explicit preference, and localized Chrome metadata. User content is not translated.
 - Light appearance for genuinely new installations, without resetting existing themes.
 - Catalog/locale unit tests and real MV3 bilingual workflows with wide and 600px screenshots.
