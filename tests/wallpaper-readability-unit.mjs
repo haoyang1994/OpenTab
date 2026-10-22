@@ -29,3 +29,35 @@ for (const theme of [':root', 'body.theme-light']) {
   }
 }
 console.log(`Wallpaper readability CSS: all sampled text pairs >= ${Math.min(...results).toFixed(2)}:1 (alpha composited over black/white, no blur credit)`);
+
+// The final navigation overrides supersede the original glass tokens. Counts
+// use their own opaque pair rather than inheriting an active/hover foreground
+// over a translucent badge, which previously fell below 4.5:1 in dark mode.
+const lastRule = selector => {
+  const start = css.lastIndexOf(`${selector} {`);
+  assert.ok(start >= 0);
+  return css.slice(start, css.indexOf('}', start));
+};
+assert.match(lastRule('.group-tab-count'), /background: var\(--nav-surface\); color: var\(--nav-text\)/);
+for (const theme of [':root', 'body.theme-light']) {
+  const values = lastRule(theme);
+  for (const [name, foreground, background] of [
+    ['inactive/count/shortcut badge', 'nav-text', 'nav-surface'],
+    ['hover', 'nav-text', 'nav-hover'],
+    ['selected', 'nav-selected-text', 'nav-selected'],
+    ['form label/cancel', 'form-text', 'form-surface'],
+    ['form hint', 'form-muted', 'form-surface'],
+    ['field hint/placeholder', 'form-muted', 'form-field']
+  ]) {
+    const ratio = contrast(token(values, foreground), token(values, background));
+    assert.ok(ratio >= 4.5, `${theme} final ${name}: ${ratio}`);
+  }
+}
+console.log('Final slate navigation/count and form token pairs meet 4.5:1 in both themes.');
+
+assert.match(rule('#add-icon-modal .modal-content'), /--text-hint: var\(--form-muted\)/);
+assert.match(lastRule('#add-icon-modal #cancel-btn'), /background: transparent; color: var\(--form-text\)/);
+for (const selector of ['#add-icon-modal #save-btn', '#add-icon-modal #save-btn:hover']) {
+  const background = rgba(lastRule(selector).match(/background:\s*(#[0-9a-f]+);/)[1]);
+  assert.ok(contrast(rgba('#ffffff'), background) >= 4.5, `${selector} white label`);
+}

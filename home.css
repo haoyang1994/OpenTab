@@ -3291,7 +3291,7 @@ body.theme-light {
 }
 .group-tab:hover, .group-add-btn:hover, .site-selection-entry:hover { background: var(--nav-hover); color: var(--nav-text); }
 .group-tab.active { background: var(--nav-selected); color: var(--nav-selected-text); border-color: #818cf8; }
-.group-tab-count { background: rgba(148, 163, 184, .18); }
+.group-tab-count { background: var(--nav-surface); color: var(--nav-text); }
 .site-selection-entry { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 10px; }
 .search-shortcut-hint { border-radius: 6px; padding: 4px 6px; }
 #add-icon-modal { background: rgba(30, 41, 59, .28); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
