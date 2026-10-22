@@ -577,51 +577,7 @@
     state.todos = [];
   }
 
-  function renderTodos() {
-    elements.todoList.innerHTML = '';
-
-    state.todos.forEach((todo) => {
-      const row = document.createElement('div');
-      row.className = `todo-item${todo.done ? ' done' : ''}`;
-
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = Boolean(todo.done);
-      checkbox.setAttribute('aria-label', t(todo.done ? '标记为未完成' : '标记为已完成'));
-      checkbox.addEventListener('change', () => {
-        todo.done = checkbox.checked;
-        saveState();
-        renderTodos();
-      });
-
-      const text = document.createElement('span');
-      text.className = 'todo-text';
-      text.textContent = todo.text;
-
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'todo-delete';
-      remove.textContent = '×';
-      remove.setAttribute('aria-label', t('删除待办：{name}', { name: todo.text }));
-      remove.addEventListener('click', () => {
-        state.todos = state.todos.filter((item) => item.id !== todo.id);
-        saveState();
-        renderTodos();
-      });
-
-      row.appendChild(checkbox);
-      row.appendChild(text);
-      row.appendChild(remove);
-      elements.todoList.appendChild(row);
-    });
-
-    const done = state.todos.filter((item) => item.done).length;
-    const total = state.todos.length;
-    const progress = total > 0 ? Math.round((done / total) * 100) : 0;
-    if (elements.todoCount) elements.todoCount.textContent = `${done}/${total}`;
-    if (elements.todoEmpty) elements.todoEmpty.classList.toggle('hidden', total > 0);
-    if (elements.todoProgressBar) elements.todoProgressBar.style.width = `${progress}%`;
-  }
+  function renderTodos() { OpenTabClockDeck.renderTodos(); }
 
   function setTodoPanelOpen(open) {
     if (open) rememberFocus(elements.todoToggleBtn);
@@ -1832,6 +1788,10 @@
       getIconLabel
     });
   }
+  OpenTabClockDeck.init({ state, elements, workspace, saveState, renderTodos,
+    closeClockPopovers() { toggleTimezoneSelector(false); toggleCalendar(false); },
+    openTodoList(opener) { setTodoPanelOpen(true); rememberFocus(opener); elements.todoInput.focus(); }
+  });
   window.OpenTabCommandPalette?.init({ openAddWebsite() { rememberFocus(); openAddIconModal(); } });
   OpenTabSearch.init({
     getState: () => state,

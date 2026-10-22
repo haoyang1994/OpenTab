@@ -231,3 +231,10 @@ for the intentionally excluded standalone developer-tool pages.
 ## 批量整理网站
 
 `tests/bulk-site-move-unit.test.mjs` 和 `tests/site-selection-unit.test.mjs` 覆盖单次保存、位置与顺序、文件夹解散、锁内目标与来源校验、失败及逆向撤销。`tests/site-selection.test.mjs` 使用真实扩展页面验收选择/取消、原生键盘与鼠标不误开链接、分组/文件夹移动与持久化、冲突、撤销及中英文浅深窄屏。既有所有验收与首屏预算保持不变。
+
+## 层叠卡片与搜索引擎
+
+- `tests/clock-deck-unit.test.mjs` 检查每标签页专注截止时间、恢复/暂停/重置、受限暂存、滑动阈值和待办完成保存边界。
+- `tests/clock-deck.test.mjs` 在真实扩展中检查原时钟与日历/时区、卡片切换与非活动层焦点隔离、专注刷新恢复、待办持久化、极简模式及双语浅深截图。
+- `tests/search-engine-deck-unit.test.mjs` 与 `tests/search-engine-deck.mjs` 检查所选引擎顶层、展开收起、查询和选区保留、自定义引擎、原生键盘/触屏、减少动画与窄屏。浏览器 helper 由原 `search.test.mjs` 执行。
+- 新资源纳入显式发布清单；原有全部套件与首屏预算保持不变，独立浏览器套件聚合后任一失败仍返回非零。

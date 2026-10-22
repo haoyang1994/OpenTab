@@ -27,6 +27,7 @@ run_command() {
 
 run_headed() {
   local suites=(
+    tests/clock-deck.test.mjs
     tests/site-selection.test.mjs
     tests/paste-sites.test.mjs
     tests/command-palette.test.mjs

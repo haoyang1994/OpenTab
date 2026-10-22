@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { formatConsoleError, unexpectedErrors } from './console-allow.mjs';
 import { verifySavedSites } from './search-saved-sites.mjs';
+import { verifyEngineDeck, chooseSearchEngine } from './search-engine-deck.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const EXTENSION_PATH = path.resolve(__dirname, '..');
-const ARTIFACT_DIR = '/opt/cursor/artifacts/screenshots';
+const ARTIFACT_DIR = path.join(EXTENSION_PATH, 'artifacts');
 const HOME_JS_MASTER_BYTES = 106755;
 // Same ceiling as T8 (`opentab:grid-ready` ≤ 500ms). dcl===0 must not pass.
 // Same-machine 5-run medians (this VM, headed Chromium, 2026-10-20):
@@ -55,15 +56,12 @@ async function storageSet(serviceWorker, payload) {
 }
 
 async function screenshot(page, name) {
-  try {
-    fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, name),
-      fullPage: false
-    });
-  } catch (error) {
-    console.warn(`screenshot ${name} skipped: ${error.message}`);
-  }
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+  await page.screenshot({
+    path: path.join(ARTIFACT_DIR, name),
+    fullPage: false,
+    animations: 'disabled'
+  });
 }
 
 async function runSearchE2E() {
@@ -143,7 +141,7 @@ async function runSearchE2E() {
       );
     }
 
-    await page.click('.engine-btn[data-engine="baidu"]');
+    await chooseSearchEngine(page, 'baidu');
     await page.waitForFunction(() => window.OpenTabSearch.getState().searchEngine === 'baidu');
     assert.equal(
       await page.locator('.engine-btn[data-engine="baidu"]').evaluate((el) => el.classList.contains('active')),
@@ -192,6 +190,7 @@ async function runSearchE2E() {
     await page.click('#close-settings');
     await page.waitForFunction(() => document.getElementById('settings-panel').classList.contains('hidden'));
 
+    await page.click('#search-engine-trigger');
     await page.click('#search-custom-engines .engine-btn');
     await page.waitForFunction(() => window.OpenTabSearch.getState().searchEngine.startsWith('cse-'));
     await page.fill('#search-input', 'hello world');
@@ -221,7 +220,7 @@ async function runSearchE2E() {
     assert.equal(log.at(-1)?.url, 'https://example.com', 'AC2 example.com should open as a URL');
 
     // AC3 native Tab navigation, Alt+arrow engine cycle + type-to-focus
-    await page.click('.engine-btn[data-engine="google"]');
+    await chooseSearchEngine(page, 'google');
     await page.waitForFunction(() => window.OpenTabSearch.getState().searchEngine === 'google');
     for (const key of ['Tab', 'Shift+Tab']) {
       await page.locator('#search-input').focus();
@@ -377,7 +376,7 @@ async function runSearchE2E() {
 
     // AC4 history
     await page.fill('#search-input', '');
-    await page.click('.engine-btn[data-engine="google"]');
+    await chooseSearchEngine(page, 'google');
     await page.fill('#search-input', 'alpha');
     await page.locator('#search-input').press('Enter');
     await page.fill('#search-input', 'beta');
@@ -488,6 +487,7 @@ async function runSearchE2E() {
     log = await navLog(page);
     assert.equal(log.at(-1)?.openInNewTab, false, 'AC6 Enter stays in this tab when the setting is off');
 
+    await verifyEngineDeck(page, serviceWorker, screenshot);
     await verifySavedSites(page, serviceWorker);
 
     const leftover = unexpectedErrors(consoleErrors);
