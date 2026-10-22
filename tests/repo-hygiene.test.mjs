@@ -41,6 +41,19 @@ for (const file of requiredFiles) {
   assert.ok(exists(file), `missing required file: ${file}`);
 }
 
+// Only the English README is restricted; translated docs and user-data examples
+// elsewhere remain unrestricted. Allow exactly the intentional language switch.
+const englishReadme = read('README.md');
+const chineseLanguageLink = '[简体中文](README.zh-CN.md)';
+assert.equal(englishReadme.split(chineseLanguageLink).length - 1, 1,
+  'English README must retain one Simplified Chinese language link');
+const untranslatedReadmeLines = englishReadme.split('\n')
+  .map((line, index) => ({ line: line.replace(chineseLanguageLink, ''), number: index + 1 }))
+  .filter(({ line }) => /\p{Script=Han}/u.test(line))
+  .map(({ number }) => number);
+assert.deepEqual(untranslatedReadmeLines, [],
+  `English README contains untranslated Chinese on lines: ${untranslatedReadmeLines.join(', ')}`);
+
 const removedFiles = [
   'FIX50SP2.xml',
   'fix_values.js',

@@ -23,6 +23,94 @@ function memory(initial = base()) {
   } } };
   return { store, writes, chrome, api: Workspace.forChrome(chrome), failNext() { fail = true; } };
 }
+// The extension installer and E2E fixture seeding share one durable-write
+// boundary. Run the actual background listener with the actual coordinator,
+// pausing storage only after its first read has captured the empty snapshot.
+const installFixture = {
+  icons: [
+    { id: 'docs', name: 'Docs', type: 'shortcut', url: 'https://docs.example/start', folderId: 'folder-home' },
+    { id: 'work-docs', name: 'Docs', type: 'shortcut', url: 'https://work.example/docs', folderId: 'work' }
+  ],
+  folders: [{ id: 'folder-home', name: 'Home' }, { id: 'work', name: 'Work' }],
+  currentFolderId: 'folder-home',
+  background: { type: 'gradient', value: 'linear-gradient(135deg, #09203f, #537895)', source: 'gradient' },
+  searchEngine: 'google', searchHistoryEnabled: false
+};
+function installHarness() {
+  const h = memory({}), installedWork = [], warnings = [];
+  let installed, releaseRead, captured, pauseRead = true;
+  const gate = new Promise((resolve) => { releaseRead = resolve; });
+  const get = h.chrome.storage.local.get;
+  h.chrome.storage.local.get = async (keys) => {
+    const snapshot = await get(keys);
+    if (pauseRead) {
+      pauseRead = false;
+      captured = clone(snapshot);
+      await gate;
+    }
+    return snapshot;
+  };
+  h.chrome.runtime.onInstalled = { addListener(listener) { installed = listener; } };
+  h.chrome.runtime.onMessage = { addListener() {} };
+  const context = vm.createContext({
+    chrome: h.chrome, importScripts() {},
+    console: { warn: (...args) => warnings.push(args) },
+    OpenTabWorkspace: { ...h.api, transaction(task) {
+      const result = h.api.transaction(task);
+      installedWork.push(result);
+      return result;
+    } }
+  });
+  vm.runInContext(fs.readFileSync(new URL('../background.js', import.meta.url), 'utf8'), context);
+  assert.equal(typeof installed, 'function', 'actual background module registers the install listener');
+  return { ...h, warnings, releaseRead, captured: () => captured,
+    install() { installed({ reason: 'install' }); assert.equal(installedWork.length, 1); return installedWork[0]; } };
+}
+{
+  const h = installHarness(), installing = h.install();
+  await until(() => h.captured() !== undefined);
+  assert.deepEqual(h.captured(), {}, 'installer captured an empty snapshot before the fixture write');
+  assert.equal(h.writes.length, 0, 'the controlled installer has not written defaults yet');
+  // Negative control: bypassing the lock reproduces the CI failure exactly.
+  await h.chrome.storage.local.set(installFixture);
+  assert.deepEqual(h.store.icons, installFixture.icons);
+  h.releaseRead(); await installing;
+  assert.deepEqual(h.store.icons, [], 'a raw fixture write can be overwritten by the in-flight installer');
+  assert.deepEqual(h.store.background, { type: 'image', value: 'assets/default_background/default.webp', source: 'preset' });
+  assert.deepEqual(h.store.folders, installFixture.folders, 'the race leaves groups but removes their websites');
+  assert.equal(h.store.searchHistoryEnabled, false, 'search readiness alone does not detect overwritten fixture icons');
+  assert.equal(h.writes.length, 2); assert.deepEqual(h.warnings, []);
+}
+{
+  const h = installHarness(), installing = h.install();
+  await until(() => h.captured() !== undefined);
+  let fixtureEntered = false;
+  const seeded = h.api.transaction(async ({ write }) => {
+    fixtureEntered = true;
+    await write(installFixture);
+  });
+  await Promise.resolve();
+  assert.equal(fixtureEntered, false, 'same-lock fixture transaction waits while installation owns the lock');
+  assert.deepEqual(h.store, {}); assert.equal(h.writes.length, 0);
+  h.releaseRead(); await Promise.all([installing, seeded]);
+  assert.equal(fixtureEntered, true);
+  assert.deepEqual(h.writes[0].icons, [], 'installer writes before queued fixture seeding');
+  assert.deepEqual(h.writes[1], installFixture);
+  for (const [key, value] of Object.entries(installFixture)) assert.deepEqual(h.store[key], value, `locked fixture preserves ${key}`);
+  assert.equal(h.writes.length, 2); assert.deepEqual(h.warnings, []);
+}
+{
+  const h = installHarness();
+  await h.api.transaction(({ write }) => write(installFixture));
+  const installing = h.install();
+  await until(() => h.captured() !== undefined);
+  assert.deepEqual(h.captured().icons, installFixture.icons, 'late installer reads the already committed fixture');
+  h.releaseRead(); await installing;
+  assert.deepEqual(h.store, installFixture, 'fixture-first ordering preserves websites, background, groups, and settings');
+  assert.equal(h.writes.length, 1, 'late installer performs no default write when icons already exist');
+  assert.deepEqual(h.warnings, []);
+}
+
 {
   const h = memory(), a = base(), b = base();
   a.icons.push({ id: 'a', name: 'A', folderId: 'folder-home' }); b.icons.push({ id: 'b', name: 'B', folderId: 'folder-home' });
@@ -698,7 +786,7 @@ function homeIconEditor(h, state, editId = null) {
 }
 
 await assert.rejects(until(() => false), /synchronization point/, 'a broken fixture fails instead of spinning forever');
-console.log('workspace persistence tests passed: real home path, parallel writers, normalized state, conflict/epoch protection, inverse undo, failure and vault wrapper');
+console.log('workspace persistence tests passed: real install race and locked fixture seeding, real home path, parallel writers, normalized state, conflict/epoch protection, inverse undo, failure and vault wrapper');
 
 async function until(predicate) {
   for (let turn = 0; turn < 1000; turn++) {
