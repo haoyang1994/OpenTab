@@ -50,6 +50,7 @@
   let editingCustomId = '';
   let hideHistoryTimer = 0;
   let bound = false;
+  let deletingHistory = false;
 
   const api = {
     STORAGE_KEYS,
@@ -727,7 +728,7 @@
     const list = $('search-history');
     const input = inputEl();
     if (!list || !input) return;
-    if (document.activeElement !== input) {
+    if (document.activeElement !== input && !list.contains(document.activeElement)) {
       hideHistory();
       return;
     }
@@ -749,7 +750,7 @@
         group = document.createElement('div');
         group.className = 'search-result-group';
         group.dataset.kind = kind;
-        group.setAttribute('role', 'group');
+        group.setAttribute('role', 'rowgroup');
         const label = t(isSite ? '已保存的网站' : '搜索历史');
         group.setAttribute('aria-label', label);
         const heading = document.createElement('div');
@@ -760,12 +761,15 @@
         list.appendChild(group);
         previousKind = kind;
       }
+      const row = document.createElement('div');
+      row.className = 'search-result-row';
+      row.setAttribute('role', 'row');
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.tabIndex = -1;
       btn.id = `search-result-${index}`;
       btn.className = `search-result-item ${isSite ? 'search-site-item' : 'search-history-item'}${index === historyHighlight ? ' active' : ''}`;
-      btn.setAttribute('role', 'option');
+      btn.setAttribute('role', 'gridcell');
       btn.setAttribute('aria-selected', index === historyHighlight ? 'true' : 'false');
       if (isSite) {
         btn.dataset.siteId = item.id || '';
@@ -803,7 +807,41 @@
           applyHistoryItem(item, true);
         }
       });
-      group.appendChild(btn);
+      row.appendChild(btn);
+      if (!isSite) {
+        const cell = document.createElement('div');
+        cell.className = 'search-history-delete-cell';
+        cell.setAttribute('role', 'gridcell');
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.disabled = deletingHistory;
+        remove.className = 'search-history-delete';
+        remove.textContent = t('删除');
+        remove.setAttribute('aria-label', t('删除搜索历史：{query}', { query: item.q }));
+        remove.title = t('删除搜索历史：{query}', { query: item.q });
+        remove.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.button !== 0) return;
+          deleteHistoryItem(item, document.activeElement === remove);
+        });
+        remove.addEventListener('auxclick', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        remove.addEventListener('keydown', (event) => {
+          if (event.isComposing || isImeKeydown(event)) return;
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            input.focus();
+            hideHistory();
+          }
+        });
+        cell.appendChild(remove);
+        row.appendChild(cell);
+      }
+      group.appendChild(row);
       if (index === historyHighlight) input.setAttribute('aria-activedescendant', btn.id);
     });
     list.classList.remove('hidden');
@@ -812,6 +850,53 @@
       const active = $(`search-result-${historyHighlight}`);
       if (active) active.scrollIntoView({ block: 'nearest' });
     }
+  }
+
+  function deleteHistoryItem(item, restoreDeleteFocus) {
+    if (deletingHistory) return;
+    const storage = global.chrome?.storage?.local;
+    const key = item.q.toLowerCase();
+    const history = displayedSuggestions.filter((entry) => entry.type !== 'site');
+    const index = history.findIndex((entry) => entry.q.toLowerCase() === key);
+    const fail = () => {
+      deletingHistory = false;
+      $('search-history').querySelectorAll('.search-history-delete').forEach((button) => { button.disabled = false; });
+      const hint = $('search-hint');
+      if (hint) {
+        hint.textContent = t('无法删除搜索历史，请重试。');
+        hint.classList.remove('hidden');
+        hint.removeAttribute('data-match');
+      }
+    };
+    if (!storage) { fail(); return; }
+    // Disabling a focused native button blurs it to the page body. Park focus
+    // in the input first while preserving the caller's next-delete intent.
+    // Completion still checks current focus, so leaving search is respected.
+    if (restoreDeleteFocus && document.activeElement?.classList.contains('search-history-delete')) inputEl().focus();
+    deletingHistory = true;
+    $('search-history').querySelectorAll('.search-history-delete').forEach((button) => { button.disabled = true; });
+    // Read current storage rather than overwriting additions from another tab
+    // with this tab's older array. Only history is written, not other settings.
+    storage.get(['searchHistory'], (stored) => {
+      if (chrome.runtime?.lastError) { fail(); return; }
+      const nextHistory = normalizeHistory(stored.searchHistory).filter((entry) => entry.q.toLowerCase() !== key);
+      storage.set({ searchHistory: nextHistory }, () => {
+        if (chrome.runtime?.lastError) { fail(); return; }
+        deletingHistory = false;
+        searchState.searchHistory = nextHistory;
+        historyHighlight = -1;
+        const input = inputEl();
+        const stillInSearch = document.activeElement === input || $('search-history').contains(document.activeElement);
+        // An asynchronous completion must not pull focus back from another task.
+        if (stillInSearch) input.focus();
+        renderHistory();
+        if (stillInSearch && restoreDeleteFocus) {
+          const buttons = $('search-history').querySelectorAll('.search-history-delete');
+          const next = buttons[Math.min(Math.max(index, 0), buttons.length - 1)];
+          if (next) next.focus();
+        }
+      });
+    });
   }
 
   function applyHistoryItem(item, forceNewTab) {
@@ -981,12 +1066,14 @@
       updateHint();
       renderHistory();
     });
-    input.addEventListener('blur', () => {
+    const scheduleHideHistory = () => {
       global.clearTimeout(hideHistoryTimer);
       hideHistoryTimer = global.setTimeout(() => {
-        if (document.activeElement !== input) hideHistory();
+        if (document.activeElement !== input && !$('search-history')?.contains(document.activeElement)) hideHistory();
       }, 160);
-    });
+    };
+    input.addEventListener('blur', scheduleHideHistory);
+    $('search-history')?.addEventListener('focusout', scheduleHideHistory);
     input.addEventListener('auxclick', onSearchAuxClick);
     input.addEventListener('mousedown', onSearchMouseDown);
 

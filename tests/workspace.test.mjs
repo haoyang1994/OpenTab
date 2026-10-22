@@ -216,6 +216,7 @@ try {
   await backup(b, [icon('imported', 'Imported')]);
   await clock12(a);
   await a.waitForFunction(() => document.querySelector('#icons-container .icon-widget[data-id="imported"] .icon-name')?.textContent === 'Imported');
+  await a.locator('#close-settings').click();
   await a.locator('#toast button').click();
   await a.waitForFunction(() => /其他标签页|冲突|重试|已变化|已更新|失效/.test(document.querySelector('#toast')?.textContent || ''));
   await expectNames(a, ['Imported']); await reloadCheck(['Imported']);

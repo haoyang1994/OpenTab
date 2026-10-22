@@ -1000,7 +1000,9 @@ async function runExtensionE2E() {
     // --- T7 Esc layered close ---
     await page.click('#settings-btn');
     await page.waitForSelector('#settings-panel:not(.hidden)');
-    await page.click('#add-shortcut-tile');
+    // Programmatic nested-layer fixture: a real outside click now dismisses
+    // settings without opening Add. Keep the existing nested Escape/focus gate.
+    await page.evaluate(() => document.getElementById('add-shortcut-tile').click());
     await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape');
     await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
@@ -1248,7 +1250,9 @@ async function runExtensionE2E() {
     });
     await page.click('#settings-btn');
     await page.waitForSelector('#settings-panel:not(.hidden)');
-    await page.click('#add-shortcut-tile');
+    // Programmatic nested-layer fixture: a real outside click now dismisses
+    // settings without opening Add. Keep the existing nested Escape/focus gate.
+    await page.evaluate(() => document.getElementById('add-shortcut-tile').click());
     await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape');
     await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });

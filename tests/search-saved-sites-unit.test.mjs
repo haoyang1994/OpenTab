@@ -54,6 +54,15 @@ function harness({ icons = [], folders = [], settings = {}, legacy = false, omit
         toggle: (name, on) => { this.classList[on ? 'add' : 'remove'](name); }
       };
     }
+    get disabled() { return Boolean(this._disabled); }
+    set disabled(value) {
+      this._disabled = Boolean(value);
+      // Native buttons lose focus when disabled. Model this so async delete
+      // tests cannot accidentally pass with a detached/disabled active node.
+      if (this._disabled && document?.activeElement === this) this.blur();
+    }
+    contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
+    querySelectorAll(selector) { return descendants(this).filter((node) => selector.startsWith('.') && node.classList.contains(selector.slice(1))); }
     get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); }
     set textContent(value) { this._text = String(value); this.children = []; }
     set innerHTML(value) {
@@ -110,9 +119,25 @@ function harness({ icons = [], folders = [], settings = {}, legacy = false, omit
     }
   };
   const context = vm.createContext({ document, URL, Event: class { constructor(type) { Object.assign(this, event(type)); } } });
-  const chrome = { storage: { local: {
-    get(keys, callback) { callback(settings); },
-    set(value) { writes.push(JSON.parse(JSON.stringify(value))); }
+  const stored = JSON.parse(JSON.stringify(settings));
+  const storageControl = { failRead: false, failWrite: false, defer: false, pending: [] };
+  const chrome = { runtime: {}, storage: { local: {
+    get(keys, callback) {
+      chrome.runtime.lastError = storageControl.failRead ? { message: 'synthetic read error' } : null;
+      callback(JSON.parse(JSON.stringify(stored)));
+      chrome.runtime.lastError = null;
+    },
+    set(value, callback) {
+      const finish = () => {
+        chrome.runtime.lastError = storageControl.failWrite ? { message: 'synthetic write error' } : null;
+        if (!storageControl.failWrite) {
+          const copy = JSON.parse(JSON.stringify(value));
+          writes.push(copy); Object.assign(stored, copy);
+        }
+        callback?.(); chrome.runtime.lastError = null;
+      };
+      if (storageControl.defer) storageControl.pending.push(finish); else finish();
+    }
   } } };
   Object.assign(context, { chrome, window: {
     chrome, navigator: { userAgentData: { platform } },
@@ -140,7 +165,7 @@ function harness({ icons = [], folders = [], settings = {}, legacy = false, omit
   const sites = () => descendants(list).filter((node) => node.classList.contains('search-site-item'));
   const history = () => descendants(list).filter((node) => node.classList.contains('search-history-item'));
   const click = (node, extra = {}) => { node.dispatchEvent(event('click', extra)); };
-  return { state, api, input, list, type, press, sites, history, click, navigations, matched, writes,
+  return { state, api, input, list, type, press, sites, history, click, navigations, matched, writes, stored, storageControl,
     historyToggle, clearHistory, engineSwitch, shortcutHint, globalPress, addElement, flushTimers: () => timers.splice(0).forEach((fn) => fn()), document };
 }
 
@@ -397,6 +422,93 @@ for (const mutate of [
   assert.deepEqual(ids(h), ['two'], 'legacy callback stays live');
   h.api.init({ getState: () => null }); h.type('doc');
   assert.equal(h.sites().length, 0, 'missing workspace state has a safe empty fallback');
+}
+
+
+{
+  const h = harness({ icons: [site('docs', 'Docs')], settings: { searchHistory: [
+    { q: 'Docs query', engine: 'bing', at: 3 }, { q: 'DOCS QUERY', engine: 'google', at: 2 },
+    { q: 'Docs second', engine: 'google', at: 1 }
+  ] } });
+  h.type('docs');
+  const buttons = () => h.list.querySelectorAll('.search-history-delete');
+  assert.equal(buttons().length, 2, 'duplicate queries share one deletion identity across engines');
+  const remove = buttons()[0];
+  assert.equal(remove.tagName, 'BUTTON');
+  assert.equal(remove.type, 'button');
+  assert.equal(remove.getAttribute('aria-label'), '删除搜索历史：Docs query');
+  assert.equal(remove.parentElement.getAttribute('role'), 'gridcell');
+  assert.equal(remove.parentElement.parentElement.getAttribute('role'), 'row');
+  assert.equal(h.history()[0].getAttribute('role'), 'gridcell');
+  remove.focus(); h.flushTimers();
+  assert.equal(h.input.getAttribute('aria-expanded'), 'true', 'Tab focus on delete keeps popup available');
+  h.stored.searchHistory.push({ q: 'external new query', engine: 'google', at: 4 });
+  h.click(remove);
+  assert.deepEqual(h.stored.searchHistory.map(item => item.q), ['Docs second', 'external new query'], 'fresh storage merge removes duplicates without losing another tab additions');
+  assert.deepEqual(Object.keys(h.writes.at(-1)), ['searchHistory'], 'deletion never overwrites other settings');
+  assert.equal(h.document.activeElement, buttons()[0], 'keyboard deletion focuses next delete button');
+  assert.equal(h.input.value, 'docs');
+  assert.equal(h.navigations.length, 0);
+  assert.equal(h.sites().length, 1, 'matching saved sites survive history deletion');
+  assert.equal(h.input.getAttribute('aria-activedescendant'), null);
+  const reloaded = harness({ settings: h.stored }); reloaded.type('');
+  assert.deepEqual(reloaded.history().map(row => row.dataset.q), ['Docs second', 'external new query'], 'deletion persists across reload');
+  h.click(buttons()[0]);
+  assert.equal(h.document.activeElement, h.input, 'last matching deletion restores input focus');
+  assert.equal(h.history().length, 0);
+  assert.equal(h.sites().length, 1);
+  h.type('external'); h.click(buttons()[0]);
+  assert.equal(h.input.getAttribute('aria-expanded'), 'false', 'empty popup closes cleanly');
+  assert.equal(h.list.children.length, 0);
+}
+{
+  const h = harness({ settings: { searchHistory: [
+    { q: 'first', engine: 'google' }, { q: 'second', engine: 'google' }
+  ] } });
+  h.type('');
+  const remove = h.list.querySelectorAll('.search-history-delete')[0];
+  remove.focus(); h.storageControl.defer = true; h.click(remove);
+  assert.equal(h.document.activeElement, h.input, 'focus remains in search throughout pending storage');
+  h.flushTimers();
+  assert.equal(h.input.getAttribute('aria-expanded'), 'true');
+  assert.equal(h.list.querySelectorAll('.search-history-delete').length, 2, 'pending write retains both rows');
+  h.storageControl.pending.shift()();
+  assert.equal(h.list.querySelectorAll('.search-history-delete').length, 1);
+  assert.equal(h.document.activeElement, h.list.querySelectorAll('.search-history-delete')[0], 'async success restores the remaining delete action');
+  assert.equal(h.navigations.length, 0);
+}
+for (const failure of ['failRead', 'failWrite']) {
+  const h = harness({ settings: { searchHistory: [{ q: 'keep me', engine: 'google' }] } });
+  h.type(''); h.storageControl[failure] = true;
+  const remove = h.list.querySelectorAll('.search-history-delete')[0];
+  h.click(remove);
+  assert.equal(h.history().length, 1, 'storage failure cannot pretend the row was deleted');
+  assert.equal(h.api.getState().searchHistory.length, 1);
+  assert.equal(remove.disabled, false, 'failed deletion can be retried');
+  assert.equal(h.document.getElementById('search-hint').textContent, '无法删除搜索历史，请重试。');
+  assert.equal(h.navigations.length, 0);
+}
+{
+  const h = harness({ settings: { searchHistory: [{ q: 'delete me', engine: 'google' }] } });
+  h.type('');
+  let remove = h.list.querySelectorAll('.search-history-delete')[0];
+  remove.focus();
+  remove.dispatchEvent(event('keydown', { key: 'Escape' }));
+  assert.equal(h.document.activeElement, h.input);
+  assert.equal(h.list.classList.contains('hidden'), true);
+  h.press('ArrowDown'); remove = h.list.querySelectorAll('.search-history-delete')[0];
+  remove.dispatchEvent(event('auxclick', { button: 1 }));
+  assert.equal(h.stored.searchHistory.length, 1, 'middle click does not delete or navigate');
+  h.storageControl.defer = true;
+  remove.focus();
+  h.click(remove); h.click(remove);
+  assert.equal(h.document.activeElement, h.input, 'pending deletion parks focus before disabling its native button');
+  assert.equal(h.storageControl.pending.length, 1, 'repeated activation has one pending write');
+  const elsewhere = h.addElement('button', 'elsewhere'); elsewhere.focus();
+  h.storageControl.pending.shift()();
+  assert.equal(h.document.activeElement, elsewhere, 'async completion never steals focus');
+  assert.equal(h.navigations.length, 0);
+  assert.equal(h.stored.searchHistory.length, 0);
 }
 
 console.log('Saved-site search unit tests passed: ranking, safety, live workspace, navigation, history, ARIA and IME.');

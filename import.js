@@ -191,6 +191,7 @@
     'layoutColumns',
     'layoutShowNames',
     'layoutMaxWidth',
+    'todoButtonVisible',
     'developerToolsEnabled'
   ];
 

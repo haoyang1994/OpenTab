@@ -1,14 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="surface" x1="16" y1="8" x2="112" y2="124" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#367FF1"/>
-      <stop offset="1" stop-color="#3947C9"/>
+    <linearGradient id="ribbon" x1="22" y1="30" x2="93" y2="104" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7778EA"/>
+      <stop offset="1" stop-color="#575ECB"/>
+    </linearGradient>
+    <linearGradient id="tab" x1="80" y1="20" x2="104" y2="57" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4AC5B8"/>
+      <stop offset="1" stop-color="#259B94"/>
     </linearGradient>
   </defs>
-  <rect width="128" height="128" rx="28" fill="url(#surface)"/>
-  <!-- A browser window with one active tab and an open, uncluttered page. -->
-  <rect x="24" y="32" width="80" height="64" rx="12" fill="#FFF"/>
-  <rect x="32" y="40" width="64" height="48" rx="4" fill="url(#surface)"/>
-  <path d="M40 44H56C58.209 44 60 45.791 60 48V56H36V48C36 45.791 37.791 44 40 44Z" fill="#9EE9F2"/>
-  <path d="M32 56H96" stroke="#FFF" stroke-width="8"/>
+  <!-- An open O: one flowing ribbon, with a lifted tab leaving the loop. -->
+  <path d="M74 23C56 16 36 22 24 38C9 58 14 86 34 101C54 116 82 111 97 91C104 82 107 71 105 60L90 64C91 71 88 78 84 84C74 98 55 101 42 91C29 81 26 62 36 49C44 38 57 34 69 38L74 23Z" fill="url(#ribbon)"/>
+  <!-- A separate, gently tilted tab adds lift without a frame or app tile. -->
+  <path d="M88 16C89 13 92 12 95 13L112 20C115 21 116 24 115 27L104 51C103 54 100 55 97 54L80 47C77 46 76 43 77 40L88 16Z" fill="url(#tab)"/>
 </svg>

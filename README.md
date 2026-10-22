@@ -75,13 +75,14 @@ The main new-tab, settings, import/weather, and add-page popup support English a
 - Find saved websites as you type, across all groups and folders: up to five local matches show their title, domain and location above search history. Exact titles rank before prefixes, title fragments and domains. Arrow keys or a click explicitly select a result; partial matches never replace your normal Enter-to-search behavior. Each lookup reads the current page’s loaded workspace and revalidates the selected site before opening it; this is not a cross-tab live-sync feature. Looking up saved sites makes no network request and still works when history is disabled.
 - On an active OpenTab page, Cmd+K (Mac) / Ctrl+K (Windows/Linux) opens an independent quick-launch dialog. Filter saved sites, switch groups, or open Add website and settings sections. Empty input already offers entries; arrows and Enter choose one, Escape/backdrop closes and restores focus. The main search query is untouched, including in clock-only mode. Other editing fields and open dialogs are left alone. This is not a browser-wide shortcut.
 - Alt+ArrowDown / Alt+ArrowUp cycles engines while the search input is focused; Tab / Shift+Tab moves focus normally. `/` or typing focuses search when nothing else is focused
-- Local search history (up to 20 items, can be disabled or cleared)
+- Local search history (up to 20 items): delete individual entries directly from the suggestions, or disable/clear history in settings
 - Option to open search results in a new tab (also Ctrl/Cmd+Enter and middle-click)
 - Optional weather: off by default. Enable it and save a city in Settings → Weather; choose °C / °F or refresh manually. No device location is read. Fresh weather is cached for 30 minutes, with up to 24-hour-old data retained during an outage. Weather preferences and cache stay local, outside sync and JSON backups.
 - Side-drawer todos with a progress bar
 - JSON backup export/import and a local snapshot
 - Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
 - Multi-tab workspace saves preserve unrelated item changes and reject conflicting edits; see [persistence and undo rules](docs/PERSISTENCE.md).
+- Hide the to-do button from layout settings without deleting tasks; show it again whenever needed. Click outside the settings sidebar to dismiss it without activating the page underneath.
 - Optional Chrome sync for shortcuts, folders, and settings (not wallpapers, history, or the open folder); turning it on when another device already has data asks **Use cloud copy** / **Use local copy**. Settings shows local storage usage
 
 ### Settings and layout

@@ -140,6 +140,10 @@ async function launchExt() {
       if (url.includes('/th?id=TEST.jpg') || url.includes('th?id=')) {
         if (cfg.imageDelay) await new Promise(resolve => setTimeout(resolve, cfg.imageDelay));
         if (cfg.imageGate) await cfg.imageGate;
+        if (cfg.indexed) {
+          const color = ['#ff0000', '#0000ff', '#00ff00', '#ffff00'][Number(/INDEX(\d+)/.exec(url)?.[1] || 0) % 4];
+          return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${color}"/></svg>` });
+        }
         return route.fulfill({ status: 200, contentType: 'image/jpeg', body: BING_JPG });
       }
       return route.fulfill({ status: 200, contentType: 'text/plain', body: 'ok' });
@@ -199,6 +203,32 @@ async function openHome(page, extensionId) {
     timeout: 15000
   });
   await page.waitForSelector('#time', { timeout: 10000 });
+}
+
+// Inspect the active rendered base source, not the persisted URL. Distinct
+// synthetic colors catch reused cache/blob pixels even when URLs differ.
+async function assertActiveBingColor(page, expected, label) {
+  await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('background-layer')).opacity) === 1);
+  const rendered = await page.evaluate(async () => {
+    const layer = document.getElementById('background-layer');
+    const style = getComputedStyle(layer);
+    const src = /^url\(["']?(.*?)["']?\)$/.exec(style.backgroundImage)?.[1];
+    if (!src) return { src: style.backgroundImage };
+    const image = new Image(); image.src = src; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0, 1, 1);
+    return { src, rgb: Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3),
+      overlays: layer.querySelectorAll('.bg-fade-in').length,
+      loading: layer.classList.contains('loading'), bootLqip: layer.classList.contains('boot-lqip'), opacity: Number(style.opacity), display: style.display, visibility: style.visibility,
+      video: getComputedStyle(document.getElementById('background-video')).display };
+  });
+  assert.deepEqual(rendered.rgb, expected, `${label}: active base pixels ${JSON.stringify(rendered)}`);
+  assert.equal(rendered.overlays, 0, `${label}: no transient overlay instead of committed pixels`);
+  assert.equal(rendered.loading, false);
+  assert.equal(rendered.bootLqip, false, `${label}: full photo must replace blurred boot preview`);
+  assert.equal(rendered.opacity, 1, `${label}: active photo must be fully visible`);
+  assert.notEqual(rendered.display, 'none'); assert.equal(rendered.visibility, 'visible');
+  assert.equal(rendered.video, 'none', 'video must not cover the new photo');
 }
 
 async function run() {
@@ -515,12 +545,14 @@ async function run() {
     const ext = await launchExt();
     try {
       ext.cfg.indexed = true;
+      await ext.page.emulateMedia({ reducedMotion: 'no-preference' });
       await waitStorage(ext.serviceWorker, value => Boolean(value?.background));
       await openHome(ext.page, ext.extensionId);
       const button = ext.page.locator('#refresh-bg-btn');
       await button.click();
       await waitStorage(ext.serviceWorker, value => /INDEX0/.test(value?.background?.value || ''), 12000);
       await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
+      await assertActiveBingColor(ext.page, [255, 0, 0], 'E7 first refresh without reload');
       // A genuinely slow cached image must outlive the former 8-second RPC
       // ceiling without being discarded. Repeated physical clicks stay single-flight.
       ext.cfg.imageDelay = 9000;
@@ -531,6 +563,8 @@ async function run() {
       await waitStorage(ext.serviceWorker, value => /INDEX1/.test(value?.background?.value || ''), 22000);
       await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
       assert.equal(ext.net.bing.filter(url => url.includes('HPImageArchive') && new URL(url).searchParams.get('idx') === '1').length, 1);
+      await assertActiveBingColor(ext.page, [0, 0, 255], 'E7 second refresh without reload');
+      await ext.page.screenshot({ path: path.join(ARTIFACTS, 'e7-immediate-blue-wallpaper.png') });
       ext.cfg.imageDelay = 0;
       await ext.page.reload({ waitUntil: 'domcontentloaded' });
       await ext.page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0);
@@ -545,6 +579,7 @@ async function run() {
       await button.click();
       await waitStorage(ext.serviceWorker, value => /INDEX2/.test(value?.background?.value || ''), 12000);
       await ext.page.waitForFunction(() => !document.getElementById('refresh-bg-btn').disabled);
+      await assertActiveBingColor(ext.page, [0, 255, 0], 'E7 retry without reload');
       let releaseImage;
       ext.cfg.imageGate = new Promise(resolve => { releaseImage = resolve; });
       await button.click();

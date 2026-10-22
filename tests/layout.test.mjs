@@ -169,3 +169,46 @@ assert.match(
 );
 
 console.log('layout unit tests passed');
+
+// The visibility setting preserves task records and drafts, and commits before
+// hiding. Exercise the real layout module against a small focused DOM.
+{
+  const oldDocument = global.document, oldChrome = global.chrome;
+  const classes = new Set(), panelClasses = new Set();
+  const input = { checked: true, disabled: false, focus() { global.document.activeElement = this; } };
+  const toggle = { focus() { global.document.activeElement = this; } };
+  const draft = { value: 'Keep unfinished draft' };
+  const panel = { classList: { contains: x => panelClasses.has(x) }, contains: el => el === draft };
+  const status = { textContent: '' };
+  let closed = 0, callback, written;
+  const elements = { 'todo-button-visible': input, 'todo-toggle-btn': toggle, 'todo-widget': panel, 'todo-visibility-status': status,
+    'todo-collapse-btn': { click() { closed++; panelClasses.add('hidden'); toggle.focus(); } } };
+  global.document = { activeElement: input, getElementById: id => elements[id], querySelectorAll: () => [], documentElement: { style: { setProperty() {} } }, body: { classList: { toggle(key, value) { if (value) classes.add(key); else classes.delete(key); } } } };
+  global.chrome = { runtime: {}, storage: { local: { set(patch, done) { written = patch; callback = done; } } } };
+  try {
+    OpenTabLayout.apply({});
+    const taskRecords = [{ id: 'kept', text: 'Keep task', done: false }];
+    const pending = OpenTabLayout.setTodoButtonVisible(false);
+    assert.equal(input.disabled, true); assert.equal(classes.has('hide-todo-entry'), false);
+    assert.deepEqual(written, { todoButtonVisible: false });
+    callback(); assert.equal(await pending, true);
+    assert.equal(classes.has('hide-todo-entry'), true); assert.equal(closed, 1);
+    assert.equal(global.document.activeElement, input, 'closing never leaves focus on the now-hidden entry');
+    assert.equal(draft.value, 'Keep unfinished draft'); assert.equal(taskRecords.length, 1);
+    const retry = OpenTabLayout.setTodoButtonVisible(true);
+    global.chrome.runtime.lastError = { message: 'write failed' }; callback(); delete global.chrome.runtime.lastError;
+    assert.equal(await retry, false); assert.equal(OpenTabLayout.get().todoButtonVisible, false);
+    assert.equal(input.checked, false); assert.match(status.textContent, /保存失败/);
+    const enable = OpenTabLayout.setTodoButtonVisible(true); callback(); assert.equal(await enable, true);
+    assert.equal(classes.has('hide-todo-entry'), false); assert.equal(draft.value, 'Keep unfinished draft');
+    OpenTabLayout.apply({ layoutIconSize: 80, todoButtonVisible: false });
+    assert.equal(OpenTabLayout.loadFromStorage({ todoButtonVisible: false }).todoButtonVisible, false, 'explicit stored hidden choice remains');
+    OpenTabLayout.apply({ layoutIconSize: 80, todoButtonVisible: false });
+    const absent = OpenTabLayout.loadFromStorage({});
+    assert.equal(absent.todoButtonVisible, true, 'absent storage preference overrides a stale hidden mirror');
+    assert.equal(absent.layoutIconSize, 80, 'missing visibility does not change existing layout fallback');
+    assert.equal(OpenTabLayout.normalize({}).todoButtonVisible, true);
+    assert.equal(OpenTabLayout.bootMirrorSlice({ todoButtonVisible: false }).todoButtonVisible, false);
+    assert.equal(OpenTabSync.buildSyncPayload({ todoButtonVisible: false }).settings.todoButtonVisible, false);
+  } finally { global.document = oldDocument; global.chrome = oldChrome; }
+}

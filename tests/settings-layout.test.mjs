@@ -1,3 +1,5 @@
+import { runUiRefinement } from './ui-refinement.mjs';
+import { verifySettingsDismissal } from './settings-dismiss.mjs';
 import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -358,9 +360,11 @@ async function runSettingsLayoutE2E() {
       iconsBefore,
       'AC4 restore does not touch shortcuts'
     );
+    await page.click('#close-settings');
     await page.locator('#toast button').click();
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--layout-icon-size').trim() === '80px');
     console.log('AC4 section restore + undo passed');
+    await openSettings(page);
 
     await page.$eval('#layout-icon-size', (el) => {
       el.value = '64';
@@ -490,6 +494,9 @@ async function runSettingsLayoutE2E() {
     assert.deepEqual(unlabeled, [], 'AC6 settings controls have labels/aria: ' + unlabeled.join(','));
     const unlabeledModal = await labeledControls(page, '#add-icon-modal');
     assert.deepEqual(unlabeledModal, [], 'AC6 add-icon controls have labels/aria: ' + unlabeledModal.join(','));
+
+    await verifySettingsDismissal(page);
+    await runUiRefinement(page, serviceWorker, ARTIFACTS);
 
     const leftover = unexpectedErrors(consoleErrors);
     assert.equal(leftover.length, 0, `AC7 console errors: ${leftover.join(' | ')}`);

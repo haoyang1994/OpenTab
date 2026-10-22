@@ -132,6 +132,9 @@
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     layer.classList.remove('boot-lqip');
     if (!fade || reduced) {
+      // A preceding daily fade may still cover the base layer. A synchronous
+      // commit must retire it now, not wait for its obsolete timer.
+      layer.querySelectorAll('.bg-fade-in').forEach((overlay) => overlay.remove());
       layer.style.background = '';
       layer.style.backgroundImage = css;
       layer.style.backgroundSize = 'cover';
@@ -231,10 +234,14 @@
       const sameOrigin = resolved.fromCache || resolved.local || /^(data:|blob:|chrome-extension:)/.test(resolved.display || '');
       const extra = sameOrigin ? lqipFromImage(img) : { lqip: '', color: '' };
       if (!extra.color) extra.color = themeColor();
-      if (gen !== paintGen) {
+      // An unrelated workspace repaint may advance paintGen while this decoded
+      // manual candidate is still the latest user request. Only its request/
+      // background guard can decide whether that candidate was superseded.
+      if (opts && opts.canApply ? !opts.canApply() : gen !== paintGen) {
         revokeBlob(resolved.blobUrl);
         return;
       }
+      if (gen !== paintGen) paintGen += 1;
       paintPhoto(`url(${resolved.display})`, fade);
       lastMeta = {
         kind: bg.type === 'bing' ? 'bing' : 'image',
@@ -317,7 +324,11 @@
           pinnedDate: today
         }
       };
-      await updateBackground({ fade: true, preserveOnError: true, background: candidate });
+      // Commit the decoded image to the real layer before saving or enabling the
+      // button. A delayed fade commit could be cancelled by workspace changes
+      // after storage succeeded, leaving the previous pixels until reload.
+      await updateBackground({ fade: false, preserveOnError: true, background: candidate,
+        canApply: () => requestIsCurrent(generation, background) });
       if (!requestIsCurrent(generation, background)) return;
       ctx.state.background = candidate;
       ctx.state.bingIndex = nextIndex;

@@ -93,11 +93,11 @@
             </button>
             <span id="search-custom-engines" class="search-custom-engines"></span>
           </div>
-          <input id="search-input" type="text" title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" data-i18n-title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" aria-keyshortcuts="Alt+ArrowDown Alt+ArrowUp" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
+          <input id="search-input" type="text" title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" data-i18n-title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" aria-keyshortcuts="Alt+ArrowDown Alt+ArrowUp" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-haspopup="grid" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
           <kbd id="search-shortcut-hint" class="search-shortcut-hint" title="快捷入口" data-i18n-title="快捷入口" aria-hidden="true"></kbd>
         </div>
         <p id="search-hint" class="search-hint hidden" role="status" aria-live="polite"></p>
-        <div id="search-history" class="search-history hidden" role="listbox"></div>
+        <div id="search-history" class="search-history hidden" role="grid"></div>
       </div>
 
       <aside id="todo-widget" class="glass-widget hidden">
@@ -123,7 +123,7 @@
       <div id="group-tabs-bar" class="group-tabs-bar">
         <div id="group-tabs" class="group-tabs" role="tablist" aria-label="分组" data-i18n-aria-label="分组"></div>
         <button id="add-group-btn" class="group-add-btn" type="button" title="新建分组" data-i18n-title="新建分组" aria-label="新建分组" data-i18n-aria-label="新建分组">+</button>
-        <button id="select-sites" class="site-selection-entry" type="button" data-select-sites data-i18n="选择网站">选择网站</button>
+        <button id="select-sites" class="site-selection-entry" type="button" data-select-sites title="选择网站" aria-label="选择网站" data-i18n-title="选择网站" data-i18n-aria-label="选择网站"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m7.5 12 3 3 6-6"/></svg></button>
       </div>
       <div id="site-selection-toolbar" class="site-selection-toolbar" role="region" aria-label="选择网站" data-i18n-aria-label="选择网站" hidden></div>
       <div id="icons-container"></div>
@@ -154,8 +154,10 @@
 
     <div id="add-icon-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="icon-modal-title">
       <div class="modal-content">
-        <h2 id="icon-modal-title" data-i18n="添加快捷图标">添加快捷图标</h2>
-        <button id="modal-paste-sites" class="site-list-entry" type="button" hidden data-i18n="批量添加网站">批量添加网站</button>
+        <div class="icon-modal-header">
+          <h2 id="icon-modal-title" data-i18n="添加快捷图标">添加快捷图标</h2>
+          <button id="modal-paste-sites" class="site-list-entry" type="button" hidden title="批量添加网站" aria-label="批量添加网站" data-i18n-title="批量添加网站" data-i18n-aria-label="批量添加网站"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/><rect x="8" y="3" width="13" height="13" rx="3"/><path d="M11 9.5h7m-3.5-3.5v7"/></svg></button>
+        </div>
         <div class="form-group">
           <label for="icon-type" data-i18n="类型">类型</label>
           <select id="icon-type">
@@ -286,7 +288,7 @@
       <div id="folder-overlay-backdrop" class="folder-overlay-backdrop"></div>
       <div id="folder-panel" class="folder-panel" role="dialog" aria-modal="true" aria-labelledby="folder-title-input">
         <input id="folder-title-input" class="folder-title-input" type="text" maxlength="24" aria-label="文件夹名称" data-i18n-aria-label="文件夹名称">
-        <button id="folder-select-sites" class="site-selection-entry" type="button" data-select-sites data-i18n="选择网站">选择网站</button>
+        <button id="folder-select-sites" class="site-selection-entry" type="button" data-select-sites title="选择网站" aria-label="选择网站" data-i18n-title="选择网站" data-i18n-aria-label="选择网站"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m7.5 12 3 3 6-6"/></svg></button>
         <div id="folder-icons-container" class="folder-icons-container"></div>
       </div>
     </div>
@@ -544,6 +546,11 @@
               <option value="12">12</option>
             </select>
           </div>
+          <div class="setting-row">
+            <label for="todo-button-visible" data-i18n="显示待办按钮">显示待办按钮</label>
+            <input type="checkbox" id="todo-button-visible" checked>
+          </div>
+          <p id="todo-visibility-status" class="form-hint" role="status"></p>
           <div class="setting-row">
             <label for="layout-show-names" data-i18n="显示名称">显示名称</label>
             <input type="checkbox" id="layout-show-names" checked>
