@@ -12,8 +12,14 @@ assert.match(html, /id="search-engine-panel"[^>]*aria-hidden="true" inert/);
 assert.match(css, /visibility: hidden/);
 assert.match(css, /visibility 0s 260ms/);
 assert.match(css, /prefers-reduced-motion: reduce/);
-assert.match(css, /\.engine-deck-panel, \.engine-deck-open \.engine-deck-panel \{ transition: none; \}/);
+// The universal reduced-motion rule is important, so an ordinary shorthand
+// cannot override its nonzero duration. The scoped important shorthand has
+// greater specificity and resets duration AND delay to exactly zero.
+const homeCss = fs.readFileSync(new URL('../home.css', import.meta.url), 'utf8');
+assert.match(homeCss, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,\s*\*::before,\s*\*::after\s*\{[^}]*transition-duration: 0\.01ms !important;/);
+assert.match(css, /\.engine-deck-panel, \.engine-deck-open \.engine-deck-panel \{ transition: none !important; \}/);
 assert.match(css, /body:not\(\.minimal-mode\) #search-widget-wrap:has\(\.engine-deck-open\) \{ z-index: 1265; \}/);
+assert.match(css, /\.engine-option-name \{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/, 'touch labels wrap rather than hiding distinguishing suffixes');
 for (const surface of ['--engine-surface', '--engine-front', '--engine-back', '--engine-selected']) {
   assert.equal([...css.matchAll(new RegExp(`${surface}: #[0-9a-f]{6}`, 'g'))].length, 2, `${surface} is opaque in both themes`);
 }
@@ -24,6 +30,7 @@ function harness() {
   let document;
   const listeners = new Map();
   const selectionCalls = [];
+  const floatingControls = [];
   class Element {
     constructor(tag = 'div') {
       this.tagName = tag.toUpperCase(); this.children = []; this.parentElement = null;
@@ -61,6 +68,7 @@ function harness() {
     setAttribute(name, value) { this.attributes.set(name, String(value)); }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
     getBoundingClientRect() { return this.rect; }
+    getClientRects() { return this.hidden ? [] : [this.rect]; }
     addEventListener(type, fn) {
       if (!this.listeners.has(type)) this.listeners.set(type, []);
       this.listeners.get(type).push(fn);
@@ -109,6 +117,7 @@ function harness() {
   const writes = []; let opens = 0; let deck;
   document = {
     activeElement: input, createElement: (tag) => new Element(tag),
+    querySelectorAll: (selector) => { assert.equal(selector, '.floating-btn'); return floatingControls; },
     addEventListener(type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn); }
   };
   const window = { innerHeight: 720, innerWidth: 1024, addEventListener: document.addEventListener };
@@ -117,7 +126,7 @@ function harness() {
   deck.render('google');
   const fire = (target, type, extra = {}) => { const e = event(type, extra); target.dispatchEvent(e); return e; };
   const docFire = (type, target) => { for (const fn of listeners.get(type) || []) fn(event(type, { target })); };
-  return { body, host, trigger, panel, input, outside, labels, choices, writes, selectionCalls, deck, document, window, add, fire, docFire, get opens() { return opens; } };
+  return { body, host, trigger, panel, input, outside, labels, choices, writes, selectionCalls, floatingControls, deck, document, window, add, fire, docFire, get opens() { return opens; } };
 }
 function event(type, extra = {}) {
   return { type, key: '', defaultPrevented: false, stopped: false,
@@ -210,4 +219,42 @@ function event(type, extra = {}) {
   h.deck.render('google');
   assert.equal(h.panel.style.maxHeight, '234px', 'visual viewport keyboard constraints are respected');
 }
+
+{
+  const h = harness();
+  h.host.rect = { left: 22, top: 332, bottom: 376 }; h.window.innerHeight = 560; h.window.innerWidth = 360;
+  const topControl = h.add('top-control', h.body);
+  topControl.rect = { left: 14, right: 58, top: 14, bottom: 58 };
+  const bottomControl = h.add('bottom-control', h.body);
+  bottomControl.rect = { left: 232, right: 276, top: 496, bottom: 540 };
+  h.floatingControls.push(topControl, bottomControl);
+  h.fire(h.trigger, 'click');
+  assert.equal(h.panel.dataset.placement, 'above');
+  assert.equal(h.panel.style.maxHeight, '250px', 'upward card reserves 12px below the top TODO control');
+  const cardTop = h.host.rect.top - 12 - parseFloat(h.panel.style.maxHeight);
+  assert.equal(cardTop, topControl.rect.bottom + 12);
+  h.host.rect = { left: 22, top: 100, bottom: 144 }; h.deck.render('google');
+  assert.equal(h.panel.dataset.placement, 'below');
+  assert.equal(h.panel.style.maxHeight, '328px', 'downward card reserves 12px above bottom floating controls');
+  const cardBottom = h.host.rect.bottom + 12 + parseFloat(h.panel.style.maxHeight);
+  assert.equal(cardBottom, bottomControl.rect.top - 12);
+  bottomControl.rect.left = 310; bottomControl.rect.right = 354; h.deck.render('google');
+  assert.equal(h.panel.style.maxHeight, '400px', 'horizontally separate controls do not unnecessarily shrink the card');
+  h.host.rect = { left: 22, top: 332, bottom: 376 }; topControl.hidden = true; h.deck.render('google');
+  assert.equal(h.panel.style.maxHeight, '316px', 'hidden controls reserve no space');
+  assert.equal(h.host.style.zIndex, undefined, 'avoidance never raises the full-page stacking ancestor');
+  topControl.hidden = false; topControl.rect.bottom = 80;
+  bottomControl.rect = { left: 232, right: 276, top: 300, bottom: 344 };
+  h.host.rect = { left: 22, top: 150, bottom: 194 }; h.window.innerHeight = 400;
+  h.deck.render('google');
+  assert.equal(h.panel.dataset.placement, 'floating', 'split short space uses the complete safe band');
+  assert.equal(h.panel.style.top, '-58px');
+  assert.equal(h.panel.style.maxHeight, '196px', 'safe band fits full options with scrolling');
+  assert.ok(parseFloat(h.panel.style.maxHeight) >= 96);
+  bottomControl.rect.top = 110; bottomControl.rect.bottom = 154;
+  h.host.rect = { left: 22, top: 92, bottom: 96 }; h.window.innerHeight = 160;
+  h.deck.render('google');
+  assert.equal(h.panel.style.maxHeight, '6px', 'impossibly small safe space is never exceeded by a forced minimum');
+}
+
 console.log('Search-engine deck unit tests passed: state, focus, keys, selection, custom labels, repeat interruption, viewport and reduced-motion contracts.');

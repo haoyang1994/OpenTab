@@ -137,5 +137,5 @@ body.minimal-mode #clock-deck #ampm { color: var(--text-primary); }
   #clock-deck #time { font-size: 90px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #clock-deck .clock-deck-card, .clock-deck-dots span { transition: none; }
+  #clock-deck .clock-deck-card, .clock-deck-dots span { transition: none !important; }
 }

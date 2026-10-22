@@ -239,8 +239,11 @@
       gesture = null;
       if (direction) select(index + direction);
     });
-    // Keep native context menus and text selection; do not open Add Site here.
-    element.addEventListener('contextmenu', event => event.stopPropagation());
+    // New cards keep their native context menu; the original clock still
+    // bubbles to the existing blank-area Add Site handler and its exclusions.
+    element.addEventListener('contextmenu', event => {
+      if (event.target.closest('#clock-focus-card, #clock-todo-card, #clock-deck-nav, #clock-deck-peek')) event.stopPropagation();
+    });
     $('clock-focus-toggle').addEventListener('click', () => { timer.toggle(); tick(); });
     $('clock-focus-reset').addEventListener('click', () => { timer.reset(); tick(); });
     $('clock-todo-complete').addEventListener('click', async () => {

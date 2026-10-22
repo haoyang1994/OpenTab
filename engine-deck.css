@@ -138,9 +138,8 @@ body.theme-light #search-engine-switch.engine-deck {
 #search-engine-panel .engine-option-name {
   display: block;
   width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: 11px;
   line-height: 16px;
 }
@@ -155,5 +154,6 @@ body.theme-light .engine-deck-trigger[data-engine='github'] svg:not(.engine-deck
 body:not(.minimal-mode) #search-widget-wrap:has(.engine-deck-open) { z-index: 1265; }
 @media (prefers-reduced-motion: reduce) {
   #search-engine-switch.engine-deck { --engine-motion: 0s; }
-  .engine-deck-panel, .engine-deck-open .engine-deck-panel { transition: none; }
+  /* Beat the global important 0.01ms duration reset: this disclosure is instant. */
+  .engine-deck-panel, .engine-deck-open .engine-deck-panel { transition: none !important; }
 }

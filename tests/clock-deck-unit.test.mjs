@@ -215,7 +215,13 @@ function domHarness({ brokenDeck = false, hiddenTodo = false } = {}) {
   h.body.classList.add('minimal-mode'); h.mode(); assert.equal(h.deck.dataset.card, '0'); assert.equal(h.document.activeElement, h.$('settings-btn'));
   h.swipe(); assert.equal(h.deck.dataset.card, '0'); h.body.classList.remove('minimal-mode'); h.mode(); assert.equal(h.deck.dataset.card, '0');
   assert.equal(h.$('clock-focus-toggle').textContent, '暂停', 'minimal mode and switching never pause focus');
-  assert.equal(h.fire(h.focus, 'contextmenu').stopped, true); assert.equal(h.fire(h.focus, 'contextmenu').defaultPrevented, undefined, 'keep native selection context menu');
+  let blankAreaMenus = 0; h.document.addEventListener('contextmenu', () => { blankAreaMenus++; });
+  for (const target of [h.clock, h.time, h.date]) assert.equal(h.fire(target, 'contextmenu').stopped, undefined, 'original clock context menu keeps the global Add Site handler and its exclusions');
+  assert.equal(blankAreaMenus, 3);
+  for (const target of [h.focus, h.todo, h.nav, h.$('clock-deck-peek')]) {
+    const context = h.fire(target, 'contextmenu'); assert.equal(context.stopped, true); assert.equal(context.defaultPrevented, undefined, 'new card controls keep native selection context menu');
+  }
+  assert.equal(blankAreaMenus, 3, 'new card context menus must not reach Add Site');
 }
 {
   const h = domHarness({ hiddenTodo: true }); assert.equal(h.$('clock-todo-open').hidden, true);
@@ -249,6 +255,7 @@ const html = fs.readFileSync(new URL('../home.html', import.meta.url), 'utf8'), 
 assert.ok(html.indexOf('src="clock-deck.js"') < html.indexOf('src="home.js"'));
 assert.match(home, /openTodoList\(opener\).*setTodoPanelOpen\(true\).*rememberFocus\(opener\).*todoInput\.focus/);
 assert.match(css, /touch-action: pan-y/); assert.match(css, /prefers-reduced-motion: reduce/);
+assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*#clock-deck \.clock-deck-card, \.clock-deck-dots span\s*\{\s*transition: none !important;/, 'scoped reduced-motion shorthand must override home.css universal !important duration and remain truly instantaneous');
 assert.doesNotMatch(source, /chrome\.storage|fetch\(|Notification|Audio\(|setInterval/);
 assert.equal([...source.matchAll(/innerHTML\s*=([^;]+);/g)].every(match => match[1].trim() === "''"), true);
 console.log('clock deck unit tests passed: deadline restore, cancellation, stale/durable tasks, legacy DOM, gestures, accessibility, preferences');
