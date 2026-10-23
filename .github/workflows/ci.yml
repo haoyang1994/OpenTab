@@ -42,6 +42,12 @@ jobs:
         timeout-minutes: 18
         run: npx playwright install --with-deps chromium
 
+      # Fail fast on the explicit tab-creation boundary before the broad suite.
+      # The canonical npm test still reruns every suite, including this one.
+      - name: Check explicit group launch in native Chromium
+        timeout-minutes: 3
+        run: xvfb-run -a env HEADLESS=false PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1 node tests/group-launch.test.mjs
+
       - name: Run tests
         timeout-minutes: 15
         run: npm test
@@ -72,5 +78,6 @@ jobs:
             artifacts/accessibility-contrast.json
             artifacts/accessibility-chooser.json
             artifacts/wallpaper-readability.json
+            artifacts/group-launch-*.json
           if-no-files-found: ignore
           retention-days: 7

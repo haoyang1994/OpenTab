@@ -67,14 +67,15 @@ const context = await chromium.launchPersistentContext('', {
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {}),
   args: [`--disable-extensions-except=${root}`, `--load-extension=${root}`, '--no-sandbox', '--disable-dev-shm-usage']
 });
-const errors = [], network = [];
-let phaseName = 'setup';
+const errors = [], network = [], requestFailures = [], launchObservations = [];
+let phaseName = 'setup', launchCDPSession, launchBaseline = null, launchActiveBefore = [];
 function recordErrors(p) {
   p.on('pageerror', error => errors.push(`[${phaseName}] ${error.message}`));
   p.on('console', message => { if (message.type() === 'error') errors.push(`[${phaseName}] ${formatConsoleError(message)}`); });
 }
 context.on('page', recordErrors);
 context.pages().forEach(recordErrors);
+context.on('requestfailed', request => requestFailures.push({ phase: phaseName, url: request.url(), type: request.resourceType(), error: request.failure()?.errorText }));
 context.on('console', message => {
   if (!message.page() && message.type() === 'error') errors.push(`[${phaseName}] worker: ${formatConsoleError(message)}`);
 });
@@ -153,6 +154,52 @@ async function select(urls) {
 async function finished() {
   await page.waitForFunction(() => !OpenTabGroupLaunch.isPending() && document.querySelector('#group-launch-status')?.textContent.trim().length > 0);
 }
+async function boundedLaunchRead(read) {
+  let timer;
+  return Promise.race([
+    Promise.resolve().then(read).then(value => ({ available: true, value }), error => ({ available: false, error: error.message })),
+    new Promise(resolve => { timer = setTimeout(() => resolve({ available: false, error: 'Diagnostics did not resolve within 2000ms' }), 2000); })
+  ]).finally(() => clearTimeout(timer));
+}
+async function captureLaunchObservation(label, expected = {}) {
+  const [tabs, targets] = await Promise.all([
+    boundedLaunchRead(() => page.evaluate(async () => (await chrome.tabs.query({})).map(tab => Object.fromEntries(
+      ['id', 'windowId', 'index', 'active', 'status', 'discarded', 'url', 'pendingUrl'].filter(key => Object.hasOwn(tab, key)).map(key => [key, tab[key]])
+    )))),
+    boundedLaunchRead(async () => {
+      launchCDPSession ||= await context.newCDPSession(page);
+      const { targetInfos } = await launchCDPSession.send('Target.getTargets');
+      return targetInfos.map(target => Object.fromEntries(
+        ['type', 'url', 'targetId', 'attached', 'browserContextId'].filter(key => Object.hasOwn(target, key)).map(key => [key, target[key]])
+      ));
+    })
+  ]);
+  const baselineIds = launchBaseline?.tabs.available ? launchBaseline.tabs.value.map(tab => tab.id) : null;
+  const evidence = {
+    phase: phaseName, observation: label, expected, activeBefore: launchActiveBefore, tabs, targets,
+    nativeTabIdDelta: baselineIds && tabs.available ? tabs.value.map(tab => tab.id).filter(id => !baselineIds.includes(id)) : null,
+    pages: context.pages().map(p => ({ url: p.url(), closed: p.isClosed() })),
+    documentRoutes: network.filter(request => request.type === 'document').map(request => request.url),
+    requestFailures: [...requestFailures]
+  };
+  launchObservations.push(evidence);
+  fs.writeFileSync(path.join(artifacts, 'group-launch-navigation-evidence.json'), JSON.stringify(launchObservations, null, 2));
+  return evidence;
+}
+async function waitForLaunchObservation(label, target, predicate, arg, expected) {
+  console.log(`Group launch: WAIT ${label}`);
+  try {
+    // Preserve the exact predicates and the existing 10-second polling budget.
+    // Labels and independent read-only evidence distinguish a missing/inactive
+    // native tab from a renderer-navigation or interception failure.
+    await waitForAsync(target, predicate, arg);
+    console.log(`Group launch: OBSERVED ${label}`);
+  } catch (error) {
+    const evidence = await captureLaunchObservation(label, expected);
+    console.error(`Group launch wait failure: ${JSON.stringify(evidence)}`);
+    throw new Error(`Group launch ${label}: ${error.message}`, { cause: error });
+  }
+}
 async function assertNoLaunch(before, note) {
   assert.deepEqual(await calls(), [], note);
   assert.equal(page.url(), home, 'the current tab never navigates');
@@ -213,12 +260,20 @@ try {
     await reset(); const before = await stored();
     await open(); await select([alpha, nested]);
     const activeBefore = await page.evaluate(async () => (await chrome.tabs.query({ active: true, currentWindow: true })).map(tab => tab.id));
+    launchActiveBefore = activeBefore;
+    launchBaseline = await captureLaunchObservation('before explicit launch', { urls: [alpha, nested] });
+    console.log(`Group launch browser baseline: ${JSON.stringify(launchBaseline)}`);
     await page.locator('#group-launch-confirm').focus(); await page.keyboard.press('Enter'); await finished();
     const actual = await calls();
+    console.log(`Group launch browser after create: ${JSON.stringify(await captureLaunchObservation('after create promises settle', { calls: actual }))}`);
     assert.deepEqual(actual.map(call => call.options).sort((a, b) => a.url.localeCompare(b.url)), [alpha, nested].map(url => ({ url, active: false })).sort((a, b) => a.url.localeCompare(b.url)));
     assert.ok(actual.every(call => call.result === 'opened' && Number.isInteger(call.tabId) && call.active === false));
-    await waitForAsync(page, async ids => { const tabs = await chrome.tabs.query({}); return ids.every(id => tabs.some(tab => tab.id === id && !tab.active)); }, actual.map(call => call.tabId));
-    await waitForAsync({ evaluate: async () => [alpha, nested].every(url => context.pages().some(p => p.url() === url)) });
+    await waitForLaunchObservation('created Chrome tab IDs remain inactive', page,
+      async ids => { const tabs = await chrome.tabs.query({}); return ids.every(id => tabs.some(tab => tab.id === id && !tab.active)); },
+      actual.map(call => call.tabId), { tabIds: actual.map(call => call.tabId), active: false });
+    await waitForLaunchObservation('created page URLs match selected full URLs',
+      { evaluate: async () => [alpha, nested].every(url => context.pages().some(p => p.url() === url)) },
+      undefined, undefined, { urls: [alpha, nested] });
     for (const url of [alpha, nested]) assert.ok(context.pages().some(p => p.url() === url), `actual Chrome tab navigated to ${url}`);
     assert.deepEqual(await page.evaluate(async () => (await chrome.tabs.query({ active: true, currentWindow: true })).map(tab => tab.id)), activeBefore, 'the original active tab stays active');
     assert.equal(page.url(), home);
