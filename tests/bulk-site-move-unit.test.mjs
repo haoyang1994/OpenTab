@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const Workspace = require('../workspace-persistence.js');
 const Schema = require('../scene-schema.js');
+const Controller = require('../scene-controller.js');
 const code = fs.readFileSync(new URL('../folders.js', import.meta.url), 'utf8');
 const clone = value => structuredClone(value);
 const site = (id, extra = {}) => ({ id, name: id, type: 'shortcut', url: `https://${id}.example/path?q=1`, uploadedIconDataUrl: 'data:image/png;base64,abc', folderId: 'folder-home', parentId: '', ...extra });
@@ -12,23 +13,34 @@ const folder = (id, group = 'folder-home') => ({ id, type: 'folder', name: id, f
 const initial = (icons = [site('a'), site('b'), site('c'), folder('target', 'work')]) => ({ icons, folders: [{ id: 'folder-home', name: 'Home' }, { id: 'work', name: 'Work' }], currentFolderId: 'folder-home' });
 function harness(data = initial(), view = data) {
   const store = clone(data), state = clone(view), writes = [], toasts = [], errors = [];
-  let fail = false, intercept = null, release;
+  let fail = false, intercept = null, release, controller;
   let sceneView = data[Schema.SCHEMA_KEY] === 2 ? { sceneId: 'scene-default', homeGroupId: 'folder-home', generation: 1 } : null;
+  const getSceneView = () => controller ? controller.getView() : sceneView;
   const chrome = { runtime: {}, storage: { local: {
     async get(keys) { if (intercept) { const fn = intercept; intercept = null; await fn(); } return clone(keys == null ? store : Object.fromEntries(keys.filter(key => key in store).map(key => [key, store[key]]))); },
     async set(patch) { if (fail) { fail = false; throw Error('test write failure'); } writes.push(clone(patch)); Object.assign(store, clone(patch)); }
   } } };
-  const workspace = Workspace.forChrome(chrome).connect({ state, onError: error => errors.push(error), ...(sceneView ? { getViewIdentity: () => sceneView } : {}) });
+  const workspace = Workspace.forChrome(chrome).connect({ state, onError: error => errors.push(error),
+    onChange() { if (controller) Object.assign(state, controller.project(state)); },
+    ...(sceneView ? { getViewIdentity: getSceneView } : {}) });
   workspace.seed(store, Workspace.migrationOverrides(store, state));
   const context = { URL, console, setTimeout, clearTimeout, OpenTabWorkspace: Workspace, document: { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] } };
   context.window = context; vm.createContext(context); vm.runInContext(code, context);
   const api = context.OpenTabFolders;
-  api.init({ ...workspace, state, ...(sceneView ? { getSceneView: () => sceneView } : {}), saveState: workspace.save, refreshIconViews() {}, getIconsContainer: () => null, rememberFocus() {}, restoreFocus() {}, showToast: (text, options) => toasts.push({ text, options }) });
+  api.init({ ...workspace, state, ...(sceneView ? { getSceneView } : {}), saveState: (...args) => controller ? controller.save(...args) : workspace.save(...args), refreshIconViews() {}, getIconsContainer: () => null, rememberFocus() {}, restoreFocus() {}, showToast: (text, options) => toasts.push({ text, options }) });
   return { api, state, store, writes, toasts, errors, workspace,
     select: () => api.captureBulkSelection(), target: (kind = 'group', id = 'work') => api.captureBulkDestination({ kind, id }),
     failNext() { fail = true; }, race(fn) { intercept = fn; },
-    getView: () => clone(sceneView),
-    setView(sceneId) { const scene = state.scenes.find(item => item.id === sceneId); sceneView = { sceneId, homeGroupId: scene.homeGroupId, generation: sceneView.generation + 1 }; state.currentFolderId = scene.homeGroupId; },
+    getView: () => clone(getSceneView()),
+    withController() {
+      controller = Controller.create({ state, coordinator: Workspace.forChrome(chrome), bridge: workspace, schema: Schema, onLoad() {} });
+      Object.assign(state, controller.project(store, sceneView.sceneId, state.currentFolderId)); workspace.seed(store);
+    },
+    setView(sceneId) {
+      const scene = state.scenes.find(item => item.id === sceneId);
+      if (controller) Object.assign(state, controller.project(state, sceneId, scene.homeGroupId));
+      else { sceneView = { sceneId, homeGroupId: scene.homeGroupId, generation: sceneView.generation + 1 }; state.currentFolderId = scene.homeGroupId; }
+    },
     pause() { intercept = () => new Promise(resolve => { release = resolve; }); }, resume() { release(); },
     async undo() { const toast = toasts.findLast(item => item.options?.onAction); assert.ok(toast); await toast.options.onAction(); }
   };
@@ -343,5 +355,26 @@ for (const undo of [false, true]) {
   assert.equal((await h.api.moveSites(selected, ['a'], target)).reason, 'busy');
   for (let i = 0; i < 10; i++) await Promise.resolve(); h.resume();
   assert.equal((await pending).ok, true); assert.equal(h.writes.length, 1);
+}
+// The real scene controller rejects invalid source scenes/views before calling
+// the operation's supplied guard. Recovered-state classification must therefore
+// work even when that guard never observed the locked conflict.
+for (const [label, change] of [
+  ['source archive', h => { h.store.scenes.find(scene => scene.id === SOURCE).archivedAt = 123; }],
+  ['source view switch', h => h.setView(TARGET)],
+  ['source view round trip', h => { h.setView(TARGET); h.setView(SOURCE); }]
+]) {
+  const h = harness(sceneInitial()); h.withController(); const before = clone(h.store.icons);
+  h.race(() => change(h));
+  assert.equal((await h.api.moveSites(h.select(), ['a'], sceneTarget(h))).reason, 'stale', `controller precondition: ${label}`);
+  assert.equal(h.writes.length, 0); assert.equal(h.toasts.length, 0);
+  assert.deepEqual(h.state.icons, h.store.icons); assert.deepEqual(h.store.icons, before);
+}
+for (const unrelatedChange of [false, true]) {
+  const h = harness(sceneInitial()); h.withController(); h.failNext();
+  if (unrelatedChange) h.race(() => { h.store.icons.find(icon => icon.id === 'c').name = 'Independent concurrent edit'; });
+  assert.equal((await h.api.moveSites(h.select(), ['a'], sceneTarget(h))).reason, 'save-failed', 'unchanged move dependencies remain retryable after genuine write failure');
+  assert.equal(h.writes.length, 0); assert.equal(h.toasts.length, 0); assert.deepEqual(h.state.icons, h.store.icons);
+  if (unrelatedChange) assert.equal(h.state.icons.find(icon => icon.id === 'c').name, 'Independent concurrent edit');
 }
 console.log('Bulk website move real-module unit tests passed.');

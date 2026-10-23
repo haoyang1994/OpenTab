@@ -897,6 +897,11 @@
       const saving = persistUndo(before, text, options);
       host.refreshIconViews();
       const saved = await saving;
+      // The scene controller can reject its outer view/active-scene guard
+      // before checkedGuard runs. Save settles only after workspace recovery;
+      // classify that recovered graph, never the optimistic moved records.
+      // Epoch lives in the workspace bridge, not the hydrated state object.
+      if (!saved && !stale) stale = !guard({ ...state(), 'opentab.workspaceEpoch': host.captureIntent().epoch });
       host.refreshIconViews();
       return saved ? { ok: true, moved: moving.length } : { ok: false, reason: stale ? 'stale' : 'save-failed' };
     } finally { bulkMovePending = false; }
