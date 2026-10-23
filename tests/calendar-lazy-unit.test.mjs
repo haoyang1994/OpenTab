@@ -95,7 +95,8 @@ function create(locale, initialDate = new Date(2026, 9, 22, 12)) {
   const context = {
     console: { ...console, error(error) { throw error; } },
     Date: ClockDate, HTMLElement: Element, Node: Element,
-    navigator: { userAgent: 'Chrome' }, document, setTimeout, clearTimeout,
+    navigator: { userAgent: 'Chrome' }, document: { ...document, getElementById: () => null }, setTimeout, clearTimeout,
+    OpenTabCalendarAssets: { isReady: () => true }, t: value => value,
     requestAnimationFrame: () => 0, OpenTabI18n: { locale },
     elements: { calendarInput: input, calendarPopover: popover, date },
     state: { timezone: 'Asia/Shanghai' },
@@ -245,4 +246,57 @@ for (const locale of ['en', 'zh-CN']) {
   assert.equal(h.picker.days.children.length, 42, 'the same adapter still permits normal first opening');
 }
 
+
+// Run the actual opener with a delayed dependency promise. Completion must not
+// reopen a dismissed calendar, build hidden DOM, or steal focus.
+{
+  const h = create('en');
+  const status = { textContent: '', hidden: true };
+  h.context.document.getElementById = id => id === 'calendar-load-status' ? status : null;
+  let ready = false, resolve, reject, calls = 0;
+  let pending = new Promise((yes, no) => { resolve = yes; reject = no; });
+  h.context.OpenTabCalendarAssets = { isReady: () => ready, load: () => { calls++; return pending; } };
+  const initialFlatpickr = h.context.flatpickr;
+  h.context.flatpickr = undefined;
+  h.init(true);
+  h.advance(new Date(2026, 9, 23, 12));
+  h.date.click();
+  assert.equal(status.hidden, false);
+  assert.match(status.textContent, /加载/);
+  h.close();
+  const afterClose = h.snapshot();
+  h.context.flatpickr = initialFlatpickr; ready = true; resolve();
+  await Promise.resolve();
+  assert.deepEqual(h.snapshot(), afterClose, 'dismissed pending opener does no late DOM or focus work');
+  assert.equal(h.picker, undefined);
+  h.date.click();
+  assert.equal(h.picker.selectedDates[0].getDate(), 22, 'startup selected date survives absent assets and midnight');
+  assert.equal(h.picker.currentMonth, 9);
+  assert.equal(status.hidden, true);
+  h.close();
+}
+{
+  const h = create('zh-CN'), status = { textContent: '', hidden: true };
+  h.context.document.getElementById = () => status;
+  let ready = false, resolve, reject;
+  let pending = new Promise((yes, no) => { resolve = yes; reject = no; });
+  h.context.OpenTabCalendarAssets = { isReady: () => ready, load: () => pending };
+  h.init(true); h.date.click(); h.close(); h.date.click();
+  reject(new Error('asset failed'));
+  await Promise.resolve();
+  assert.match(status.textContent, /重试/, 'latest opener surfaces load failure');
+  assert.equal(h.picker, undefined);
+  h.close();
+  pending = new Promise(yes => { resolve = yes; });
+  h.date.click(); h.close(); h.date.click();
+  const before = h.counts.focus;
+  ready = true; resolve();
+  await Promise.resolve();
+  assert.ok(h.picker, 'latest reopened intent initializes after retry');
+  assert.equal(h.counts.focus, before, 'asynchronous completion never steals focus');
+  assert.equal(status.hidden, true);
+  const picker = h.picker;
+  h.close(); h.date.click();
+  assert.equal(h.picker, picker, 'successful retry reuses one picker');
+}
 console.log('Lazy calendar passed: real Flatpickr, zero hidden construction, locale, repeated open/close, timezone and captured selection.');

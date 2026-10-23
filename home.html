@@ -22,7 +22,6 @@
   <script src="locales/scenes-en.js"></script>
   <link rel="icon" type="image/svg+xml" href="icons/opentab-icon.svg">
   <link rel="icon" type="image/png" sizes="16x16" href="icons/icon16.png">
-  <link rel="stylesheet" href="vendor/flatpickr/flatpickr.min.css">
   <link rel="stylesheet" href="home.css">
   <link rel="stylesheet" href="engine-deck.css">
   <link rel="stylesheet" href="clock-deck.css">
@@ -68,6 +67,7 @@
         </div>
 
         <div id="calendar-popover" class="calendar-popover hidden">
+          <p id="calendar-load-status" role="status" hidden></p>
           <input id="calendar-input" class="calendar-input" type="text" aria-label="日历" data-i18n-aria-label="日历">
           <div class="calendar-legend">
             <span class="legend-item"><i class="dot holiday"></i><span data-i18n="节假日">节假日</span></span>
@@ -838,8 +838,7 @@
     </div>
   </section>
 
-  <script src="vendor/flatpickr/flatpickr.min.js"></script>
-  <script src="vendor/flatpickr/l10n/zh.js"></script>
+  <script src="calendar-assets.js"></script>
   <script src="lib/search-engine-deck.js"></script>
   <script src="search.js"></script>
   <script src="scene-schema.js"></script>

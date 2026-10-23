@@ -1,5 +1,7 @@
 // Core interface copy. User content and network responses are never dictionary keys.
 OpenTabI18n.register({
+  "正在加载日历…": "Loading calendar…",
+  "日历加载失败，请关闭后重新打开以重试。": "Could not load the calendar. Close and reopen it to retry.",
   "时钟卡片": "Clock cards",
   "时间": "Time",
   "跟随系统时区": "Follow system time zone",

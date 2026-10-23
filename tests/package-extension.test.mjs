@@ -80,7 +80,12 @@ try {
       await page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0 && document.querySelector('#weather-pill')?.hasAttribute('data-stale'), undefined, { timeout: 10000 });
       await page.locator('#time').waitFor({ state: 'visible' });
       assert.match(await page.locator('#time').textContent(), /:/);
+      assert.equal(await page.evaluate(() => typeof window.flatpickr), 'undefined', 'closed packaged calendar does not load assets');
+      await page.locator('#date').click();
+      await page.locator('#calendar-popover:not(.hidden) .flatpickr-calendar').waitFor({ state: 'visible' });
       assert.equal(await page.evaluate(() => typeof window.flatpickr), 'function');
+      await page.keyboard.press('Escape');
+      await page.locator('#calendar-popover').waitFor({ state: 'hidden' });
       assert.ok(await page.evaluate(() => !!window.OpenTabI18n));
 
       // Exercise native fullscreen and keyboard input from the shipped ZIP,

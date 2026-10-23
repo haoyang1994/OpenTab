@@ -1,0 +1,86 @@
+name: Calendar assets experiment
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/calendar-assets-experiment.yml'
+      - 'tests/calendar-assets-experiment*.mjs'
+      - 'tests/startup-diagnostics.mjs'
+      - 'calendar-assets.js'
+      - 'home.html'
+      - 'home.js'
+      - 'home.css'
+      - 'scene-home.js'
+      - 'locales/core-en.js'
+      - 'vendor/flatpickr/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calendar-assets-experiment-${{ github.ref }}
+  # Finish and retain every attempted observation, even if a newer PR arrives.
+  cancel-in-progress: false
+
+jobs:
+  matched-experiment:
+    # This pinned historical comparison belongs only to this bounded experiment.
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'perf/lazy-calendar-assets'
+    name: Matched calendar startup (20 cold observations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout exact candidate under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Checkout pinned pre-assets baseline
+        uses: actions/checkout@v4
+        with:
+          ref: 7c43d4c4fbab3a32866c02988991059c28c27bea
+          path: baseline
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: candidate/package-lock.json
+
+      - name: Install candidate test dependencies
+        working-directory: candidate
+        run: npm ci
+
+      - name: Install native Chromium
+        working-directory: candidate
+        timeout-minutes: 18
+        run: npx playwright install --with-deps chromium
+
+      - name: Check experiment accounting without a browser
+        working-directory: candidate
+        run: node tests/calendar-assets-experiment-unit.test.mjs
+
+      # Dedicated runner/job: no existing native suite budget is changed, no
+      # matrix or simultaneous browser can compete with the timing samples.
+      - name: Observe matched startup and native calendar behavior
+        working-directory: candidate
+        timeout-minutes: 15
+        env:
+          CI: 'true'
+          CALENDAR_BASELINE_PATH: ${{ github.workspace }}/baseline
+          CALENDAR_CANDIDATE_SHA: ${{ github.sha }}
+        run: xvfb-run -a node tests/calendar-assets-experiment.mjs
+
+      - name: Retain every sample, failure and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendar-assets-experiment-${{ github.sha }}
+          path: candidate/artifacts/calendar-assets-experiment/
+          if-no-files-found: warn
+          retention-days: 7

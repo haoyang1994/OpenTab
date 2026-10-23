@@ -1462,9 +1462,8 @@
   }
 
   function initCalendar(defer = false) {
-    if (calendarPicker || typeof flatpickr === 'undefined') return;
     calendarDefaultDate ||= new Date();
-    if (defer === true) return;
+    if (defer === true || calendarPicker || typeof flatpickr === 'undefined') return;
     try { performance.mark('opentab:calendar-build-start'); } catch (_) {}
 
     if (window.OpenTabI18n?.locale !== 'en' && flatpickr.l10ns && flatpickr.l10ns.zh) {
@@ -1485,20 +1484,37 @@
     try { performance.mark('opentab:calendar-build-end'); } catch (_) {}
   }
 
+  let calendarOpenGeneration = 0;
   function toggleCalendar(forceOpen) {
     const open = typeof forceOpen === 'boolean'
       ? forceOpen
       : elements.calendarPopover.classList.contains('hidden');
-
+    const generation = ++calendarOpenGeneration;
     elements.calendarPopover.classList.toggle('hidden', !open);
-    if (open) {
-      rememberFocus(elements.date);
+    if (!open) return;
+    rememberFocus(elements.date);
+    const status = document.getElementById('calendar-load-status');
+    const showStatus = message => {
+      if (!status) return;
+      status.textContent = message;
+      status.hidden = !message;
+    };
+    const showCalendar = () => {
+      // Loading may finish after Escape, another popover, or a deck switch.
+      if (generation !== calendarOpenGeneration || elements.calendarPopover.classList.contains('hidden')) return;
+      showStatus('');
       initCalendar();
       if (calendarPicker) {
         calendarPicker.jumpToDate(new Date(), false);
         calendarPicker.redraw();
       }
-    }
+    };
+    if (window.OpenTabCalendarAssets.isReady()) { showCalendar(); return; }
+    showStatus(t('正在加载日历…'));
+    window.OpenTabCalendarAssets.load().then(showCalendar, () => {
+      if (generation !== calendarOpenGeneration || elements.calendarPopover.classList.contains('hidden')) return;
+      showStatus(t('日历加载失败，请关闭后重新打开以重试。'));
+    });
   }
 
   document.addEventListener('contextmenu', (event) => {
