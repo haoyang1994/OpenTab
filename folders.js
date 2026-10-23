@@ -1111,6 +1111,7 @@
     host = nextHost;
     bindUi();
     global.OpenTabSiteSelection?.init(nextHost);
+    global.OpenTabGroupLaunch?.init(nextHost);
   }
 
   // Groups are the old drawers: storage still uses folders[] / folderId / currentFolderId.

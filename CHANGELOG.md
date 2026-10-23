@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Preview websites in the current group and its folders before explicitly opening up to 20 selected background tabs. Preserve distinct URL paths, queries and fragments; reject unsafe schemes and credential URLs; revalidate local and durable sources, prevent duplicate submissions, and retry only failed tabs. No new permissions or background launch.
+
 ### Changed
 - Present the clock, a tab-local focus timer, and the next existing to-do as a navigable card stack, with reduced-motion and inactive-panel focus isolation.
 - Collapse search engines into a selected-on-top picker while preserving queries, custom engines, and keyboard switching.

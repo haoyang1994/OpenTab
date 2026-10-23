@@ -1,0 +1,39 @@
+/* Explicit group launch is dormant until the compact entry is requested. */
+.group-launch-dialog {
+  box-sizing: border-box; margin: auto; width: min(580px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px); overflow: auto; padding: 24px;
+  border: 1px solid var(--panel-border); border-radius: 20px;
+  background: var(--panel-bg-solid); color: var(--text-primary); box-shadow: 0 24px 80px #0005;
+}
+.group-launch-dialog::backdrop { background: #0008; }
+.group-launch-dialog h2 { margin: 0 0 8px; font-size: 20px; overflow-wrap: anywhere; }
+.group-launch-hint, #group-launch-empty { color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.group-launch-controls, .group-launch-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.group-launch-controls { margin: 18px 0 8px; }
+#group-launch-count { flex: 1 1 180px; font-size: 13px; }
+.group-launch-dialog button { border: 1px solid var(--panel-border); border-radius: 9px; padding: 9px 12px; background: var(--panel-bg-solid); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.group-launch-dialog button:disabled { opacity: .5; cursor: default; }
+#group-launch-confirm { background: #2855ca; color: #fff; border-color: #2855ca; }
+#group-launch-list { display: grid; gap: 8px; max-height: min(42dvh, 400px); overflow: auto; overscroll-behavior: contain; padding: 4px; margin: 0 -4px; }
+.group-launch-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--panel-border); border-radius: 12px; cursor: pointer; }
+.group-launch-row input { flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0; accent-color: #3467eb; }
+.group-launch-details { display: grid; min-width: 0; gap: 3px; overflow-wrap: anywhere; }
+.group-launch-details strong { font-size: 14px; font-weight: 600; }
+.group-launch-domain { color: var(--text-secondary); font-size: 12px; }
+.group-launch-url { color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
+.group-launch-result { font-size: 12px; font-weight: 600; }
+.group-launch-result:empty, #group-launch-limit:empty, #group-launch-status:empty { display: none; }
+.group-launch-opened { cursor: default; }
+.group-launch-opened .group-launch-result { color: #80d8a5; }
+.group-launch-failed .group-launch-result, #group-launch-limit { color: #ffb4ad; }
+body.theme-light .group-launch-opened .group-launch-result { color: #16713e; }
+body.theme-light .group-launch-failed .group-launch-result, body.theme-light #group-launch-limit { color: #a4241d; }
+#group-launch-limit, #group-launch-status { font-size: 13px; line-height: 1.55; }
+.group-launch-actions { justify-content: flex-end; margin-top: 18px; }
+.group-launch-dialog :focus-visible { outline: 3px solid #648cff; outline-offset: 3px; }
+@media (max-width: 560px) {
+  .group-launch-dialog { padding: 18px; }
+  .group-launch-controls { gap: 6px; }
+  #group-launch-count { flex-basis: 100%; }
+  .group-launch-row { padding: 10px; }
+}

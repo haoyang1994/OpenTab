@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="engine-deck.css">
   <link rel="stylesheet" href="clock-deck.css">
   <link rel="stylesheet" href="scene-ui.css">
+  <link rel="stylesheet" href="group-launch.css">
 </head>
 <body>
   <div id="homepage">
@@ -184,6 +185,7 @@
         <div id="scene-switcher"></div>
         <div id="group-tabs" class="group-tabs" role="tablist" aria-label="分组" data-i18n-aria-label="分组"></div>
         <button id="add-group-btn" class="group-add-btn" type="button" title="新建分组" data-i18n-title="新建分组" aria-label="新建分组" data-i18n-aria-label="新建分组">+</button>
+        <button id="group-launch-entry" class="site-selection-entry" type="button" title="预览并打开分组" aria-label="预览并打开分组" data-i18n-title="预览并打开分组" data-i18n-aria-label="预览并打开分组"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="13" height="15" rx="3"/><path d="M8 5V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M8 10l4 3-4 3z"/></svg></button>
         <button id="select-sites" class="site-selection-entry" type="button" data-select-sites title="选择网站" aria-label="选择网站" data-i18n-title="选择网站" data-i18n-aria-label="选择网站"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m7.5 12 3 3 6-6"/></svg></button>
       </div>
       <div id="site-selection-toolbar" class="site-selection-toolbar" role="region" aria-label="选择网站" data-i18n-aria-label="选择网站" hidden></div>
@@ -794,6 +796,24 @@
     </section>
   </div>
 
+  <dialog id="group-launch-dialog" class="group-launch-dialog" aria-labelledby="group-launch-title" aria-describedby="group-launch-hint">
+    <h2 id="group-launch-title"></h2>
+    <p id="group-launch-hint" class="group-launch-hint" data-i18n="仅包含本分组及其文件夹中的 HTTP(S) 网站，重复网址只列出一次。确认后在后台打开，不会离开当前页面。">仅包含本分组及其文件夹中的 HTTP(S) 网站，重复网址只列出一次。确认后在后台打开，不会离开当前页面。</p>
+    <div class="group-launch-controls">
+      <span id="group-launch-count" aria-live="polite"></span>
+      <button id="group-launch-all" type="button" data-i18n="全选">全选</button>
+      <button id="group-launch-clear" type="button" data-i18n="清除选择">清除选择</button>
+    </div>
+    <p id="group-launch-limit" role="status" aria-live="polite"></p>
+    <div id="group-launch-list"></div>
+    <p id="group-launch-empty" data-i18n="此分组中没有可打开的网站。">此分组中没有可打开的网站。</p>
+    <p id="group-launch-status" role="status" aria-live="polite"></p>
+    <div class="group-launch-actions">
+      <button id="group-launch-cancel" type="button" data-i18n="取消">取消</button>
+      <button id="group-launch-confirm" type="button"></button>
+    </div>
+  </dialog>
+
   <script src="vendor/flatpickr/flatpickr.min.js"></script>
   <script src="vendor/flatpickr/l10n/zh.js"></script>
   <script src="lib/search-engine-deck.js"></script>
@@ -814,6 +834,8 @@
   <script src="lib/core-accessibility.js"></script>
   <script src="command-palette.js"></script>
   <script src="site-selection.js"></script>
+  <script src="lib/group-launch.js"></script>
+  <script src="group-launch.js"></script>
   <script src="clock-deck.js"></script>
   <script src="scene-workspace.js"></script>
   <script src="scene-controller.js"></script>
