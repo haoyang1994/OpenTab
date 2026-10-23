@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,15 @@ const version = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'ut
 const zip = path.join(root, 'dist', `opentab-${version}.zip`);
 const extension = path.join(temporary, 'extension');
 let context;
+const fixtureServer = http.createServer((_request, response) => {
+  response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  response.end('<!doctype html><title>Packaged launch fixture</title><p id="launch-proof">Local packaged launch fixture</p>');
+});
 try {
+  // Extension-created initial navigations can race Playwright route attachment.
+  // A real loopback response proves successful navigation without public DNS.
+  await new Promise((resolve, reject) => { fixtureServer.once('error', reject); fixtureServer.listen(0, '127.0.0.1', resolve); });
+  const fixtureOrigin = `http://127.0.0.1:${fixtureServer.address().port}`;
   execFileSync('python3', ['scripts/package-release.py', '--output', zip], { cwd: root, stdio: 'inherit' });
   execFileSync('python3', ['-m', 'zipfile', '-e', zip, extension], { stdio: 'inherit' });
   assert.ok(!fs.existsSync(path.join(extension, 'package.json')));
@@ -26,7 +35,7 @@ try {
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`]
   });
   // No dependence on external weather/background service availability.
-  await context.route(/^https?:\/\//, route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await context.route(/^https?:\/\//, route => new URL(route.request().url()).origin === fixtureOrigin ? route.continue() : route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', { timeout: 15000 });
   const id = new URL(worker.url()).host;
   assert.match(worker.url(), /\/background\.js$/);
@@ -104,7 +113,7 @@ try {
 
       // The release ZIP includes the new module, localized dialog and style,
       // not merely a working checkout-only feature.
-      const launchUrl = 'https://packaged-launch.example.test/guide?mode=one#details';
+      const launchUrl = `${fixtureOrigin}/guide?mode=one#details`;
       await page.evaluate(async ({ url, pixel }) => {
         await OpenTabWorkspace.transaction(({ write }) => write({ icons: [
           { id: 'packaged-launch-site', name: 'Packaged reference', url, type: 'shortcut', folderId: 'folder-home', parentId: '', uploadedIconDataUrl: `data:image/png;base64,${pixel}`, iconSource: 'upload' }
@@ -124,6 +133,7 @@ try {
       await page.click('#group-launch-confirm');
       const launched = await opened;
       await launched.waitForURL(launchUrl);
+      await launched.locator('#launch-proof').waitFor({ state: 'visible' });
       await page.waitForFunction(() => !OpenTabGroupLaunch.isPending() && document.querySelector('#group-launch-list input').disabled);
       assert.equal(page.url(), target, 'packaged group launch leaves its home page intact');
       assert.equal(await page.locator('#group-launch-status').textContent(), 'Opened 1 websites in background tabs.');
@@ -187,6 +197,10 @@ try {
   }
   throw error;
 } finally {
-  await context?.close();
-  fs.rmSync(temporary, { recursive: true, force: true });
+  try { await context?.close(); }
+  finally {
+    fixtureServer.closeAllConnections();
+    try { if (fixtureServer.listening) await new Promise(resolve => fixtureServer.close(resolve)); }
+    finally { fs.rmSync(temporary, { recursive: true, force: true }); }
+  }
 }

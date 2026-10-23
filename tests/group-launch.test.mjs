@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -16,11 +17,36 @@ const Schema = require('../scene-schema.js');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = path.join(root, 'artifacts');
 fs.mkdirSync(artifacts, { recursive: true });
+// Extension-created initial documents can start before Playwright attaches its
+// route interception. Serve every actually launched target on real loopback,
+// rather than depending on fake DNS names, TLS exceptions, or foreground tabs.
+const loopbackRequests = [];
+const fixtureProof = 'OpenTab real loopback launch target';
+const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+const loopback = createServer((request, response) => {
+  loopbackRequests.push({ method: request.method, path: request.url });
+  response.setHeader('Cache-Control', 'no-store');
+  if (request.url === '/favicon.ico') {
+    response.writeHead(200, { 'Content-Type': 'image/png' });
+    response.end(Buffer.from(PIXEL, 'base64'));
+    return;
+  }
+  response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  response.end(`<!doctype html><meta charset="utf-8"><title>OpenTab loopback fixture</title><h1 id="group-launch-fixture-proof">${fixtureProof}</h1><p id="group-launch-fixture-path">${escapeHtml(request.url || '/')}</p>`);
+});
+await new Promise((resolve, reject) => { loopback.once('error', reject); loopback.listen(0, '127.0.0.1', resolve); });
+const loopbackBase = `http://127.0.0.1:${loopback.address().port}`;
+async function closeLoopback() {
+  await new Promise((resolve, reject) => {
+    loopback.close(error => error ? reject(error) : resolve());
+    loopback.closeAllConnections();
+  });
+}
 const A = 'scene-default', B = 'scene-work', HOME = 'folder-home';
-const alpha = 'https://launch-a.example.test/docs?mode=one#top';
-const query = 'https://launch-a.example.test/docs?mode=two#top';
-const fragment = 'https://launch-a.example.test/docs?mode=one#bottom';
-const nested = 'https://launch-folder.example.test/inside';
+const alpha = `${loopbackBase}/docs?mode=one#top`;
+const query = `${loopbackBase}/docs?mode=two#top`;
+const fragment = `${loopbackBase}/docs?mode=one#bottom`;
+const nested = `${loopbackBase}/inside`;
 const peer = 'https://launch-peer.example.test/inside';
 const literal = 'https://launch-literal.example.test/';
 const plainHttp = 'http://launch-http.example.test/start';
@@ -35,7 +61,7 @@ function fixture(extra = {}) {
     folders: [{ id: HOME, name: 'Home' }, { id: 'other-group', name: 'Other group' },
       { id: 'child-group', name: 'Child group', parentId: HOME }, { id: 'empty-group', name: 'Empty group' }],
     icons: [site('alpha', 'Alpha documents', alpha),
-      site('duplicate', 'Duplicate must not appear', 'https://LAUNCH-A.example.test:443/docs?mode=one#top'),
+      site('duplicate', 'Duplicate must not appear', `${loopbackBase}/./docs?mode=one#top`),
       site('query', 'Query variant', query), site('fragment', 'Fragment variant', fragment),
       { id: 'reference-folder', name: 'Reference folder', type: 'folder', folderId: HOME, parentId: '' },
       site('nested', 'Inside folder', nested, HOME, 'reference-folder'),
@@ -62,7 +88,11 @@ function fixture(extra = {}) {
   Schema.validate(data);
   return data;
 }
-const context = await chromium.launchPersistentContext('', {
+let context;
+// Own both resources across launch, setup, and suite failures. The inner catch
+// below captures screenshots only after the page has been initialized.
+try {
+context = await chromium.launchPersistentContext('', {
   headless: process.env.HEADLESS === 'true', locale: 'en-US', reducedMotion: 'reduce', viewport: { width: 1280, height: 900 },
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {}),
   args: [`--disable-extensions-except=${root}`, `--load-extension=${root}`, '--no-sandbox', '--disable-dev-shm-usage']
@@ -79,12 +109,14 @@ context.on('requestfailed', request => requestFailures.push({ phase: phaseName, 
 context.on('console', message => {
   if (!message.page() && message.type() === 'error') errors.push(`[${phaseName}] worker: ${formatConsoleError(message)}`);
 });
-// All fixture HTTP requests, including launched tabs and favicons, are fulfilled
-// locally. Nothing in this suite sends synthetic names or URLs to a server.
+// Actual target documents use only our loopback server, even when their first
+// request outruns interception. All other HTTP requests are fulfilled in-process;
+// synthetic names/URLs never reach an external server.
 await context.route('**/*', route => {
   const request = route.request(), url = request.url();
   if (!/^https?:/.test(url)) return route.continue();
   network.push({ url, type: request.resourceType() });
+  if (new URL(url).origin === loopbackBase) return route.continue();
   const headers = { 'access-control-allow-origin': '*' };
   if (request.resourceType() === 'image' || /favicon|touch-icon/.test(url)) return route.fulfill({ status: 200, contentType: 'image/png', headers, body: Buffer.from(PIXEL, 'base64') });
   if (request.resourceType() === 'document') return route.fulfill({ status: 200, contentType: 'text/html', headers, body: '<!doctype html><title>Offline launch fixture</title><p>Local fixture only.</p>' });
@@ -103,6 +135,20 @@ const stored = () => worker.evaluate(() => chrome.storage.local.get(null));
 const calls = () => page.evaluate(() => window.__groupLaunchCalls);
 const focused = () => page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName);
 async function reset(extra = {}) {
+  // tabs.create resolves before Playwright necessarily exposes the new Page.
+  // Remove only IDs proven opened by this suite's wrapper, including targets
+  // whose initial document has not materialized in context.pages() yet.
+  const openedIds = await page.evaluate(() => (window.__groupLaunchCalls || [])
+    .filter(call => call.result === 'opened' && Number.isInteger(call.tabId)).map(call => call.tabId));
+  if (openedIds.length) {
+    const removal = worker.evaluate(async ids => {
+      const existing = await chrome.tabs.query({});
+      const owned = ids.filter(id => existing.some(tab => tab.id === id));
+      if (owned.length) await chrome.tabs.remove(owned);
+    }, openedIds);
+    await waitForAsync({ evaluate: async () => { await removal; return true; } });
+    await waitForAsync(worker, async ids => !(await chrome.tabs.query({})).some(tab => ids.includes(tab.id)), openedIds);
+  }
   await page.goto('about:blank');
   for (const p of context.pages()) if (p !== page) await p.close();
   const data = fixture(extra);
@@ -180,7 +226,7 @@ async function captureLaunchObservation(label, expected = {}) {
     nativeTabIdDelta: baselineIds && tabs.available ? tabs.value.map(tab => tab.id).filter(id => !baselineIds.includes(id)) : null,
     pages: context.pages().map(p => ({ url: p.url(), closed: p.isClosed() })),
     documentRoutes: network.filter(request => request.type === 'document').map(request => request.url),
-    requestFailures: [...requestFailures]
+    requestFailures: [...requestFailures], loopbackRequests: [...loopbackRequests]
   };
   launchObservations.push(evidence);
   fs.writeFileSync(path.join(artifacts, 'group-launch-navigation-evidence.json'), JSON.stringify(launchObservations, null, 2));
@@ -223,7 +269,7 @@ async function phase(name, run) {
 }
 try {
   await phase('safe unique current-group preview is read-only', async () => {
-    await reset(); const before = await stored(), requestCount = network.length;
+    await reset(); const before = await stored(), requestCount = network.length, loopbackCount = loopbackRequests.length;
     await open('Enter');
     assert.deepEqual((await boxes().evaluateAll(nodes => nodes.map(node => node.value))).sort(), [...expectedUrls].sort(), 'root and folder children are included; other groups, scenes, unsafe types/URLs and duplicate normalized URLs are excluded');
     assert.equal(await boxes().count(), 7);
@@ -231,7 +277,7 @@ try {
     assert.match(await page.textContent('#group-launch-count'), /7/);
     assert.equal(await page.locator('#group-launch-list img, #group-launch-list iframe, #group-launch-list script').count(), 0, 'user labels are text, never interpreted markup or fetched previews');
     assert.ok((await page.textContent('#group-launch-list')).includes(literalName));
-    assert.ok((await page.textContent('#group-launch-list')).includes('launch-folder.example.test'));
+    assert.ok((await page.textContent('#group-launch-list')).includes(new URL(nested).host));
     assert.ok((await page.textContent('#group-launch-list')).includes(alpha), 'exact URL disambiguates same-domain query/fragment variants');
     for (const url of expectedUrls) assert.ok(await box(url).evaluate(el => [...el.labels].some(label => label.textContent.trim().length > 0)), 'every native checkbox has a visible accessible label');
     await box(alpha).focus(); await page.keyboard.press('Space'); assert.equal(await box(alpha).isChecked(), false);
@@ -248,7 +294,8 @@ try {
     assert.deepEqual(await page.evaluate(() => OpenTabSceneNavigation.getView()), view, 'modal input cannot activate background group shortcuts');
     assert.equal(await page.locator('#command-palette').isVisible(), false, 'modal input cannot open a competing palette');
     await close(); await assertNoLaunch(before, 'opening, typing and cancelling do not create any tabs');
-    assert.equal(network.length, requestCount, 'preview/selection/cancellation send no network requests');
+    assert.equal(network.length, requestCount, 'preview/selection/cancellation send no intercepted network requests');
+    assert.equal(loopbackRequests.length, loopbackCount, 'preview/selection/cancellation send no direct loopback requests');
     await open('Space'); await close('button'); await assertNoLaunch(before, 'both explicit Cancel and Escape are read-only');
     for (let step = 0; step < 30; step++) {
       await page.keyboard.press('Tab');
@@ -274,7 +321,16 @@ try {
     await waitForLaunchObservation('created page URLs match selected full URLs',
       { evaluate: async () => [alpha, nested].every(url => context.pages().some(p => p.url() === url)) },
       undefined, undefined, { urls: [alpha, nested] });
-    for (const url of [alpha, nested]) assert.ok(context.pages().some(p => p.url() === url), `actual Chrome tab navigated to ${url}`);
+    for (const url of [alpha, nested]) {
+      const createdPage = context.pages().find(p => p.url() === url);
+      assert.ok(createdPage, `actual Chrome tab navigated to ${url}`);
+      await createdPage.locator('#group-launch-fixture-proof').waitFor({ state: 'attached', timeout: 10000 });
+      assert.equal(await createdPage.locator('#group-launch-fixture-proof').textContent(), fixtureProof, 'native background tab committed the real local HTML document, not an error page');
+      assert.equal(await createdPage.evaluate(() => location.href), url, 'committed document preserves the complete selected URL, including query and fragment');
+      const target = new URL(url);
+      assert.equal(await createdPage.locator('#group-launch-fixture-path').textContent(), target.pathname + target.search);
+      assert.ok(loopbackRequests.some(request => request.path === target.pathname + target.search), 'the real fixture server received the selected document request');
+    }
     assert.deepEqual(await page.evaluate(async () => (await chrome.tabs.query({ active: true, currentWindow: true })).map(tab => tab.id)), activeBefore, 'the original active tab stays active');
     assert.equal(page.url(), home);
     for (const url of [alpha, nested]) { assert.equal(await box(url).isChecked(), false); assert.equal(await box(url).isDisabled(), true); }
@@ -428,4 +484,5 @@ try {
   })).catch(() => null));
   await page.screenshot({ path: path.join(artifacts, 'group-launch-failure.png'), animations: 'disabled' }).catch(() => {});
   throw error;
-} finally { await context.close(); }
+}
+} finally { try { await context?.close(); } finally { await closeLoopback(); } }
