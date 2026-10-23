@@ -81,6 +81,7 @@ jobs:
             artifacts/accessibility-chooser.json
             artifacts/wallpaper-readability.json
             artifacts/interface-glass.json
+            artifacts/home-controls-viewport.json
             artifacts/clock-stack-pixels.json
             artifacts/startup-diagnostics.json
             artifacts/group-launch-*.json

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { assertHomeControlsGeometry } from './home-controls-viewport.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -213,4 +214,34 @@ console.log('layout unit tests passed');
     assert.equal(OpenTabLayout.bootMirrorSlice({ todoButtonVisible: false }).todoButtonVisible, false);
     assert.equal(OpenTabSync.buildSyncPayload({ todoButtonVisible: false }).settings.todoButtonVisible, false);
   } finally { global.document = oldDocument; global.chrome = oldChrome; }
+}
+
+// These offline counterexamples test the assertion, not a simulated browser.
+// Native geometry, clipping and keyboard activation live in the settings suite.
+{
+  function sample(width = 360, height = 560, inset = 0) {
+    const narrow = width <= 760, size = narrow ? 46 : 48;
+    const bottom = height - (narrow ? 18 + inset : 28);
+    const contentHeight = narrow ? height - 76 - inset : height;
+    return { width, height, scrollWidth: width, transparent: true,
+      content: { height: contentHeight, bottom: contentHeight, paddingBottom: narrow ? 18 : 104, scrollPadding: narrow ? 8 : 0 },
+      buttons: ['refresh-bg-btn', 'settings-btn'].map((id, i) => ({ id, width: size, height: size, top: bottom - size, bottom,
+        right: width - (i ? narrow ? 18 : 28 : narrow ? 82 : 92), hit: true })),
+      visibleTargets: [{ id: 'select-sites', hit: true }] };
+  }
+  for (const width of [320, 360, 390, 640, 760, 761, 1024, 1280]) assertHomeControlsGeometry(sample(width), `unit ${width}`);
+  assertHomeControlsGeometry(sample(360, 560, 32), 'unit simulated inset', 32);
+  const fullHeight = sample(); fullHeight.content.height = fullHeight.content.bottom = 560;
+  assert.throws(() => assertHomeControlsGeometry(fullHeight, 'old full-height clip'), /real scroll viewport height/);
+  const paddingOnly = sample(); paddingOnly.content.paddingBottom = 180;
+  assert.throws(() => assertHomeControlsGeometry(paddingOnly, 'padding-only repair'), /end padding/);
+  const intercepted = sample(); intercepted.visibleTargets[0] = { id: 'select-sites', hit: false, target: 'settings-btn' };
+  assert.throws(() => assertHomeControlsGeometry(intercepted, 'mid-scroll interception'), /select-sites center is intercepted/);
+  const blockedButton = sample(); blockedButton.buttons[1].hit = false;
+  assert.throws(() => assertHomeControlsGeometry(blockedButton, 'covered settings'), /settings-btn center is intercepted/);
+  const opaque = sample(); opaque.transparent = false;
+  assert.throws(() => assertHomeControlsGeometry(opaque, 'opaque footer'), /opaque footer/);
+  const wrongInset = sample(360, 560, 32); wrongInset.buttons[0].bottom += 32;
+  assert.throws(() => assertHomeControlsGeometry(wrongInset, 'unshared safe area', 32), /refresh-bg-btn bottom/);
+  assert.match(homeCss, /--home-controls-safe-area:\s*env\(safe-area-inset-bottom,\s*0px\)/, 'native safe-area inset feeds the shared narrow layout variable');
 }
