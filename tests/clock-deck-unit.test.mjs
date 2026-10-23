@@ -257,6 +257,34 @@ function domHarness({ brokenDeck = false, hiddenTodo = false } = {}) {
 const html = fs.readFileSync(new URL('../home.html', import.meta.url), 'utf8'), css = fs.readFileSync(new URL('../clock-deck.css', import.meta.url), 'utf8'), home = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');
 assert.doesNotMatch(html, /id="(?:clock-deck-prev|clock-deck-next|clock-deck-label|welcome-text|todo-toggle-btn)"/, 'removed descriptions and floating to-do entry do not return');
 assert.equal([...html.matchAll(/data-clock-card="[012]"/g)].length, 3, 'the clock has exactly three dot controls');
+const navMarkup = html.match(/<nav\b[^>]*id="clock-deck-nav"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
+assert.ok(navMarkup, 'the three indicators retain their navigation landmark');
+assert.equal(navMarkup.replace(/<[^>]+>/g, '').trim(), '', 'navigation has no visible labels or text arrows');
+assert.doesNotMatch(navMarkup, /<(?:svg|img|i)\b/, 'navigation has no graphical arrows');
+const navButtons = [...navMarkup.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+assert.equal(navButtons.length, 3, 'navigation contains only the three card controls');
+for (const [index, [, attributes, content]] of navButtons.entries()) {
+  assert.match(attributes, new RegExp(`data-clock-card="${index}"`));
+  assert.match(attributes, /aria-label="[^"]+"/, 'a visually empty indicator retains its accessible label');
+  assert.match(content.trim(), /^<span><\/span>$/, 'each indicator is exactly one empty span');
+}
+const declarations = rule => Object.fromEntries(rule.split(';').filter(value => value.trim()).map(value => {
+  const separator = value.indexOf(':'); return [value.slice(0, separator).trim(), value.slice(separator + 1).trim()];
+}));
+const dotStyle = declarations(css.match(/\.clock-deck-dots span\s*\{([^}]+)\}/)?.[1] || '');
+assert.equal(dotStyle.width, '5px', 'all three indicators start as small dots');
+assert.equal(dotStyle.height, dotStyle.width, 'inactive dots have equal width and height');
+assert.ok(dotStyle['border-radius'] === '50%' || parseFloat(dotStyle['border-radius']) >= 2.5, 'the indicator corners make a circle, not a square');
+assert.doesNotMatch(dotStyle.transition || '', /\b(?:all|width|height|transform|border-radius)\b/, 'navigation never animates a dot into a dash');
+const activeDotStyle = declarations(css.match(/\.clock-deck-dots \[aria-pressed=['"]true['"]\] span\s*\{([^}]+)\}/)?.[1] || '');
+assert.ok(Object.keys(activeDotStyle).length > 0 && Object.keys(activeDotStyle).every(property => ['background', 'background-color'].includes(property)), 'the active dot changes only color, never dimensions or shape');
+assert.notEqual(activeDotStyle.background || activeDotStyle['background-color'], dotStyle.background, 'color still distinguishes the active card');
+const navStyle = declarations(css.match(/#clock-deck-nav\s*\{([^}]+)\}/)?.[1] || '');
+assert.equal(navStyle['justify-content'], 'center');
+assert.match(navStyle.margin || '', /^\S+\s+auto(?:\s+\S+)?$/, 'navigation stays horizontally centered beneath the cards');
+const mobileStyle = css.match(/@media\s*\(max-width:\s*760px\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+const mobileTimezoneMargin = mobileStyle.match(/#clock-deck #timezone-label\s*\{[^}]*\bmargin-left:\s*(\d+(?:\.\d+)?)px\s*;/)?.[1];
+assert.ok(Number(mobileTimezoneMargin) >= 36, 'mobile timezone text reserves clearance from the fixed top-left Zen entry and its focus outline');
 assert.ok(html.indexOf('src="clock-deck.js"') < html.indexOf('src="home.js"'));
 assert.match(home, /openTodoList\(opener\).*setTodoPanelOpen\(true\).*rememberFocus\(opener\).*todoInput\.focus/);
 assert.match(css, /touch-action: pan-y/); assert.match(css, /prefers-reduced-motion: reduce/);

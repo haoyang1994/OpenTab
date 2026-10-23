@@ -65,6 +65,75 @@ async function noInactiveFocus() {
 async function bounds() {
   return page.locator('#clock-deck-stage').evaluate(element => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
 }
+async function navigationGeometry(activeIndex, label) {
+  const geometry = await page.locator('#clock-deck-nav').evaluate(nav => {
+    const center = element => { const rect = element.getBoundingClientRect(); return rect.left + rect.width / 2; };
+    const buttons = [...nav.querySelectorAll('button')];
+    return {
+      text: nav.textContent.trim(), icons: nav.querySelectorAll('svg, img, i').length,
+      extraContent: [nav, ...nav.querySelectorAll('*')].some(element => ['::before', '::after'].some(pseudo => !['none', 'normal', '""', "''"].includes(getComputedStyle(element, pseudo).content))),
+      center: center(nav), stageCenter: center(document.getElementById('clock-deck-stage')),
+      indicators: buttons.map(button => {
+        const span = button.querySelector('span'), rect = span?.getBoundingClientRect(), style = span && getComputedStyle(span);
+        return { active: button.getAttribute('aria-pressed'), label: button.getAttribute('aria-label'), children: button.children.length,
+          width: rect?.width, height: rect?.height, center: span && center(span), buttonCenter: center(button),
+          radii: style && [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius],
+          visible: Boolean(style && style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > 0) };
+      })
+    };
+  });
+  assert.equal(geometry.indicators.length, 3, `${label}: only three navigation dots`);
+  assert.equal(geometry.text, '', `${label}: no visible instructional labels or text arrows`);
+  assert.equal(geometry.icons, 0, `${label}: no graphical arrows`);
+  assert.equal(geometry.extraContent, false, `${label}: pseudo-elements do not reintroduce arrows or labels`);
+  assert.ok(Math.abs(geometry.center - geometry.stageCenter) <= 1, `${label}: navigation is centered beneath the card`);
+  for (const [index, indicator] of geometry.indicators.entries()) {
+    const detail = `${label}: dot ${index}: ${JSON.stringify(indicator)}`;
+    assert.equal(indicator.active, String(index === activeIndex), detail);
+    assert.ok(indicator.label, `${detail}: accessible card label remains`);
+    assert.equal(indicator.children, 1, detail);
+    assert.equal(indicator.visible, true, detail);
+    assert.ok(indicator.width > 0 && Math.abs(indicator.width - indicator.height) < 0.1, `${detail}: active and inactive dots are circular, not dashes`);
+    assert.ok(Math.abs(indicator.width - geometry.indicators[0].width) < 0.1, `${detail}: all dots have the same diameter`);
+    assert.ok(indicator.radii.every(radius => radius.endsWith('%') ? parseFloat(radius) >= 50 : parseFloat(radius) >= indicator.width / 2), `${detail}: every corner is round`);
+    assert.ok(Math.abs(indicator.center - indicator.buttonCenter) <= 0.5, `${detail}: dot is centered in its target`);
+  }
+  assert.ok(Math.abs((geometry.indicators[0].center + geometry.indicators[2].center) / 2 - geometry.center) <= 1, `${label}: the three-dot group is centered inside navigation`);
+}
+async function zenEntryClearance(expectedText, label) {
+  const geometry = await page.locator('#timezone-label').evaluate(timezone => {
+    const entry = document.getElementById('zen-toggle-btn'), rect = timezone.getBoundingClientRect(), entryRect = entry.getBoundingClientRect();
+    const serialize = value => ({ left: value.left, right: value.right, top: value.top, bottom: value.bottom, width: value.width, height: value.height });
+    const hit = (x, y) => { const target = document.elementFromPoint(x, y); return { x, y, timezone: timezone.contains(target), target: target?.id || target?.tagName || null }; };
+    const range = document.createRange(); range.selectNodeContents(timezone);
+    // Sample both the box center and the visible text itself. The first letters
+    // can be covered by the corner button even when the label center is clear.
+    const textHits = [...range.getClientRects()].flatMap(text => {
+      const left = Math.max(rect.left, text.left), right = Math.min(rect.right, text.right);
+      const top = Math.max(rect.top, text.top), bottom = Math.min(rect.bottom, text.bottom);
+      if (right <= left || bottom <= top) return [];
+      const inset = Math.min(1, (right - left) / 4), y = (top + bottom) / 2;
+      return [hit(left + inset, y), hit((left + right) / 2, y), hit(right - inset, y)];
+    });
+    return { text: timezone.textContent, timezone: serialize(rect), entry: serialize(entryRect),
+      visible: getComputedStyle(timezone).visibility === 'visible' && Number(getComputedStyle(timezone).opacity) > 0,
+      centerHit: hit(rect.left + rect.width / 2, rect.top + rect.height / 2), textHits,
+      entryHit: entry.contains(document.elementFromPoint(entryRect.left + entryRect.width / 2, entryRect.top + entryRect.height / 2)),
+      viewport: { width: innerWidth, height: innerHeight } };
+  });
+  const detail = `${label}: ${JSON.stringify(geometry)}`, { timezone, entry, viewport } = geometry;
+  assert.equal(geometry.text, expectedText, `${detail}: resizing preserves timezone content`);
+  assert.ok(geometry.text.trim() && geometry.visible && timezone.width > 0 && timezone.height > 0, `${detail}: timezone text remains visible`);
+  assert.ok(entry.width > 0 && entry.height > 0 && entry.left >= 0 && entry.left <= 24 && entry.top >= 0 && entry.top <= 24, `${detail}: Zen stays in the top-left corner`);
+  assert.ok(timezone.left >= 0 && timezone.right <= viewport.width && timezone.top >= 0 && timezone.bottom <= viewport.height, `${detail}: timezone is inside the viewport`);
+  assert.equal(entry.left < timezone.right && entry.right > timezone.left && entry.top < timezone.bottom && entry.bottom > timezone.top, false, `${detail}: Zen and timezone rectangles never intersect`);
+  if (entry.top < timezone.bottom && entry.bottom > timezone.top) {
+    assert.ok(timezone.left - entry.right >= 4, `${detail}: timezone also clears the Zen entry's 2px focus outline plus 2px offset`);
+  }
+  assert.equal(geometry.centerHit.timezone, true, `${detail}: timezone center wins its hit test`);
+  assert.ok(geometry.textHits.length > 0 && geometry.textHits.every(hit => hit.timezone), `${detail}: visible timezone text wins every hit test`);
+  assert.equal(geometry.entryHit, true, `${detail}: Zen entry remains directly reachable`);
+}
 try {
   await reset(); assert.equal(await card(), '0');
   assert.equal(await page.locator('#clock-deck-nav button').count(), 3, 'only the three card dots remain');
@@ -76,12 +145,29 @@ try {
   const initial = await bounds(), searchTop = await page.locator('#search-widget-wrap').evaluate(el => el.getBoundingClientRect().top);
   for (let index = 0; index < 3; index++) {
     await select(index); assert.deepEqual(await bounds(), initial, 'all cards reserve the same frame');
+    await navigationGeometry(index, `desktop card ${index}`);
     assert.equal(await page.locator('#search-widget-wrap').evaluate(el => el.getBoundingClientRect().top), searchTop, 'card switch never shifts search');
     await noInactiveFocus();
     const surface = await page.locator('.clock-deck-card[data-active="true"]').evaluate(el => ({ bg: getComputedStyle(el).backgroundColor, blur: getComputedStyle(el).backdropFilter }));
     assert.match(surface.bg, /^rgb\(/); assert.equal(surface.blur, 'none', 'solid slate surface');
     await page.locator('#clock-deck').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(artifacts, `clock-deck-${index}-light-en.png`), animations: 'disabled' });
+  }
+  await select(0);
+  const timezoneText = await page.locator('#timezone-label').textContent();
+  // Reuse the loaded fixture: responsive geometry needs no additional reloads,
+  // screenshots or fixed sleeps, including the narrow and short viewports.
+  for (const viewport of [
+    { width: 320, height: 480 }, { width: 360, height: 640 }, { width: 390, height: 760 },
+    { width: 640, height: 480 }, { width: 760, height: 600 }, { width: 1280, height: 900 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => {
+      const origin = { left: 0, top: 0, behavior: 'instant' };
+      document.getElementById('content').scrollTo(origin); window.scrollTo(origin);
+    });
+    await navigationGeometry(0, `${viewport.width}x${viewport.height}`);
+    await zenEntryClearance(timezoneText, `${viewport.width}x${viewport.height}`);
   }
   await select(0); await page.click('#clock-deck-peek', { position: { x: 180, y: 12 } }); assert.equal(await card(), '1', 'real exposed lower edge is clickable');
   await page.locator('#clock-deck-nav [aria-pressed="true"]').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await card(), '2');
@@ -199,6 +285,8 @@ try {
     let frame;
     for (let index = 0; index < 3; index++) {
       await select(index); const current = await bounds(); frame ||= current; assert.deepEqual(current, frame);
+      await navigationGeometry(index, `${label} card ${index}`);
+      if (index === 0) await zenEntryClearance(await page.locator('#timezone-label').textContent(), `${label} clock`);
       assert.ok(current.x >= 0 && current.x + current.width <= viewport.width, 'narrow screens have no horizontal clipping');
       assert.equal(await page.locator('#clock-todo-text img').count(), 0);
       await page.locator('#clock-deck').scrollIntoViewIfNeeded();
