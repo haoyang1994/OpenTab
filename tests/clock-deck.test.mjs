@@ -41,7 +41,7 @@ async function reset(extra = {}) {
   const data = { ...fixture, ...extra }; await store(data); await page.goto(url);
   await page.evaluate(() => sessionStorage.removeItem('opentab.focus.v1')); await page.reload(); await ready(data.languagePreference);
   await page.waitForFunction(({ themeMode, todoButtonVisible }) => document.body.classList.contains('theme-light') === (themeMode === 'light') && OpenTabLayout.get().todoButtonVisible === todoButtonVisible && document.body.classList.contains('hide-todo-entry') === !todoButtonVisible, data);
-  await page.waitForFunction(text => document.getElementById('clock-todo-text').textContent === text, data.todos.find(todo => !todo.done)?.text || (data.languagePreference === 'en' ? 'No unfinished tasks. A little breathing room is good.' : '暂时没有未完成待办，留一点空白也很好。'));
+  await page.waitForFunction(text => document.getElementById('clock-todo-text').textContent === text, data.todos.find(todo => !todo.done)?.text || (data.languagePreference === 'en' ? 'No unfinished tasks' : '暂无未完成待办'));
 }
 async function select(index) {
   await page.click(dot(index)); assert.equal(await card(), String(index));
@@ -56,7 +56,7 @@ async function swipe(selector, dx = -90, dy = 0) {
 }
 async function noInactiveFocus() {
   assert.equal(await page.evaluate(() => [...document.querySelectorAll('.clock-deck-card')].every(panel => panel.inert === (panel.dataset.active !== 'true'))), true);
-  await page.locator('#clock-deck-next').focus();
+  await page.locator('#clock-deck-nav [aria-pressed="true"]').focus();
   for (let index = 0; index < 12; index++) {
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => Boolean(document.activeElement.closest('.clock-deck-card[data-active="false"]'))), false, 'native Tab cannot enter an inactive card');
@@ -67,6 +67,12 @@ async function bounds() {
 }
 try {
   await reset(); assert.equal(await card(), '0');
+  assert.equal(await page.locator('#clock-deck-nav button').count(), 3, 'only the three card dots remain');
+  assert.deepEqual(await page.locator('#clock-deck-nav button').allTextContents(), ['', '', ''], 'card navigation has no visible instructional labels');
+  for (let index = 0; index < 3; index++) {
+    assert.ok(await page.locator(dot(index)).getAttribute('aria-label'), 'each dot retains its accessible card name');
+    assert.equal(await page.locator(dot(index)).getAttribute('aria-controls'), ['clock-widget', 'clock-focus-card', 'clock-todo-card'][index]);
+  }
   const initial = await bounds(), searchTop = await page.locator('#search-widget-wrap').evaluate(el => el.getBoundingClientRect().top);
   for (let index = 0; index < 3; index++) {
     await select(index); assert.deepEqual(await bounds(), initial, 'all cards reserve the same frame');
@@ -78,8 +84,14 @@ try {
     await page.screenshot({ path: path.join(artifacts, `clock-deck-${index}-light-en.png`), animations: 'disabled' });
   }
   await select(0); await page.click('#clock-deck-peek', { position: { x: 180, y: 12 } }); assert.equal(await card(), '1', 'real exposed lower edge is clickable');
-  await page.locator('#clock-deck-next').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await card(), '2');
+  await page.locator('#clock-deck-nav [aria-pressed="true"]').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await card(), '2');
+  assert.equal(await page.locator(dot(2)).evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press('ArrowRight'); assert.equal(await card(), '0', 'right arrow wraps to the first dot');
+  await page.keyboard.press('ArrowLeft'); assert.equal(await card(), '2', 'left arrow wraps to the last dot');
   await page.keyboard.press('Home'); assert.equal(await card(), '0');
+  await page.keyboard.press('End'); assert.equal(await card(), '2');
+  await page.keyboard.press('Home'); assert.equal(await card(), '0');
+  assert.equal(await page.locator(dot(0)).evaluate(el => el === document.activeElement), true);
   await page.locator('#search-input').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await card(), '0', 'typing/search keys are not carousel shortcuts');
   await page.click('#timezone-btn'); assert.equal(await card(), '0');
   await page.waitForSelector('#timezone-selector:not(.hidden)');
@@ -102,10 +114,10 @@ try {
   await page.locator('#clock-deck').scrollIntoViewIfNeeded();
   // The shell deliberately disables selection. Make this real text selectable
   // for the guard fixture, and prove the browser actually has a nonempty range.
-  const previousStyle = await page.locator('#welcome-text').getAttribute('style');
+  const previousStyle = await page.locator('#time').getAttribute('style');
   try {
     const selected = await page.evaluate(() => {
-      const text = document.getElementById('welcome-text');
+      const text = document.getElementById('time');
       text.style.userSelect = 'text';
       const range = document.createRange(); range.selectNodeContents(text);
       const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
@@ -120,7 +132,7 @@ try {
   } finally {
     await page.evaluate((style) => {
       getSelection().removeAllRanges();
-      const text = document.getElementById('welcome-text');
+      const text = document.getElementById('time');
       if (style === null) text.removeAttribute('style'); else text.setAttribute('style', style);
     }, previousStyle);
   }
@@ -143,12 +155,22 @@ try {
   const fresh = await context.newPage(); await fresh.goto(url); await fresh.waitForFunction(() => OpenTabClockDeck && document.getElementById('time').textContent);
   assert.equal(await fresh.locator('#clock-focus-time').textContent(), '25:00', 'a new tab does not inherit another tab timer'); await fresh.close();
 
-  await reset(); await select(2); await page.click('#clock-todo-open'); await page.waitForSelector('#todo-widget:not(.hidden)');
+  for (const languagePreference of ['en', 'zh-CN']) {
+    await reset({ languagePreference, todos: [] }); await select(2);
+    assert.equal(await page.locator('#clock-todo-complete').isVisible(), false, 'empty task cards cannot complete a nonexistent task');
+    assert.equal(await page.locator('#clock-todo-count').textContent(), '', 'empty task cards contain no secondary description');
+    assert.equal(await page.locator('#clock-todo-open').isVisible(), true, 'the real task-list entry remains reachable when empty');
+  }
+
+  await reset(); await select(2);
+  assert.notEqual(await page.locator('#clock-todo-open').evaluate(el => getComputedStyle(el).position), 'fixed', 'the task-list entry belongs to its card, not the floating corner');
+  await page.click('#clock-todo-open'); await page.waitForSelector('#todo-widget:not(.hidden)');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'todo-input');
   await page.click('#todo-collapse-btn');
   await page.evaluate(() => OpenTabLayout.setTodoButtonVisible(false));
   await page.waitForFunction(() => document.getElementById('clock-todo-open').hidden);
-  assert.equal(await page.locator('#todo-toggle-btn').isVisible(), false);
+  assert.equal(await page.locator('#todo-toggle-btn').count(), 0, 'the floating to-do entry has been removed');
+  assert.equal(await page.locator('#zen-toggle-btn').isVisible(), true, 'to-do visibility never hides Zen');
   await page.click('#clock-todo-complete');
   await waitForAsync(page, async () => (await chrome.storage.local.get('todos')).todos.find(todo => todo.id === 'first').done === true);
   assert.equal(await page.locator('#clock-todo-text').innerText(), fixture.todos[1].text);

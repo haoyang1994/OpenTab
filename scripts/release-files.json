@@ -117,5 +117,7 @@
   "vendor/xterm/xterm.css",
   "vendor/xterm/xterm.js",
   "weather.js",
-  "workspace-persistence.js"
+  "workspace-persistence.js",
+  "zen-mode.css",
+  "zen-mode.js"
 ]

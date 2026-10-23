@@ -1,0 +1,22 @@
+#zen-mode[hidden] { display: none !important; }
+#zen-mode {
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center;
+  background: var(--bg-base); color: var(--text-primary);
+  font-family: var(--font-ui); overflow: auto;
+}
+body.zen-mode { overflow: hidden; }
+body.zen-mode > :not(#zen-mode):not(script) { visibility: hidden !important; pointer-events: none !important; }
+body.zen-mode #homepage, body.zen-mode #homepage * { animation-play-state: paused !important; }
+.zen-center { text-align: center; padding: 64px 16px; }
+#zen-time { font-size: clamp(76px, 18vw, 208px); font-weight: 300; line-height: 1.1; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
+.zen-controls { display: flex; justify-content: center; gap: 20px; margin-top: 36px; }
+#zen-mode button { display: grid; place-items: center; width: 48px; height: 48px; padding: 12px; border: 0; border-radius: 50%; color: var(--text-secondary); background: transparent; cursor: pointer; }
+#zen-mode button:hover { color: var(--text-primary); background: var(--control-hover); }
+#zen-mode button:disabled { opacity: .28; cursor: default; background: transparent; }
+#zen-mode button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 5px; }
+#zen-mode svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+#zen-exit { position: absolute; top: 20px; left: 20px; }
+#zen-mode .zen-pause, #zen-mode[data-phase="running"] .zen-play { display: none; }
+#zen-mode[data-phase="running"] .zen-pause { display: block; }
+@media (max-width: 480px) { #zen-exit { top: 14px; left: 14px; } .zen-controls { margin-top: 28px; } }

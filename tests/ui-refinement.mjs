@@ -26,21 +26,26 @@ export async function runUiRefinement(page, worker, artifacts) {
   }
   await store({ todos, developerToolsEnabled: false, todoPanelOpen: false, todoButtonVisible: true, languagePreference: 'zh-CN', themeMode: 'light' });
   await page.reload(); await ready();
-  await page.click('#todo-toggle-btn'); await page.fill('#todo-input', 'Unfinished draft stays');
+  await page.click('[data-clock-card="2"]');
+  await page.click('#clock-todo-open'); await page.fill('#todo-input', 'Unfinished draft stays');
   await settings(); await visibility(false);
-  assert.equal(await page.locator('#todo-toggle-btn').isVisible(), false);
+  assert.equal(await page.locator('#clock-todo-open').isVisible(), false);
+  assert.equal(await page.locator('#zen-toggle-btn').isVisible(), true, 'Zen is independent of to-do visibility');
   assert.equal(await page.locator('#todo-widget').isVisible(), false);
   assert.equal(await page.inputValue('#todo-input'), 'Unfinished draft stays');
   assert.deepEqual(await worker.evaluate(async () => (await chrome.storage.local.get('todos')).todos), todos);
-  assert.notEqual(await page.evaluate(() => document.activeElement.id), 'todo-toggle-btn');
+  assert.notEqual(await page.evaluate(() => document.activeElement.id), 'clock-todo-open');
   await closeSettings();
-  for (let i = 0; i < 18; i++) { await page.keyboard.press('Tab'); assert.notEqual(await page.evaluate(() => document.activeElement.id), 'todo-toggle-btn'); }
+  for (let i = 0; i < 18; i++) { await page.keyboard.press('Tab'); assert.notEqual(await page.evaluate(() => document.activeElement.id), 'clock-todo-open'); }
   await settings(); await visibility(true); await closeSettings();
-  await page.click('#todo-toggle-btn'); assert.equal(await page.inputValue('#todo-input'), 'Unfinished draft stays');
+  await page.click('[data-clock-card="2"]');
+  await page.click('#clock-todo-open'); assert.equal(await page.inputValue('#todo-input'), 'Unfinished draft stays');
   await settings(); await visibility(false); await closeSettings();
   await page.reload(); await ready('zh-CN', 'light', false);
   await page.waitForFunction(() => OpenTabLayout.get().todoButtonVisible === false);
-  assert.equal(await page.locator('#todo-toggle-btn').isVisible(), false, 'hidden preference survives reload');
+  await page.click('[data-clock-card="2"]');
+  assert.equal(await page.locator('#clock-todo-open').isVisible(), false, 'hidden preference survives reload on the actual task card');
+  assert.equal(await page.locator('#zen-toggle-btn').isVisible(), true);
   assert.deepEqual(await worker.evaluate(async () => (await chrome.storage.local.get('todos')).todos), todos);
   await settings();
   await page.click('.settings-reset-section[data-section="shortcuts"]');

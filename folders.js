@@ -92,6 +92,9 @@
   let activeRoot = null;
   let dialogResolver = null;
   let uiBound = false;
+  let groupPopRequest = null;
+  let groupMotionQuery = null;
+  const groupPopAnimations = new Set();
 
   function state() {
     return host.state;
@@ -907,12 +910,66 @@
     } finally { bulkMovePending = false; }
   }
 
+  function cancelGroupPop() {
+    for (const animation of groupPopAnimations) animation.cancel();
+    groupPopAnimations.clear();
+  }
+
+  function onGroupMotionChange(event) {
+    if (!event.matches) return;
+    groupPopRequest = null;
+    cancelGroupPop();
+  }
+
+  // Called only after the desktop's new nodes are mounted. A one-shot request,
+  // rather than a render/CSS class, keeps saves and unrelated refreshes still.
+  function animateGroupIcons(container) {
+    cancelGroupPop();
+    const request = groupPopRequest;
+    if (!request) return;
+    if (state().currentFolderId !== request.folderId) {
+      // A pending save may refresh the source before navigation commits.
+      if (state().currentFolderId !== request.sourceId || !sameView(request.view)) groupPopRequest = null;
+      return;
+    }
+    groupPopRequest = null;
+    const view = sceneView(), source = request.view;
+    const currentView = !source ? !view : view && source.sceneId === view.sceneId
+      && source.homeGroupId === view.homeGroupId
+      && (view.generation === source.generation || view.generation === source.generation + 1);
+    if (!currentView || !groupInView(request.folderId) || groupMotionQuery?.matches) return;
+    for (const node of container?.querySelectorAll('.icon-widget[data-id]') || []) {
+      if (typeof node.animate !== 'function') continue;
+      try {
+        // Individual transforms compose with hover/drag transforms. No layout,
+        // stagger, exit delay, retained styles or pointer/focus blocking.
+        const animation = node.animate([
+          { opacity: 0.25, scale: '0.96', translate: '0 4px' },
+          { opacity: 1, scale: '1', translate: '0 0' }
+        ], { id: 'opentab-group-pop', duration: 160, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'none' });
+        groupPopAnimations.add(animation);
+        animation.onfinish = animation.oncancel = () => groupPopAnimations.delete(animation);
+      } catch (_) { /* Motion is optional and cannot break group navigation. */ }
+    }
+  }
+
   function selectGroup(folderId, animated) {
     if (!state().folders.some((folder) => folder.id === folderId) || (host.getSceneView && !groupInView(folderId))) return false;
     const already = state().currentFolderId === folderId;
     closeOverlay(true);
     if (already) return true;
-    return host.selectFolder(folderId, animated);
+    cancelGroupPop();
+    const request = animated === true && !groupMotionQuery?.matches
+      ? { folderId, sourceId: state().currentFolderId, view: sceneView() } : null;
+    groupPopRequest = request;
+    const clearRequest = () => { if (groupPopRequest === request) groupPopRequest = null; };
+    try {
+      // Never wait for the legacy exit/stagger before accepting the next group.
+      const result = host.selectFolder(folderId, false);
+      if (result && typeof result.then === 'function') result.then(clearRequest, clearRequest);
+      else clearRequest();
+      return result;
+    } catch (error) { clearRequest(); throw error; }
   }
 
   function groupCount(folderId) {
@@ -1157,6 +1214,7 @@
       });
     }
     document.addEventListener('keydown', (event) => {
+      if (document.body?.classList.contains('zen-mode')) return;
       if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (event.target.closest('input, textarea, [contenteditable]')) return;
       const match = event.code && event.code.match(/^Digit([1-9])$/);
@@ -1170,6 +1228,11 @@
   }
 
   function init(nextHost) {
+    groupPopRequest = null;
+    cancelGroupPop();
+    groupMotionQuery?.removeEventListener?.('change', onGroupMotionChange);
+    groupMotionQuery = global.matchMedia?.('(prefers-reduced-motion: reduce)') || null;
+    groupMotionQuery?.addEventListener?.('change', onGroupMotionChange);
     host = nextHost;
     bindUi();
     global.OpenTabSiteSelection?.init(nextHost);
@@ -1222,6 +1285,7 @@
     captureBulkDestination,
     moveSites,
     selectGroup,
+    animateGroupIcons,
     init
   };
 })(window);

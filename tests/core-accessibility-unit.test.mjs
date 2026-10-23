@@ -146,8 +146,11 @@ for (const selector of ['.settings-panel.hidden', '#todo-widget.hidden', '.timez
     assert.equal(press('Enter', { [modifier]: true }), true);
     assert.deepEqual(effects, [['submit', true]], `${modifier}+Enter still opens a new tab`);
   }
-  assert.match(html, /id="search-input"[^>]*data-i18n-title="[^"]*Alt\+↓[^"]*Tab[^"]*"/);
-  assert.match(html, /id="search-input"[^>]*aria-keyshortcuts="Alt\+ArrowDown Alt\+ArrowUp"/);
+  const searchInput = html.match(/<input\b[^>]*id="search-input"[^>]*>/)?.[0];
+  assert.ok(searchInput, 'the native search input remains available');
+  assert.doesNotMatch(searchInput, /(?:^|\s)(?:data-i18n-)?title=/, 'search has no instructional tooltip');
+  assert.match(searchInput, /aria-label="搜索、网址或快捷方式名称"/, 'search retains a concise accessible name');
+  assert.match(searchInput, /aria-keyshortcuts="Alt\+ArrowDown Alt\+ArrowUp"/);
 }
 
 console.log('Core accessibility unit tests passed');

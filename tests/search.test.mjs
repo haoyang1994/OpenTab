@@ -190,7 +190,7 @@ async function runSearchE2E() {
     await page.click('#close-settings');
     await page.waitForFunction(() => document.getElementById('settings-panel').classList.contains('hidden'));
 
-    await page.click('#search-engine-trigger');
+    await page.click('#search-engine-panel .engine-btn.active');
     await page.click('#search-custom-engines .engine-btn');
     await page.waitForFunction(() => window.OpenTabSearch.getState().searchEngine.startsWith('cse-'));
     await page.fill('#search-input', 'hello world');
@@ -247,13 +247,15 @@ async function runSearchE2E() {
     await page.click('#close-settings');
     await page.waitForFunction(() => document.getElementById('settings-panel').classList.contains('hidden'));
 
-    await page.click('#todo-toggle-btn');
+    await page.click('[data-clock-card="2"]');
+    await page.click('#clock-todo-open');
     await page.waitForSelector('#todo-widget:not(.hidden)');
     await page.locator('#todo-input').focus();
     await page.keyboard.type('todo-text');
     assert.equal(await page.locator('#todo-input').inputValue(), 'todo-text', 'AC3 other inputs keep their keystrokes');
     assert.equal((await page.locator('#search-input').inputValue()).includes('todo-text'), false);
     await page.click('#todo-collapse-btn');
+    await page.click('[data-clock-card="0"]');
 
     await page.fill('#search-input', '');
     await page.locator('#time').click();
@@ -445,8 +447,7 @@ async function runSearchE2E() {
     await installNavHook(page);
     await page.waitForFunction(() => window.OpenTabSearch.resolve('MyGitHub').type === 'shortcut');
     await page.fill('#search-input', 'mygithub');
-    await page.waitForSelector('#search-hint[data-match="shortcut"]', { timeout: 3000 });
-    assert.match(await page.locator('#search-hint').textContent() || '', /MyGitHub/);
+    assert.equal(await page.locator('#search-hint[data-match="shortcut"]').count(), 0, 'shortcut matching needs no instructional hint');
     await page.locator('#search-input').press('Enter');
     log = await navLog(page);
     assert.equal(log.at(-1)?.url, 'https://github.com/haoyang1994/OpenTab', 'AC5 matching shortcut name opens the shortcut');

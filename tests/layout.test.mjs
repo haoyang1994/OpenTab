@@ -176,13 +176,13 @@ console.log('layout unit tests passed');
   const oldDocument = global.document, oldChrome = global.chrome;
   const classes = new Set(), panelClasses = new Set();
   const input = { checked: true, disabled: false, focus() { global.document.activeElement = this; } };
-  const toggle = { focus() { global.document.activeElement = this; } };
+  const opener = { focus() { global.document.activeElement = this; } };
   const draft = { value: 'Keep unfinished draft' };
   const panel = { classList: { contains: x => panelClasses.has(x) }, contains: el => el === draft };
   const status = { textContent: '' };
   let closed = 0, callback, written;
-  const elements = { 'todo-button-visible': input, 'todo-toggle-btn': toggle, 'todo-widget': panel, 'todo-visibility-status': status,
-    'todo-collapse-btn': { click() { closed++; panelClasses.add('hidden'); toggle.focus(); } } };
+  const elements = { 'todo-button-visible': input, 'clock-todo-open': opener, 'todo-widget': panel, 'todo-visibility-status': status,
+    'todo-collapse-btn': { click() { closed++; panelClasses.add('hidden'); opener.focus(); } } };
   global.document = { activeElement: input, getElementById: id => elements[id], querySelectorAll: () => [], documentElement: { style: { setProperty() {} } }, body: { classList: { toggle(key, value) { if (value) classes.add(key); else classes.delete(key); } } } };
   global.chrome = { runtime: {}, storage: { local: { set(patch, done) { written = patch; callback = done; } } } };
   try {
@@ -201,7 +201,9 @@ console.log('layout unit tests passed');
     assert.equal(input.checked, false); assert.match(status.textContent, /保存失败/);
     const enable = OpenTabLayout.setTodoButtonVisible(true); callback(); assert.equal(await enable, true);
     assert.equal(classes.has('hide-todo-entry'), false); assert.equal(draft.value, 'Keep unfinished draft');
+    opener.focus();
     OpenTabLayout.apply({ layoutIconSize: 80, todoButtonVisible: false });
+    assert.equal(global.document.activeElement, input, 'hiding the focused card opener restores a visible settings control');
     assert.equal(OpenTabLayout.loadFromStorage({ todoButtonVisible: false }).todoButtonVisible, false, 'explicit stored hidden choice remains');
     OpenTabLayout.apply({ layoutIconSize: 80, todoButtonVisible: false });
     const absent = OpenTabLayout.loadFromStorage({});

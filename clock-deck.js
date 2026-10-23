@@ -198,6 +198,7 @@
     const nav = $('clock-deck-nav'), dots = [...nav.querySelectorAll('[data-clock-card]')];
     const names = ['时间', '专注', '下一件小事'];
     const status = $('clock-deck-status'), focusStatus = $('clock-focus-status');
+    const focusListeners = new Set();
     let index = 0, gesture = null, timerId, shown = null, lastPhase = '', disposed = false;
     let storage;
     try { storage = root.sessionStorage; } catch (_) { /* local-memory fallback */ }
@@ -221,7 +222,6 @@
       });
       dots.forEach((dot, i) => dot.setAttribute('aria-pressed', String(i === index)));
       element.dataset.card = String(index);
-      $('clock-deck-label').textContent = t(names[index]);
       if (focusWasInPanel) dots[index].focus();
       if (announce) status.textContent = t('{name}，第 {index} 张，共 {total} 张', { name: t(names[index]), index: index + 1, total: panels.length });
     }
@@ -237,9 +237,9 @@
     function refreshTodos() {
       if (!action.pending || !shown || !sameView(adapter, shown.view) || !sceneActive(adapter.state, shown.view)) shown = action.target();
       const count = visibleTodos(adapter).filter(item => !item.done).length;
-      $('clock-todo-text').textContent = shown ? shown.text : t('暂时没有未完成待办，留一点空白也很好。');
+      $('clock-todo-text').textContent = shown ? shown.text : t('暂无未完成待办');
       $('clock-todo-text').title = shown?.text || '';
-      $('clock-todo-count').textContent = shown ? t('还有 {count} 件未完成', { count }) : t('一件一件，慢慢来');
+      $('clock-todo-count').textContent = shown ? t('还有 {count} 件未完成', { count }) : '';
       const complete = $('clock-todo-complete');
       complete.hidden = !shown;
       complete.disabled = action.pending || !shown;
@@ -255,10 +255,11 @@
       $('clock-focus-toggle').textContent = t(value.phase === 'running' ? '暂停' : value.phase === 'paused' ? '继续专注' : value.phase === 'done' ? '再专注一次' : '开始专注');
       $('clock-focus-reset').disabled = value.phase === 'idle';
       $('clock-focus-progress').value = DURATION - value.remaining;
-      $('clock-focus-note').textContent = t(value.persistent ? '仅此标签页；刷新继续，关闭结束。' : '暂存不可用；刷新将重置计时。');
+      $('clock-focus-note').textContent = value.persistent ? '' : t('暂存不可用；刷新将重置计时。');
+      focusListeners.forEach(listener => listener(value));
       if (lastPhase !== value.phase) {
         lastPhase = value.phase;
-        focusStatus.textContent = t(value.phase === 'running' ? '专注中，切换卡片不会暂停。' : value.phase === 'paused' ? '已暂停，准备好再继续。' : value.phase === 'done' ? '这一轮完成了，休息一下吧。' : '给眼前的一件事，留 25 分钟。');
+        focusStatus.textContent = value.phase === 'idle' ? '' : t(value.phase === 'running' ? '专注中' : value.phase === 'paused' ? '已暂停' : '已完成');
       }
     }
     function tick() {
@@ -268,8 +269,6 @@
       timerId = setTimeout(tick, 1000);
     }
     dots.forEach((dot, i) => dot.addEventListener('click', () => select(i)));
-    $('clock-deck-prev').addEventListener('click', () => select(index - 1));
-    $('clock-deck-next').addEventListener('click', () => select(index + 1));
     $('clock-deck-peek').addEventListener('click', () => select(index + 1));
     nav.addEventListener('keydown', event => {
       if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || !event.target.closest('button') || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -309,7 +308,7 @@
       if (restore && index === 2 && !minimal() && (document.activeElement === document.body || document.activeElement === $('clock-todo-complete'))) {
         (!$('clock-todo-complete').hidden ? $('clock-todo-complete') : canOpenList() ? $('clock-todo-open') : dots[index]).focus();
       }
-      $('clock-todo-status').textContent = t(outcome === 'saved' ? '已完成，接着做下一件小事。' : outcome === 'stale' ? '待办已更新，请确认后再试。' : '未能保存，待办已恢复，请重试。');
+      $('clock-todo-status').textContent = t(outcome === 'saved' ? '已完成' : outcome === 'stale' ? '待办已更新，请确认后再试。' : '未能保存，待办已恢复，请重试。');
     });
     $('clock-todo-open').addEventListener('click', () => { if (canOpenList()) adapter.openTodoList($('clock-todo-open')); });
     const observer = new MutationObserver(syncMode);
@@ -319,7 +318,12 @@
     root.addEventListener('pagehide', () => { clearTimeout(timerId); gesture = null; });
     root.addEventListener('beforeunload', () => { disposed = true; clearTimeout(timerId); observer.disconnect(); });
     select(0, false); syncMode(); tick();
-    return { refreshTodos };
+    return { refreshTodos, focus: {
+      snapshot: () => timer.snapshot(),
+      toggle() { timer.toggle(); tick(); },
+      reset() { timer.reset(); tick(); },
+      subscribe(listener) { focusListeners.add(listener); listener(timer.snapshot()); return () => focusListeners.delete(listener); }
+    } };
   }
   function init(adapter) {
     if (host) return;
@@ -327,5 +331,5 @@
     // Optional card enhancement must never prevent the existing list loading.
     try { deck = createDeck(adapter); } catch (error) { root.console?.warn('Clock cards unavailable', error); }
   }
-  root.OpenTabClockDeck = { init, renderTodos, createFocusTimer, formatRemaining, swipeDirection, createTodoAction, createTodoRecord, visibleTodos, renderTodoList, DURATION, FOCUS_KEY };
+  root.OpenTabClockDeck = { getFocus: () => deck?.focus, init, renderTodos, createFocusTimer, formatRemaining, swipeDirection, createTodoAction, createTodoRecord, visibleTodos, renderTodoList, DURATION, FOCUS_KEY };
 })(globalThis);

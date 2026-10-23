@@ -172,7 +172,11 @@ try {
   await page.evaluate(async () => { await chrome.storage.local.set({ languagePreference: 'en', themeMode: 'light', icons: [], todoPanelOpen: false }); });
   await page.reload(); await ready();
   await sweepClosed();
-  for (const [button, panel] of [['#settings-btn', '#settings-panel'], ['#todo-toggle-btn', '#todo-widget'], ['#timezone-btn', '#timezone-selector']]) {
+  for (const [button, panel, card] of [['#settings-btn', '#settings-panel', null], ['#clock-todo-open', '#todo-widget', 2], ['#timezone-btn', '#timezone-selector', 0]]) {
+    if (card !== null) {
+      await activate(`[data-clock-card="${card}"]`);
+      assert.equal(await page.locator('#clock-deck').getAttribute('data-card'), String(card));
+    }
     await activate(button); await page.waitForSelector(`${panel}:not(.hidden)`);
     await page.keyboard.press('Escape'); await closed(panel, button);
   }

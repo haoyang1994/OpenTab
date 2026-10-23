@@ -164,7 +164,7 @@
       const panel = $('todo-widget');
       if (!s.todoButtonVisible && panel && !panel.classList.contains('hidden')) $('todo-collapse-btn')?.click();
       document.body.classList.toggle('hide-todo-entry', !s.todoButtonVisible);
-      if (!s.todoButtonVisible && (focused === $('todo-toggle-btn') || panel?.contains(focused) || document.activeElement === $('todo-toggle-btn') || panel?.contains(document.activeElement))) $('todo-button-visible')?.focus();
+      if (!s.todoButtonVisible && (focused === $('clock-todo-open') || panel?.contains(focused) || document.activeElement === $('clock-todo-open') || panel?.contains(document.activeElement))) $('todo-button-visible')?.focus();
       else if (focused && document.activeElement !== focused && focused.isConnected) focused.focus();
       document.body.classList.toggle('layout-hide-names', !s.layoutShowNames);
       document.body.classList.toggle('layout-fixed-cols', s.layoutColumns >= 4);

@@ -4,10 +4,15 @@ import vm from 'node:vm';
 
 const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 const home = read('home.js');
-const calendar = home.slice(home.indexOf('  function formatLunarKey'), home.indexOf("  document.addEventListener('contextmenu'"));
-const constants = home.slice(home.indexOf('  const SOLAR_TERM_NAMES'), home.indexOf('  const WELCOME_TIME_POOL'));
-const declarations = home.slice(home.indexOf('  let calendarPicker'), home.indexOf('  let todoAddPending'));
-const dateHandler = home.slice(home.indexOf("  elements.date.addEventListener('click'"), home.indexOf('  elements.todoToggleBtn.addEventListener'));
+function homeSection(start, end) {
+  const from = home.indexOf(start), to = home.indexOf(end, from);
+  assert.ok(from >= 0 && to > from, `calendar fixture requires live source boundaries: ${start} → ${end}`);
+  return home.slice(from, to);
+}
+const calendar = homeSection('  function formatLunarKey', "  document.addEventListener('contextmenu'");
+const constants = homeSection('  const SOLAR_TERM_NAMES', '  const elements =');
+const declarations = homeSection('  let calendarPicker', '  let todoAddPending');
+const dateHandler = homeSection("  elements.date.addEventListener('click'", '  elements.todoCollapseBtn.addEventListener');
 
 // Exercise the shipped Flatpickr implementation and actual home handlers, not a
 // replacement picker. This small DOM records work; it does not emulate layout,
@@ -196,7 +201,7 @@ for (const locale of ['en', 'zh-CN']) {
     $(id) { if (!controls.has(id)) controls.set(id, element()); return controls.get(id); },
     toggleTimezoneSelector(open) { assert.equal(open, false); }
   });
-  for (const id of ['clock-deck-label', 'clock-deck-peek', 'settings-btn']) h.context.$(id);
+  for (const id of ['clock-deck-peek', 'settings-btn']) h.context.$(id);
   h.context.adapter = vm.runInContext(`({ ${closeMethod} })`, h.context);
   vm.runInContext(methods, h.context);
   h.init(true);

@@ -190,5 +190,14 @@ OpenTabI18n.register({
   "删除搜索历史：{query}": "Delete search history: {query}",
   "无法删除搜索历史，请重试。": "Could not delete search history. Please try again.",
   "正在读取图片…": "Reading image…",
-  "节奏稳，结果自然会好。": "A steady pace brings results."
+  "节奏稳，结果自然会好。": "A steady pace brings results.",
+  "禅模式": "Zen mode",
+  "退出禅模式": "Exit Zen mode",
+  "暂无待办": "No tasks",
+  "暂无未完成待办": "No unfinished tasks",
+  "已保存本地图标": "Custom icon saved",
+  "添加待办": "Add task",
+  "专注中": "Focusing",
+  "已暂停": "Paused",
+  "已完成": "Completed"
 });

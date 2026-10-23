@@ -147,8 +147,7 @@
       mode.destination = destination ? api().captureBulkDestination(destination) : null;
       const label = destination ? destinationLabel(destination, { destinations: mode.destinations }) : '';
       byId('site-selection-preview').textContent = mode.destination
-        ? t('将 {count} 个网站移到「{path}」。', { count: mode.ids.size, path: label })
-          + (destination.sceneId ? ' ' + t('移动后仍停留在当前场景，可撤销。') : '') : '';
+        ? t('将 {count} 个网站移到「{path}」。', { count: mode.ids.size, path: label }) : '';
       byId('site-selection-confirm').disabled = !mode.destination || !mode.ids.size;
       byId('site-selection-error').textContent = mode.destination ? '' : t('网站或目标已变化。请取消并重新选择。');
     }

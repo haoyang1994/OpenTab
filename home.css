@@ -1189,7 +1189,7 @@ body.theme-light #icon-drop-indicator {
   to { transform: rotate(360deg); }
 }
 
-#todo-toggle-btn {
+#zen-toggle-btn {
   top: 20px;
   left: 20px;
   width: 44px;
@@ -2900,7 +2900,6 @@ body.minimal-mode #timezone-btn,
 body.minimal-mode #group-tabs-bar,
 body.minimal-mode #icons-container,
 body.minimal-mode #icons-empty-hint,
-body.minimal-mode #todo-toggle-btn,
 body.minimal-mode #refresh-bg-btn,
 body.minimal-mode #todo-widget {
   display: none !important;
@@ -3021,7 +3020,7 @@ body.minimal-mode #settings-btn:hover {
     font-size: 11.5px;
   }
 
-  #todo-toggle-btn {
+  #zen-toggle-btn {
     top: 14px;
     left: 14px;
   }
@@ -3272,7 +3271,7 @@ body.site-selection-active .folder-panel {
   background: var(--panel-bg-solid); backdrop-filter: none; -webkit-backdrop-filter: none;
 }
 
-body.hide-todo-entry #todo-toggle-btn, body.hide-todo-entry #todo-widget { display: none !important; }
+body.hide-todo-entry #todo-widget { display: none !important; }
 #todo-visibility-status:empty { display: none; }
 
 /* Layered slate surfaces: reference-driven refinement without changing theme preference. */

@@ -158,7 +158,7 @@ function domHarness({ brokenDeck = false, hiddenTodo = false } = {}) {
   for (const id of ['clock-todo-complete', 'clock-todo-open']) addButton(id, todo);
   addButton('clock-deck-peek', stage);
   const nav = add('clock-deck-nav', deck);
-  addButton('clock-deck-prev', nav); addButton('clock-deck-next', nav); addText('clock-deck-label', nav); addText('clock-deck-status', deck);
+  addText('clock-deck-status', deck);
   const dots = [0, 1, 2].map(index => { const dot = addButton(`dot-${index}`, nav); dot.setAttribute('data-clock-card', index); return dot; });
   addButton('settings-btn'); add('search-input', body, 'input');
   const elements = Object.fromEntries(['todoList', 'todoCount', 'todoEmpty', 'todoProgressBar'].map(key => [key, add(key)]));
@@ -187,15 +187,17 @@ function domHarness({ brokenDeck = false, hiddenTodo = false } = {}) {
   assert.equal(h.deck.dataset.card, '0'); assert.equal(h.clock.inert, false); assert.equal(h.focus.inert, true); assert.equal(h.todo.getAttribute('aria-hidden'), 'true');
   h.click(h.$('clock-deck-peek')); assert.equal(h.deck.dataset.card, '1'); assert.equal(h.clock.inert, true);
   h.click(h.$('clock-focus-toggle')); assert.equal(h.deck.dataset.card, '1'); assert.equal(h.$('clock-focus-toggle').textContent, '暂停');
-  h.click(h.$('clock-deck-next')); assert.equal(h.deck.dataset.card, '2');
-  h.click(h.$('clock-deck-next')); assert.equal(h.deck.dataset.card, '0');
+  h.click(h.dots[2]); assert.equal(h.deck.dataset.card, '2');
+  h.click(h.dots[0]); assert.equal(h.deck.dataset.card, '0');
   assert.equal(h.popoversClosed(), 3);
   h.fire(h.$('search-input'), 'keydown', { key: 'ArrowRight' }); assert.equal(h.deck.dataset.card, '0', 'outside keys never navigate cards');
-  assert.equal(h.fire(h.$('clock-deck-next'), 'keydown', { key: 'ArrowRight' }).defaultPrevented, true);
+  assert.equal(h.fire(h.dots[0], 'keydown', { key: 'ArrowRight' }).defaultPrevented, true);
   assert.equal(h.deck.dataset.card, '1'); assert.equal(h.document.activeElement, h.dots[1]);
   h.fire(h.dots[1], 'keydown', { key: 'End' }); assert.equal(h.deck.dataset.card, '2');
   h.fire(h.dots[2], 'keydown', { key: 'Home' }); assert.equal(h.deck.dataset.card, '0');
-  for (const extra of [{ isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }]) { h.fire(h.dots[0], 'keydown', { key: 'ArrowRight', ...extra }); assert.equal(h.deck.dataset.card, '0'); }
+  h.fire(h.dots[0], 'keydown', { key: 'ArrowLeft' }); assert.equal(h.deck.dataset.card, '2'); assert.equal(h.document.activeElement, h.dots[2]);
+  h.fire(h.dots[2], 'keydown', { key: 'ArrowRight' }); assert.equal(h.deck.dataset.card, '0'); assert.equal(h.document.activeElement, h.dots[0]);
+  for (const extra of [{ isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }, { altKey: true }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }]) { h.fire(h.dots[0], 'keydown', { key: 'ArrowRight', ...extra }); assert.equal(h.deck.dataset.card, '0'); }
   h.click(h.date); assert.equal(h.deck.dataset.card, '0', 'original clock face clicks are not used for navigation');
   for (const node of [h.date, h.timezone, h.day, h.weather, h.input, h.editable]) { h.swipe(node); assert.equal(h.deck.dataset.card, '0', `${node.id} gesture excluded`); }
   h.swipe(h.time, -47); assert.equal(h.deck.dataset.card, '0');
@@ -246,12 +248,15 @@ function domHarness({ brokenDeck = false, hiddenTodo = false } = {}) {
 {
   const h = domHarness({ hiddenTodo: true }); h.click(h.dots[2]);
   h.click(h.$('clock-todo-complete')); await h.settle(); h.click(h.$('clock-todo-complete')); await h.settle();
+  assert.equal(h.$('clock-todo-text').textContent, '暂无未完成待办', 'empty tasks use only the concise state');
   assert.equal(h.$('clock-todo-complete').hidden, true); assert.equal(h.document.activeElement, h.dots[2], 'empty state retains a visible focus target when list action is hidden');
 }
 {
   const h = domHarness({ brokenDeck: true }); assert.equal(h.elements.todoList.children.length, 2, 'optional deck failure does not prevent legacy list rendering');
 }
 const html = fs.readFileSync(new URL('../home.html', import.meta.url), 'utf8'), css = fs.readFileSync(new URL('../clock-deck.css', import.meta.url), 'utf8'), home = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');
+assert.doesNotMatch(html, /id="(?:clock-deck-prev|clock-deck-next|clock-deck-label|welcome-text|todo-toggle-btn)"/, 'removed descriptions and floating to-do entry do not return');
+assert.equal([...html.matchAll(/data-clock-card="[012]"/g)].length, 3, 'the clock has exactly three dot controls');
 assert.ok(html.indexOf('src="clock-deck.js"') < html.indexOf('src="home.js"'));
 assert.match(home, /openTodoList\(opener\).*setTodoPanelOpen\(true\).*rememberFocus\(opener\).*todoInput\.focus/);
 assert.match(css, /touch-action: pan-y/); assert.match(css, /prefers-reduced-motion: reduce/);

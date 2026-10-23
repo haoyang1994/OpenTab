@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="home.css">
   <link rel="stylesheet" href="engine-deck.css">
   <link rel="stylesheet" href="clock-deck.css">
+  <link rel="stylesheet" href="zen-mode.css">
   <link rel="stylesheet" href="scene-ui.css">
   <link rel="stylesheet" href="group-launch.css">
 </head>
@@ -58,8 +59,6 @@
           <div id="time"></div>
           <div id="ampm"></div>
         </div>
-
-        <div id="welcome-text" aria-live="polite"></div>
         <button id="date" class="date-btn" title="查看日历" data-i18n-title="查看日历"></button>
         <div id="weather-pill" class="weather-pill" title="天气" data-i18n-title="天气" hidden>
           <span id="weather-icon" class="weather-icon" aria-hidden="true">☁</span>
@@ -84,7 +83,7 @@
               <button id="clock-focus-toggle" class="clock-card-primary" type="button" data-i18n="开始专注">开始专注</button>
               <button id="clock-focus-reset" type="button" data-i18n="重置" disabled>重置</button>
             </div>
-            <p id="clock-focus-note" class="clock-card-note" data-i18n="仅此标签页；刷新继续，关闭结束。">仅此标签页；刷新继续，关闭结束。</p>
+            <p id="clock-focus-note" class="clock-card-note"></p>
           </section>
           <section id="clock-todo-card" class="clock-deck-card clock-extra-card" role="group" aria-labelledby="clock-todo-heading" aria-hidden="true" data-active="false" inert>
             <h2 id="clock-todo-heading" class="clock-card-eyebrow" data-i18n="下一件小事">下一件小事</h2>
@@ -97,30 +96,22 @@
             </div>
             <p id="clock-todo-status" class="clock-card-note" role="status"></p>
           </section>
-          <button id="clock-deck-peek" type="button" aria-label="切换到下一张卡片" data-i18n-aria-label="切换到下一张卡片" title="点击下层，切换卡片" data-i18n-title="点击下层，切换卡片"></button>
+          <button id="clock-deck-peek" type="button" aria-label="切换到下一张卡片" data-i18n-aria-label="切换到下一张卡片"></button>
         </div>
         <nav id="clock-deck-nav" aria-label="切换卡片" data-i18n-aria-label="切换卡片">
-          <button id="clock-deck-prev" type="button" aria-label="上一张卡片" data-i18n-aria-label="上一张卡片">‹</button>
           <div class="clock-deck-dots">
             <button type="button" data-clock-card="0" aria-controls="clock-widget" aria-label="时间" data-i18n-aria-label="时间" aria-pressed="true"><span></span></button>
             <button type="button" data-clock-card="1" aria-controls="clock-focus-card" aria-label="专注" data-i18n-aria-label="专注" aria-pressed="false"><span></span></button>
             <button type="button" data-clock-card="2" aria-controls="clock-todo-card" aria-label="下一件小事" data-i18n-aria-label="下一件小事" aria-pressed="false"><span></span></button>
           </div>
-          <span id="clock-deck-label" aria-hidden="true" data-i18n="时间">时间</span>
-          <button id="clock-deck-next" type="button" aria-label="下一张卡片" data-i18n-aria-label="下一张卡片">›</button>
         </nav>
-        <p class="clock-deck-hint" data-i18n="左右滑动，或点击下层">左右滑动，或点击下层</p>
         <div id="clock-deck-status" class="sr-only" role="status"></div>
       </section>
 
       <div id="search-widget-wrap">
         <div id="search-widget" class="glass-widget">
           <div id="search-engine-switch" class="engine-deck" aria-label="搜索引擎" data-i18n-aria-label="搜索引擎">
-            <button id="search-engine-trigger" class="engine-deck-trigger" type="button" aria-expanded="false" aria-controls="search-engine-panel" aria-label="搜索引擎">
-              <span class="engine-deck-front" aria-hidden="true"><span class="engine-deck-icon">G</span></span>
-              <svg class="engine-deck-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
-            </button>
-            <div id="search-engine-panel" class="engine-deck-panel" role="group" aria-label="搜索引擎" data-i18n-aria-label="搜索引擎" aria-hidden="true" inert>
+            <div id="search-engine-panel" class="engine-deck-rail" role="group" aria-label="搜索引擎" data-i18n-aria-label="搜索引擎">
               <button class="engine-btn active" data-engine="google" type="button" title="Google" aria-label="Google">
                 <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                   <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.56-.2-2.3H12v4.36h6.45a5.51 5.51 0 0 1-2.4 3.62v3h3.88c2.27-2.08 3.56-5.16 3.56-8.68z"/>
@@ -154,8 +145,7 @@
               <span id="search-custom-engines" class="search-custom-engines"></span>
             </div>
           </div>
-          <input id="search-input" type="text" title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" data-i18n-title="搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点" aria-keyshortcuts="Alt+ArrowDown Alt+ArrowUp" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-haspopup="grid" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
-          <kbd id="search-shortcut-hint" class="search-shortcut-hint" title="快捷入口" data-i18n-title="快捷入口" aria-hidden="true"></kbd>
+          <input id="search-input" type="text" aria-label="搜索、网址或快捷方式名称" data-i18n-aria-label="搜索、网址或快捷方式名称" aria-keyshortcuts="Alt+ArrowDown Alt+ArrowUp" placeholder="搜索、网址或快捷方式名称" data-i18n-placeholder="搜索、网址或快捷方式名称" autocomplete="off" spellcheck="false" role="combobox" aria-haspopup="grid" aria-autocomplete="list" aria-controls="search-history" aria-expanded="false">
         </div>
         <p id="search-hint" class="search-hint hidden" role="status" aria-live="polite"></p>
         <div id="search-history" class="search-history hidden" role="grid"></div>
@@ -164,7 +154,7 @@
       <aside id="todo-widget" class="glass-widget hidden">
         <button id="todo-collapse-btn" type="button" title="关闭待办" data-i18n-title="关闭待办" aria-label="关闭待办" data-i18n-aria-label="关闭待办">×</button>
         <div class="todo-input-row">
-          <input id="todo-input" type="text" placeholder="输入待办后回车" data-i18n-placeholder="输入待办后回车">
+          <input id="todo-input" type="text" placeholder="添加待办" data-i18n-placeholder="添加待办">
           <button id="todo-add-btn" type="button" title="添加待办" data-i18n-title="添加待办" aria-label="添加待办" data-i18n-aria-label="添加待办">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 5v14M5 12h14"></path>
@@ -177,7 +167,7 @@
             <div id="todo-progress-bar"></div>
           </div>
         </div>
-        <p id="todo-empty" class="todo-empty hidden" data-i18n="当前没有待办，今天从一件小事开始。">当前没有待办，今天从一件小事开始。</p>
+        <p id="todo-empty" class="todo-empty hidden" data-i18n="暂无待办">暂无待办</p>
         <div id="todo-list"></div>
       </aside>
 
@@ -190,15 +180,12 @@
       </div>
       <div id="site-selection-toolbar" class="site-selection-toolbar" role="region" aria-label="选择网站" data-i18n-aria-label="选择网站" hidden></div>
       <div id="icons-container"></div>
-      <div id="icons-empty-hint" class="icons-empty-hint hidden"><p data-i18n="点击 + 添加常用网站，或在空白处右键">点击 + 添加常用网站，或在空白处右键</p><button id="empty-paste-sites" class="site-list-entry" type="button" data-i18n="粘贴网址，批量添加">粘贴网址，批量添加</button></div>
+      <div id="icons-empty-hint" class="icons-empty-hint hidden"><button id="empty-paste-sites" class="site-list-entry" type="button" data-i18n="粘贴网址，批量添加">粘贴网址，批量添加</button></div>
       <div id="drag-live" class="sr-only" aria-live="polite"></div>
     </div>
 
-    <button id="todo-toggle-btn" class="floating-btn" title="待办" data-i18n-title="待办" aria-label="待办" data-i18n-aria-label="待办">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M9 11l3 3L22 4"></path>
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-      </svg>
+    <button id="zen-toggle-btn" class="floating-btn" type="button" title="禅模式" data-i18n-title="禅模式" aria-label="禅模式" data-i18n-aria-label="禅模式" aria-controls="zen-mode" aria-expanded="false">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M19.8 8.2a8.5 8.5 0 1 0 .6 6.2M18 4.5c1.3.8 2.3 1.9 3 3.2"/></svg>
     </button>
 
     <button id="refresh-bg-btn" class="floating-btn" title="切换 Bing 壁纸" data-i18n-title="切换 Bing 壁纸">
@@ -238,17 +225,15 @@
           <div class="form-group">
             <label for="icon-url" data-i18n="网址">网址</label>
             <input type="url" id="icon-url" placeholder="https://example.com">
-            <p class="form-hint" data-i18n="会自动从网址获取站点 icon。">会自动从网址获取站点 icon。</p>
           </div>
           <div class="form-group">
             <label for="icon-custom-url" data-i18n="自定义图标 URL（可选）">自定义图标 URL（可选）</label>
             <input type="url" id="icon-custom-url" placeholder="https://example.com/logo.png">
-            <p class="form-hint" data-i18n="填写后优先使用这个图标，不填则自动探测。">填写后优先使用这个图标，不填则自动探测。</p>
           </div>
           <div class="form-group">
             <label for="icon-file" data-i18n="本地图标上传（可选）">本地图标上传（可选）</label>
             <input type="file" id="icon-file" accept="image/*">
-            <p class="form-hint" id="icon-upload-status" role="status" aria-live="polite" data-i18n="支持 PNG / JPG / SVG / WebP。">支持 PNG / JPG / SVG / WebP。</p>
+            <p class="form-hint" id="icon-upload-status" role="status" aria-live="polite"></p>
           </div>
         </div>
 
@@ -496,7 +481,6 @@
             <button class="tab-btn" data-type="image" type="button" data-i18n="自定义图片 URL">自定义图片 URL</button>
           </div>
           <div id="bing-section" class="bg-section active">
-            <p class="hint-text" data-i18n="点击右下角刷新按钮，可切换 Bing 当日与历史壁纸。">点击右下角刷新按钮，可切换 Bing 当日与历史壁纸。</p>
           </div>
           <div id="gradient-section" class="bg-section">
             <div id="background-presets" class="preset-grid">
@@ -692,7 +676,7 @@
               <button id="backup-restore-snapshot-btn" class="btn-small ghost" type="button" data-i18n="恢复最近快照">恢复最近快照</button>
             </div>
           </div>
-          <p id="backup-status" class="backup-status" data-i18n="可导出 JSON 备份，或导入历史备份恢复。">可导出 JSON 备份，或导入历史备份恢复。</p>
+          <p id="backup-status" class="backup-status"></p>
           <input id="backup-import-file" type="file" accept="application/json,.json" hidden>
         </div>
 
@@ -756,13 +740,12 @@
             <label for="developer-tools-enabled" data-i18n="显示 SSH / JSON 入口">显示 SSH / JSON 入口</label>
             <input type="checkbox" id="developer-tools-enabled">
           </div>
-          <p class="form-hint" data-i18n="默认隐藏添加快捷方式里的 SSH 链接和本地 JSON 工具。已经在用这些快捷方式的安装会自动保持开启。">默认隐藏添加快捷方式里的 SSH 链接和本地 JSON 工具。已经在用这些快捷方式的安装会自动保持开启。</p>
         </div>
 
         <div class="setting-section" id="settings-section-about" data-settings-section="about" data-settings-search="about version license apache github 关于 版本 许可证">
           <h3 data-i18n="关于">关于</h3>
           <p class="about-line">OpenTab <span id="about-version"></span></p>
-          <p class="form-hint" data-i18n="开源、免费，无广告。你的新标签页，由你做主。Apache License 2.0。">开源、免费，无广告。你的新标签页，由你做主。Apache License 2.0。</p>
+          <p class="form-hint">Apache License 2.0</p>
           <p class="form-hint"><a id="about-github" href="https://github.com/haoyang1994/OpenTab" target="_blank" rel="noopener noreferrer" data-i18n="GitHub 仓库">GitHub 仓库</a></p>
         </div>
           </div>
@@ -790,10 +773,10 @@
       </div>
       <div class="command-palette-scroll">
         <div id="command-palette-results" role="listbox" aria-label="快捷入口" data-i18n-aria-label="快捷入口"></div>
-        <div id="command-palette-empty" class="command-palette-empty hidden"><p data-i18n="没有找到匹配入口">没有找到匹配入口</p><span data-i18n="试试网站名称、域名或分组">试试网站名称、域名或分组</span></div>
+        <div id="command-palette-empty" class="command-palette-empty hidden"><p data-i18n="没有找到匹配入口">没有找到匹配入口</p></div>
       </div>
       <div id="command-palette-status" class="sr-only" role="status" aria-live="polite"></div>
-      <footer class="command-palette-footer"><span><kbd>↑</kbd> <kbd>↓</kbd> <span data-i18n="选择">选择</span></span><span><kbd>Enter</kbd> <span data-i18n="打开">打开</span></span><span><kbd>Esc</kbd> <span data-i18n="关闭">关闭</span></span></footer>
+
     </section>
   </div>
 
@@ -814,6 +797,25 @@
       <button id="group-launch-confirm" type="button"></button>
     </div>
   </dialog>
+
+  <section id="zen-mode" role="dialog" aria-modal="true" aria-label="禅模式" data-i18n-aria-label="禅模式" hidden>
+    <button id="zen-exit" type="button" aria-label="退出禅模式" data-i18n-aria-label="退出禅模式">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+    </button>
+    <div class="zen-center">
+      <div id="zen-time" role="timer" aria-live="off">25:00</div>
+      <div class="zen-controls">
+        <button id="zen-focus-toggle" type="button" aria-label="开始专注">
+          <svg class="zen-play" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z"/></svg>
+          <svg class="zen-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M16 5v14"/></svg>
+        </button>
+        <button id="zen-focus-reset" type="button" aria-label="重置" data-i18n-aria-label="重置" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="zen-status" class="sr-only" role="status" aria-live="polite"></div>
+  </section>
 
   <script src="vendor/flatpickr/flatpickr.min.js"></script>
   <script src="vendor/flatpickr/l10n/zh.js"></script>
@@ -838,6 +840,7 @@
   <script src="lib/group-launch.js"></script>
   <script src="group-launch.js"></script>
   <script src="clock-deck.js"></script>
+  <script src="zen-mode.js"></script>
   <script src="scene-workspace.js"></script>
   <script src="scene-controller.js"></script>
   <script src="scene-ui.js"></script>

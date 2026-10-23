@@ -7,20 +7,15 @@ const css = fs.readFileSync(new URL('../engine-deck.css', import.meta.url), 'utf
 const html = fs.readFileSync(new URL('../home.html', import.meta.url), 'utf8');
 assert.ok(html.indexOf('lib/search-engine-deck.js') < html.indexOf('src="search.js"'), 'controller loads before search');
 assert.match(html, /href="engine-deck\.css"/);
-assert.match(html, /id="search-engine-trigger"[^>]*type="button"[^>]*aria-expanded="false"[^>]*aria-controls="search-engine-panel"/);
-assert.match(html, /id="search-engine-panel"[^>]*aria-hidden="true" inert/);
-assert.match(css, /visibility: hidden/);
-assert.match(css, /visibility 0s 260ms/);
+assert.doesNotMatch(html, /id="search-engine-trigger"/, 'there is no cloned-icon disclosure');
+assert.match(html, /id="search-engine-panel" class="engine-deck-rail"/);
+assert.doesNotMatch(source, /cloneNode|replaceChildren|createElement/, 'the deck never replaces or clones an engine icon');
+assert.doesNotMatch(css, /grid-template-columns|position: fixed|translateY/, 'the engine rail has no separate chooser or vertical animation');
+assert.match(css, /overflow-x: auto/);
+assert.match(css, /max-width: calc\(100% - 88px\)/, 'the input retains bounded space');
 assert.match(css, /prefers-reduced-motion: reduce/);
-// The universal reduced-motion rule is important, so an ordinary shorthand
-// cannot override its nonzero duration. The scoped important shorthand has
-// greater specificity and resets duration AND delay to exactly zero.
-const homeCss = fs.readFileSync(new URL('../home.css', import.meta.url), 'utf8');
-assert.match(homeCss, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,\s*\*::before,\s*\*::after\s*\{[^}]*transition-duration: 0\.01ms !important;/);
-assert.match(css, /\.engine-deck-panel, \.engine-deck-open \.engine-deck-panel \{ transition: none !important; \}/);
-assert.match(css, /body:not\(\.minimal-mode\) #search-widget-wrap:has\(\.engine-deck-open\) \{ z-index: 1265; \}/);
-assert.match(css, /\.engine-option-name \{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/, 'touch labels wrap rather than hiding distinguishing suffixes');
-for (const surface of ['--engine-surface', '--engine-front', '--engine-back', '--engine-selected']) {
+assert.match(css, /transition: none !important/, 'reduced motion disables duration and delay');
+for (const surface of ['--engine-front', '--engine-back', '--engine-selected']) {
   assert.equal([...css.matchAll(new RegExp(`${surface}: #[0-9a-f]{6}`, 'g'))].length, 2, `${surface} is opaque in both themes`);
 }
 
@@ -30,11 +25,11 @@ function harness() {
   let document;
   const listeners = new Map();
   const selectionCalls = [];
-  const floatingControls = [];
+  const observers = [];
   class Element {
     constructor(tag = 'div') {
       this.tagName = tag.toUpperCase(); this.children = []; this.parentElement = null;
-      this.listeners = new Map(); this.attributes = new Map(); this.dataset = {}; this.style = {};
+      this.listeners = new Map(); this.attributes = new Map(); this.dataset = {}; this.style = { setProperty(name, value) { this[name] = value; } }; this.scrollLeft = 0;
       this.className = ''; this._text = ''; this.tabIndex = 0; this.inert = false;
       this.offsetWidth = 276; this.scrollHeight = 310;
       this.rect = { left: 16, top: 90, bottom: 134 };
@@ -45,6 +40,8 @@ function harness() {
         toggle: (name, yes) => this.classList[yes ? 'add' : 'remove'](name)
       };
     }
+    get scrollLeft() { return this._scrollLeft || 0; }
+    set scrollLeft(value) { this._scrollLeft = Math.max(0, value); }
     get firstChild() { return this.children[0] || null; }
     get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); }
     set textContent(value) { this.replaceChildren(); this._text = String(value); }
@@ -67,6 +64,7 @@ function harness() {
     closest(selector) { return this.classList.contains(selector.slice(1)) ? this : this.parentElement?.closest(selector) || null; }
     setAttribute(name, value) { this.attributes.set(name, String(value)); }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
+    removeAttribute(name) { this.attributes.delete(name); }
     getBoundingClientRect() { return this.rect; }
     getClientRects() { return this.hidden ? [] : [this.rect]; }
     addEventListener(type, fn) {
@@ -98,8 +96,6 @@ function harness() {
   };
   const body = new Element(); const host = body.appendChild(new Element());
   host.setAttribute('aria-label', 'Search engines');
-  const trigger = host.appendChild(new Element('button'));
-  const icon = trigger.appendChild(new Element('span')); icon.className = 'engine-deck-icon';
   const panel = host.appendChild(new Element());
   const custom = panel.appendChild(new Element());
   const input = body.appendChild(new Element('input'));
@@ -116,17 +112,19 @@ function harness() {
   panel.appendChild(custom);
   const writes = []; let opens = 0; let deck;
   document = {
-    activeElement: input, createElement: (tag) => new Element(tag),
-    querySelectorAll: (selector) => { assert.equal(selector, '.floating-btn'); return floatingControls; },
+    body, activeElement: input,
     addEventListener(type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn); }
   };
-  const window = { innerHeight: 720, innerWidth: 1024, addEventListener: document.addEventListener };
+  const window = { addEventListener: document.addEventListener, MutationObserver: class {
+    constructor(callback) { observers.push(callback); }
+    observe() {}
+  } };
   const context = vm.createContext({ window, document }); vm.runInContext(source, context);
-  deck = window.OpenTabEngineDeck.create({ host, trigger, panel, input, getLabel: (id) => labels.get(id), onOpen: () => { opens++; }, onSelect: (id) => { writes.push(id); deck.render(id); input.focus(); } });
+  deck = window.OpenTabEngineDeck.create({ host, panel, input, getLabel: (id) => labels.get(id), onOpen: () => { opens++; }, onSelect: (id) => { writes.push(id); deck.render(id); input.focus(); } });
   deck.render('google');
   const fire = (target, type, extra = {}) => { const e = event(type, extra); target.dispatchEvent(e); return e; };
   const docFire = (type, target) => { for (const fn of listeners.get(type) || []) fn(event(type, { target })); };
-  return { body, host, trigger, panel, input, outside, labels, choices, writes, selectionCalls, floatingControls, deck, document, window, add, fire, docFire, get opens() { return opens; } };
+  return { body, host, panel, input, outside, labels, choices, writes, selectionCalls, notifyMutation: () => observers.forEach((callback) => callback()), deck, document, window, add, fire, docFire, get opens() { return opens; } };
 }
 function event(type, extra = {}) {
   return { type, key: '', defaultPrevented: false, stopped: false,
@@ -135,15 +133,19 @@ function event(type, extra = {}) {
 
 {
   const h = harness();
-  assert.equal(h.panel.inert, true);
-  assert.equal(h.panel.getAttribute('aria-hidden'), 'true');
-  assert.equal(h.trigger.getAttribute('aria-label'), 'Search engines: Google');
-  assert.ok(h.choices.every((button) => button.tabIndex === -1));
-  assert.equal(h.choices.at(-1).querySelector('.engine-option-name').textContent, h.labels.get('custom'), 'custom names remain literal text');
-  h.fire(h.trigger, 'click');
-  assert.equal(h.deck.isOpen(), true);
+  const originals = h.choices.map((button) => ({ button, glyph: button.firstChild }));
+  const selected = () => h.choices.find((button) => button.getAttribute('aria-pressed') === 'true');
   assert.equal(h.panel.inert, false);
-  assert.equal(h.trigger.getAttribute('aria-expanded'), 'true');
+  assert.equal(h.panel.getAttribute('aria-hidden'), null);
+  assert.equal(selected().getAttribute('aria-label'), 'Google');
+  assert.equal(selected().getAttribute('aria-expanded'), 'false');
+  assert.equal(selected().tabIndex, 0);
+  assert.ok(h.choices.slice(1).every((button) => button.tabIndex === -1 && button.inert));
+  assert.equal(h.choices.at(-1).getAttribute('aria-label'), h.labels.get('custom'), 'custom labels stay literal accessible names');
+  h.fire(selected().firstChild, 'click');
+  assert.equal(h.deck.isOpen(), true);
+  assert.ok(h.choices.every((button) => !button.inert));
+  assert.equal(selected().getAttribute('aria-expanded'), 'true');
   assert.equal(h.document.activeElement, h.choices[0]);
   assert.equal(h.opens, 1);
   for (const [key, index] of [['End', 5], ['ArrowRight', 0], ['ArrowLeft', 5], ['Home', 0], ['ArrowDown', 1], ['ArrowUp', 0]]) {
@@ -152,28 +154,36 @@ function event(type, extra = {}) {
     assert.equal(h.choices.filter((button) => button.tabIndex === 0).length, 1);
   }
   for (const key of ['Tab', 'Enter', ' ']) assert.equal(h.fire(h.choices[0], 'keydown', { key }).defaultPrevented, false, `${key} stays native`);
-  const last = h.choices.at(-1);
-  h.fire(last.querySelector('.engine-option-name'), 'click');
+  h.fire(h.choices.at(-1).firstChild, 'click');
   assert.deepEqual(h.writes, ['custom']);
   assert.equal(h.deck.isOpen(), false);
-  assert.equal(h.trigger.dataset.engine, 'custom');
+  assert.equal(h.host.dataset.engine, 'custom');
   assert.equal(h.input.value, 'keep my query');
   assert.deepEqual(h.selectionCalls, [[2, 6, 'backward']]);
   assert.equal(h.document.activeElement, h.input);
-  assert.equal(h.panel.inert, true);
-  assert.ok(h.choices.every((button) => button.tabIndex === -1));
-  assert.equal(h.choices.filter((button) => button.getAttribute('aria-pressed') === 'true').length, 1);
+  assert.equal(h.choices.filter((button) => !button.inert).length, 1);
+  assert.equal(selected(), h.choices.at(-1));
+  assert.equal(selected().style['--engine-stack-x'], '0px');
+  assert.ok(h.choices.slice(0, -1).every((button) => Number(button.style['--engine-layer']) < Number(selected().style['--engine-layer'])));
+  for (let i = 0; i < originals.length; i++) {
+    assert.equal(h.panel.querySelectorAll('.engine-btn')[i], originals[i].button, 'DOM order and original buttons never change');
+    assert.equal(h.choices[i].firstChild, originals[i].glyph, 'original SVG/initial nodes survive selection');
+  }
+  h.fire(selected(), 'click');
+  h.fire(selected(), 'click');
+  assert.equal(h.deck.isOpen(), false, 'same selected button opens and closes');
 }
 {
   const h = harness();
+  const selected = h.choices[0];
   for (const extra of [{ isComposing: true }, { keyCode: 229 }, { which: 229 }, { defaultPrevented: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }]) {
-    for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {
-      const e = h.fire(h.trigger, 'keydown', { key, ...extra });
+    for (const key of ['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Home', 'End', 'Process']) {
+      const e = h.fire(selected, 'keydown', { key, ...extra });
       assert.equal(e.defaultPrevented, Boolean(extra.defaultPrevented));
       assert.equal(h.deck.isOpen(), false, 'modified/IME/defaultPrevented trigger events are untouched');
     }
   }
-  h.fire(h.trigger, 'keydown', { key: 'End' });
+  h.fire(selected, 'keydown', { key: 'End' });
   assert.equal(h.document.activeElement, h.choices.at(-1));
   for (const extra of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }, { defaultPrevented: true }]) {
     const e = h.fire(h.choices.at(-1), 'keydown', { key: 'Escape', ...extra });
@@ -182,79 +192,66 @@ function event(type, extra = {}) {
   }
   const escape = h.fire(h.choices.at(-1), 'keydown', { key: 'Escape' });
   assert.equal(escape.defaultPrevented, true); assert.equal(escape.stopped, true);
-  assert.equal(h.document.activeElement, h.trigger); assert.equal(h.deck.isOpen(), false);
+  assert.equal(h.document.activeElement, selected); assert.equal(h.deck.isOpen(), false);
   assert.deepEqual(h.writes, []);
 }
 {
   const h = harness();
   for (let index = 0; index < 8; index++) {
-    h.fire(h.trigger, 'click'); assert.equal(h.deck.isOpen(), true);
-    h.fire(h.trigger, 'click'); assert.equal(h.deck.isOpen(), false);
+    h.fire(h.choices[0], 'click'); assert.equal(h.deck.isOpen(), true);
+    h.fire(h.choices[0], 'click'); assert.equal(h.deck.isOpen(), false);
   }
-  h.fire(h.trigger, 'click');
+  h.fire(h.choices[0], 'click'); h.fire(h.choices[0], 'keydown', { key: 'End' });
+  const priorFocus = h.document.activeElement;
   h.docFire('pointerdown', h.outside);
   assert.equal(h.deck.isOpen(), false);
-  assert.notEqual(h.document.activeElement, h.trigger, 'outside close does not restore focus');
+  assert.equal(h.document.activeElement, priorFocus, 'outside close does not steal focus');
   h.outside.focus(); assert.equal(h.document.activeElement, h.outside);
-  h.fire(h.trigger, 'click'); h.outside.focus();
+  h.fire(h.choices[0], 'click'); h.outside.focus();
   assert.equal(h.deck.isOpen(), false, 'native Tab out closes without trapping');
   assert.equal(h.document.activeElement, h.outside);
-  h.fire(h.trigger, 'click'); h.input.value = 'new query'; h.fire(h.choices[1], 'click');
-  assert.deepEqual(h.selectionCalls, [], 'a stale captured range cannot overwrite a newer query selection');
+  h.fire(h.choices[0], 'click'); h.input.value = 'new query'; h.fire(h.choices[1], 'click');
+  assert.equal(h.selectionCalls.length, 8, 'only unchanged-query selections restore the original range');
+  h.fire(h.choices[1], 'click'); h.deck.close();
+  h.fire(h.host, 'transitionend');
+  assert.equal(h.deck.isOpen(), false, 'stale transition events cannot reopen the deck');
 }
 {
   const h = harness();
-  h.host.rect = { left: 90, top: 280, bottom: 324 }; h.window.innerHeight = 360; h.window.innerWidth = 320;
-  h.fire(h.trigger, 'click');
-  assert.equal(h.panel.dataset.placement, 'above');
-  assert.equal(h.panel.style.maxHeight, '264px');
-  assert.equal(h.panel.style.marginLeft, '-58px');
-  const expectedOrder = h.choices.map((button) => button.dataset.engine);
+  const originals = h.choices.map((button) => button.firstChild);
   h.deck.render('github');
-  assert.deepEqual(h.panel.querySelectorAll('.engine-btn').map((button) => button.dataset.engine), expectedOrder, 'selection never reorders engines');
-  h.window.innerHeight = 900; h.deck.render('google');
-  assert.equal(h.panel.dataset.placement, 'below');
-  assert.equal(h.panel.style.maxHeight, '400px');
-  h.window.visualViewport = { offsetTop: 30, offsetLeft: 0, width: 320, height: 330 };
-  h.deck.render('google');
-  assert.equal(h.panel.style.maxHeight, '234px', 'visual viewport keyboard constraints are respected');
+  assert.equal(h.host.dataset.engine, 'github');
+  assert.equal(h.choices[4].getAttribute('aria-expanded'), 'false');
+  assert.equal(h.choices[0].getAttribute('aria-expanded'), null);
+  assert.equal(h.choices[4].tabIndex, 0, 'programmatic/Alt selection updates the collapsed disclosure');
+  assert.equal(h.host.style['--engine-rail-width'], '268px');
+  h.fire(h.choices[4], 'click');
+  h.panel.rect = { left: 20, right: 220 };
+  h.choices.at(-1).rect = { left: 240, right: 280 };
+  h.fire(h.choices[4], 'keydown', { key: 'End' });
+  assert.equal(h.panel.scrollLeft, 62, 'keyboard reveals a clipped engine inside the horizontal rail');
+  h.panel.scrollLeft = 120;
+  h.deck.close({ restoreFocus: true });
+  assert.equal(h.panel.scrollLeft, 0, 'collapse restores the original stack anchor');
+  assert.equal(h.document.activeElement, h.choices[4]);
+  h.choices.forEach((button, index) => assert.equal(button.firstChild, originals[index]));
+  const added = h.add('later'); h.labels.set('later', 'Later');
+  h.deck.render('later');
+  assert.equal(added.tabIndex, 0, 'new custom engines can become the real collapsed disclosure');
+  assert.equal(h.host.style['--engine-rail-width'], '312px');
 }
-
 {
   const h = harness();
-  h.host.rect = { left: 22, top: 332, bottom: 376 }; h.window.innerHeight = 560; h.window.innerWidth = 360;
-  const topControl = h.add('top-control', h.body);
-  topControl.rect = { left: 14, right: 58, top: 14, bottom: 58 };
-  const bottomControl = h.add('bottom-control', h.body);
-  bottomControl.rect = { left: 232, right: 276, top: 496, bottom: 540 };
-  h.floatingControls.push(topControl, bottomControl);
-  h.fire(h.trigger, 'click');
-  assert.equal(h.panel.dataset.placement, 'above');
-  assert.equal(h.panel.style.maxHeight, '250px', 'upward card reserves 12px below the top TODO control');
-  const cardTop = h.host.rect.top - 12 - parseFloat(h.panel.style.maxHeight);
-  assert.equal(cardTop, topControl.rect.bottom + 12);
-  h.host.rect = { left: 22, top: 100, bottom: 144 }; h.deck.render('google');
-  assert.equal(h.panel.dataset.placement, 'below');
-  assert.equal(h.panel.style.maxHeight, '328px', 'downward card reserves 12px above bottom floating controls');
-  const cardBottom = h.host.rect.bottom + 12 + parseFloat(h.panel.style.maxHeight);
-  assert.equal(cardBottom, bottomControl.rect.top - 12);
-  bottomControl.rect.left = 310; bottomControl.rect.right = 354; h.deck.render('google');
-  assert.equal(h.panel.style.maxHeight, '400px', 'horizontally separate controls do not unnecessarily shrink the card');
-  h.host.rect = { left: 22, top: 332, bottom: 376 }; topControl.hidden = true; h.deck.render('google');
-  assert.equal(h.panel.style.maxHeight, '316px', 'hidden controls reserve no space');
-  assert.equal(h.host.style.zIndex, undefined, 'avoidance never raises the full-page stacking ancestor');
-  topControl.hidden = false; topControl.rect.bottom = 80;
-  bottomControl.rect = { left: 232, right: 276, top: 300, bottom: 344 };
-  h.host.rect = { left: 22, top: 150, bottom: 194 }; h.window.innerHeight = 400;
-  h.deck.render('google');
-  assert.equal(h.panel.dataset.placement, 'floating', 'split short space uses the complete safe band');
-  assert.equal(h.panel.style.top, '-58px');
-  assert.equal(h.panel.style.maxHeight, '196px', 'safe band fits full options with scrolling');
-  assert.ok(parseFloat(h.panel.style.maxHeight) >= 96);
-  bottomControl.rect.top = 110; bottomControl.rect.bottom = 154;
-  h.host.rect = { left: 22, top: 92, bottom: 96 }; h.window.innerHeight = 160;
-  h.deck.render('google');
-  assert.equal(h.panel.style.maxHeight, '6px', 'impossibly small safe space is never exceeded by a forced minimum');
+  h.fire(h.panel, 'click');
+  assert.equal(h.deck.isOpen(), true, 'clicking a visible back edge opens the same stack');
+  h.deck.close();
+  for (const mode of ['minimal-mode', 'zen-mode']) {
+    h.fire(h.choices[0], 'click');
+    assert.equal(h.deck.isOpen(), true);
+    h.body.classList.add(mode); h.notifyMutation();
+    assert.equal(h.deck.isOpen(), false, `${mode} entry dismisses the deck`);
+    h.body.classList.remove(mode); h.notifyMutation();
+    assert.equal(h.deck.isOpen(), false, `${mode} exit cannot reopen a stale rail`);
+  }
 }
-
-console.log('Search-engine deck unit tests passed: state, focus, keys, selection, custom labels, repeat interruption, viewport and reduced-motion contracts.');
+console.log('Search-engine deck unit tests passed: original node identity, inline stack/rail state, focus, keys, selection, literal labels and interrupted transitions.');

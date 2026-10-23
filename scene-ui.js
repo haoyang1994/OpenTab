@@ -207,7 +207,6 @@
     function renderList(focus = false, message = '') {
       const data = currentData(), { state, view, current } = data;
       mode = null; beginScreen(t('场景空间'));
-      body.appendChild(element('p', 'scene-description', t('让不同的事，各有空间。')));
       const list = element('ul', 'scene-list'); list.setAttribute('aria-label', t('可用场景'));
       const activeScenes = state.scenes.filter(active);
       const currentSceneId = current?.id;
@@ -290,10 +289,9 @@
       const label = element('label', 'scene-field-label', t('场景名称')); label.htmlFor = `${prefix}-name`;
       const input = element('input', 'scene-name-input'); input.id = `${prefix}-name`; input.name = 'sceneName'; input.type = 'text';
       input.maxLength = 40; input.required = true; input.autocomplete = 'off'; input.value = draft.name;
-      const hint = element('p', 'scene-field-hint', t('最多 40 个字符。')); hint.id = `${prefix}-name-hint`;
-      input.setAttribute('aria-describedby', `${hint.id} ${status.id}`);
+      input.setAttribute('aria-describedby', status.id);
       input.addEventListener('input', guard(input, () => { draft.name = input.value; input.removeAttribute('aria-invalid'); setStatus(''); }));
-      form.appendChild(label); form.appendChild(input); form.appendChild(hint);
+      form.appendChild(label); form.appendChild(input);
       if (kind === 'create') {
         const choices = element('fieldset', 'scene-icon-choices'); choices.appendChild(element('legend', 'scene-field-label', t('场景图标')));
         const grid = element('div', 'scene-icon-grid');

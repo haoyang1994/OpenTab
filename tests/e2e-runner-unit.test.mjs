@@ -11,6 +11,8 @@ const bash = execFileSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' 
 const suites = [
   'tests/scenes.test.mjs',
   'tests/clock-deck.test.mjs',
+  'tests/zen-mode.test.mjs',
+  'tests/group-icon-motion.test.mjs',
   'tests/group-launch.test.mjs',
   'tests/site-selection.test.mjs',
   'tests/paste-sites.test.mjs',
