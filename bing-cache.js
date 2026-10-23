@@ -7,10 +7,37 @@
   let lastMeta = { kind: 'image', css: '', lqip: '', color: '' };
   let paintGen = 0;
   let dailyInflight = null;
+  let dailyPersistence = null;
   let manualInflight = null;
   let pendingAfterState = false;
   let requestGeneration = 0;
   let suspended = false;
+  let manualCleanup = null;
+  let metaScene = '', metaBackground = '';
+
+  function scopeMetadata(background) {
+    if (!sceneEnabled()) return;
+    const id = sceneView()?.sceneId || '', signature = JSON.stringify(background);
+    if (metaScene !== id || metaBackground !== signature) {
+      lastMeta = { kind: 'image', css: '', lqip: '', color: '' };
+      metaScene = id;
+      metaBackground = signature;
+    }
+  }
+
+  function sceneEnabled() { return typeof ctx.getSceneView === 'function'; }
+
+  function sceneView() {
+    if (!sceneEnabled()) return null;
+    const view = ctx.getSceneView();
+    return view ? { sceneId: view.sceneId, homeGroupId: view.homeGroupId, generation: view.generation } : null;
+  }
+
+  function viewIsCurrent(view) {
+    if (!view) return !sceneEnabled();
+    const current = sceneView();
+    return current && ['sceneId', 'homeGroupId', 'generation'].every(key => current[key] === view[key]);
+  }
 
   // A backup replacement owns storage until reload. Invalidate old responses,
   // but allow callers to resume after a failed replacement.
@@ -18,6 +45,12 @@
     requestGeneration += 1;
     paintGen += 1;
     dailyInflight = null;
+    dailyPersistence = null;
+    if (ctx && sceneEnabled()) {
+      manualInflight = null;
+      if (manualCleanup) manualCleanup();
+      ctx.elements.backgroundLayer?.querySelectorAll('.bg-fade-in').forEach(overlay => overlay.remove());
+    }
   }
 
   function suspendUpdates() {
@@ -26,13 +59,21 @@
     return function resumeUpdates() { suspended = false; };
   }
 
-  function requestIsCurrent(generation, background) {
-    return !suspended && generation === requestGeneration
+  function requestIsCurrent(generation, background, view = null) {
+    return !suspended && generation === requestGeneration && viewIsCurrent(view)
       && JSON.stringify(ctx.state.background || {}) === background;
   }
 
   // Network completions own wallpaper keys, never the rest of the workspace.
-  function saveBackground(silent) {
+  function saveBackground(silent, view, before) {
+    if (sceneEnabled()) {
+      if (!viewIsCurrent(view) || typeof ctx.persistBackground !== 'function') return Promise.resolve(false);
+      const payload = JSON.parse(JSON.stringify({ background: ctx.state.background, bingIndex: ctx.state.bingIndex }));
+      const generation = requestGeneration, selected = JSON.stringify(payload.background);
+      return Promise.resolve().then(() => requestIsCurrent(generation, selected, view)
+        ? ctx.persistBackground(payload, { view, before: JSON.parse(before) }) : false)
+        .then(saved => saved === true);
+    }
     return new Promise((resolve) => {
       chrome.storage.local.set({ background: ctx.state.background, bingIndex: ctx.state.bingIndex }, () => {
         const failed = Boolean(chrome.runtime.lastError);
@@ -126,7 +167,8 @@
     }
   }
 
-  function paintPhoto(css, fade) {
+  function paintPhoto(css, fade, canApply = () => true) {
+    if (!canApply()) return;
     const generation = paintGen;
     const layer = ctx.elements.backgroundLayer;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -148,10 +190,10 @@
     overlay.style.backgroundPosition = 'center';
     layer.appendChild(overlay);
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+      requestAnimationFrame(() => { if (generation === paintGen && canApply()) overlay.style.opacity = '1'; else overlay.remove(); });
     });
     setTimeout(() => {
-      if (generation !== paintGen) { overlay.remove(); return; }
+      if (generation !== paintGen || !canApply()) { overlay.remove(); return; }
       layer.style.background = '';
       layer.style.backgroundImage = css;
       layer.style.backgroundSize = 'cover';
@@ -175,6 +217,13 @@
     const bg = (opts && opts.background) || ctx.state.background || {};
     const value = bg.value || '';
     const gen = ++paintGen;
+    const view = sceneView(), request = requestGeneration;
+    const expected = JSON.stringify(ctx.state.background || {});
+    const sceneCurrent = () => (!view && !sceneEnabled()) || requestIsCurrent(request, expected, view);
+    const canApply = () => sceneCurrent() && (opts && opts.canApply ? opts.canApply() : gen === paintGen);
+    const writeMirror = () => { if (canApply() && !(opts && opts.deferMirror)) ctx.writeBootMirror(); };
+    if (!canApply()) return;
+    scopeMetadata(bg);
     layer.className = 'image-bg';
 
     if (bg.type === 'gradient') {
@@ -183,7 +232,7 @@
       layer.style.backgroundImage = 'none';
       layer.style.background = value || ctx.DEFAULT_GRADIENT;
       lastMeta = { kind: 'gradient', css: value || ctx.DEFAULT_GRADIENT, lqip: '', color: '' };
-      if (gen === paintGen) ctx.writeBootMirror();
+      writeMirror();
       return;
     }
 
@@ -194,12 +243,12 @@
       layer.style.backgroundImage = 'none';
       if (video) {
         if (video.getAttribute('src') !== value) video.src = value;
-        const show = function () { video.style.display = 'block'; };
+        const show = function () { if (canApply()) video.style.display = 'block'; };
         if (video.readyState >= 2) show();
         else video.addEventListener('canplay', show, { once: true });
         video.play().catch(() => {});
       }
-      if (gen === paintGen) ctx.writeBootMirror();
+      writeMirror();
       return;
     }
 
@@ -207,17 +256,17 @@
     const fallback = g.OpenTabBoot.DEFAULT_BG;
     const url = value || fallback;
     if (g.OpenTabBoot.isLocalAsset(url)) {
-      if (gen !== paintGen) return;
+      if (!canApply()) return;
       adoptBlob('');
-      paintPhoto(`url(${url})`, fade);
+      paintPhoto(`url(${url})`, fade, sceneCurrent);
       lastMeta = { kind: 'image', css: url, lqip: lastMeta.lqip || '', color: lastMeta.color || themeColor() };
-      ctx.writeBootMirror();
+      writeMirror();
       loadImage(url).then((img) => {
-        if (gen !== paintGen) return;
+        if (!canApply()) return;
         const extra = lqipFromImage(img);
         if (extra.color) lastMeta.color = extra.color;
         if (extra.lqip) lastMeta.lqip = extra.lqip;
-        ctx.writeBootMirror();
+        writeMirror();
       }).catch(() => {});
       return;
     }
@@ -228,6 +277,7 @@
       resolved = { display: fallback, local: true };
     }
 
+    if (!canApply()) { revokeBlob(resolved.blobUrl); return; }
     try {
       const img = await loadImage(resolved.display);
       if (img.decode) await img.decode();
@@ -237,12 +287,13 @@
       // An unrelated workspace repaint may advance paintGen while this decoded
       // manual candidate is still the latest user request. Only its request/
       // background guard can decide whether that candidate was superseded.
-      if (opts && opts.canApply ? !opts.canApply() : gen !== paintGen) {
+      if (!canApply()) {
         revokeBlob(resolved.blobUrl);
         return;
       }
       if (gen !== paintGen) paintGen += 1;
-      paintPhoto(`url(${resolved.display})`, fade);
+      scopeMetadata(bg);
+      paintPhoto(`url(${resolved.display})`, fade, sceneCurrent);
       lastMeta = {
         kind: bg.type === 'bing' ? 'bing' : 'image',
         css: g.OpenTabBoot.isLocalAsset(url) ? url : '',
@@ -250,19 +301,19 @@
         color: extra.color
       };
       adoptBlob(resolved.blobUrl || '');
-      ctx.writeBootMirror();
+      writeMirror();
     } catch (e) {
       if (opts && opts.preserveOnError) { revokeBlob(resolved && resolved.blobUrl); throw e; }
       console.warn('Failed to refresh background:', e);
       revokeBlob(resolved && resolved.blobUrl);
-      if (url !== fallback && gen === paintGen) {
+      if (url !== fallback && canApply()) {
         try {
           const img = await loadImage(fallback);
-          if (gen !== paintGen) return;
+          if (!canApply()) return;
           adoptBlob('');
-          paintPhoto(`url(${fallback})`, false);
+          paintPhoto(`url(${fallback})`, false, sceneCurrent);
           lastMeta = { kind: 'image', css: fallback, lqip: '', color: themeColor() };
-          ctx.writeBootMirror();
+          writeMirror();
         } catch (e2) {
           console.warn('Failed to refresh background:', e2);
         }
@@ -287,8 +338,17 @@
   }
 
   async function fetchNextBackground() {
-    if (suspended) return;
+    // Installed hooks with no view mean a blocked/unresolved scene, not legacy mode.
+    if (suspended || (sceneEnabled() && !sceneView())) return;
+    // Daily persistence temporarily owns shared appearance state. Do not capture
+    // its uncommitted candidate as the manual request's rollback baseline.
+    if (sceneEnabled() && dailyPersistence) {
+      const waitingView = sceneView(), waitingGeneration = requestGeneration;
+      await dailyPersistence;
+      if (suspended || requestGeneration !== waitingGeneration || !viewIsCurrent(waitingView)) return;
+    }
     const generation = ++requestGeneration;
+    const view = sceneView();
     const background = JSON.stringify(ctx.state.background || {});
     const previousIndex = ctx.state.bingIndex;
     let selectedBackground = '';
@@ -297,16 +357,23 @@
     const wasDisabled = btn && btn.disabled;
     if (btn) { btn.classList.add('loading'); btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
     if (layer) layer.classList.add('loading');
+    const cleanup = () => {
+      if (manualCleanup !== cleanup) return;
+      manualCleanup = null;
+      if (btn) { btn.classList.remove('loading'); btn.disabled = wasDisabled; btn.removeAttribute('aria-busy'); }
+      if (layer) layer.classList.remove('loading');
+    };
+    manualCleanup = cleanup;
     try {
       const index = Number.isInteger(ctx.state.bingIndex) ? ctx.state.bingIndex : 0;
       let result = await send('fetchBingImage', { index: index });
-      if (!requestIsCurrent(generation, background)) return;
+      if (!requestIsCurrent(generation, background, view)) return;
       // Existing daily/pinned backgrounds may still carry archive index zero.
       if (result && result.success && result.url === ctx.state.background.value) {
         const next = Number.isInteger(result.nextIndex) ? result.nextIndex : (index + 1) % 8;
         result = await send('fetchBingImage', { index: next });
       }
-      if (!requestIsCurrent(generation, background)) return;
+      if (!requestIsCurrent(generation, background, view)) return;
       if (!result || !result.success) throw new Error((result && result.error) || 'Unknown Bing fetch error');
       if (result.url === ctx.state.background.value) throw new Error('Bing returned the current wallpaper');
       const nextIndex = Number.isInteger(result.nextIndex) ? result.nextIndex : ((index + 1) % 8);
@@ -327,26 +394,26 @@
       // Commit the decoded image to the real layer before saving or enabling the
       // button. A delayed fade commit could be cancelled by workspace changes
       // after storage succeeded, leaving the previous pixels until reload.
-      await updateBackground({ fade: false, preserveOnError: true, background: candidate,
-        canApply: () => requestIsCurrent(generation, background) });
-      if (!requestIsCurrent(generation, background)) return;
+      await updateBackground({ fade: false, preserveOnError: true, background: candidate, deferMirror: Boolean(view),
+        canApply: () => requestIsCurrent(generation, background, view) });
+      if (!requestIsCurrent(generation, background, view)) return;
       ctx.state.background = candidate;
       ctx.state.bingIndex = nextIndex;
       selectedBackground = JSON.stringify(candidate);
-      if (!await saveBackground(true)) throw new Error('Background storage failed');
+      if (!await saveBackground(true, view, background)) throw new Error('Background storage failed');
+      if (view && !requestIsCurrent(generation, selectedBackground, view)) return;
       ctx.writeBootMirror();
       setButtonCaption(result.title, result.copyright);
     } catch (e) {
-      if (requestIsCurrent(generation, selectedBackground || background)) {
+      if (requestIsCurrent(generation, selectedBackground || background, view)) {
         ctx.state.background = JSON.parse(background);
         ctx.state.bingIndex = previousIndex;
         await updateBackground({ fade: false });
-        if (ctx.showToast) ctx.showToast(t('壁纸更新失败，已保留原背景，请稍后重试'));
+        if ((!view || requestIsCurrent(generation, background, view)) && ctx.showToast) ctx.showToast(t('壁纸更新失败，已保留原背景，请稍后重试'));
       }
       console.warn('Failed to fetch Bing image:', e);
     } finally {
-      if (btn) { btn.classList.remove('loading'); btn.disabled = wasDisabled; btn.removeAttribute('aria-busy'); }
-      if (layer) layer.classList.remove('loading');
+      cleanup();
     }
   }
 
@@ -354,6 +421,8 @@
     const bg = ctx.state.background || {};
     if (suspended || bg.type !== 'bing') return;
     const generation = requestGeneration;
+    const view = sceneView();
+    if (sceneEnabled() && !view) return;
     const background = JSON.stringify(bg);
     if (!g.OpenTabBing.shouldCheck(bg.bing, new Date())) {
       await updateBackground({ fade: false });
@@ -361,13 +430,47 @@
     }
     try {
       const result = await send('refreshBingDaily');
-      if (!requestIsCurrent(generation, background)) return;
+      if (!requestIsCurrent(generation, background, view)) return;
       if (!result || !result.success) {
         console.warn('Failed to refresh background:', result && result.error);
         await updateBackground({ fade: false });
         return;
       }
       const prev = bg.bing || {};
+      if (view) {
+        const previousIndex = ctx.state.bingIndex;
+        const candidate = result.unchanged ? Object.assign({}, bg, { bing: Object.assign({}, prev, {
+          checkedAt: result.checkedAt || Date.now(), title: result.title || prev.title, copyright: result.copyright || prev.copyright
+        }) }) : {
+          type: 'bing', value: result.url, source: 'bing', bing: {
+            startdate: result.startdate, title: result.title, copyright: result.copyright,
+            checkedAt: Date.now(), pinnedDate: prev.pinnedDate
+          }
+        };
+        ctx.state.background = candidate;
+        ctx.state.bingIndex = 1;
+        const selected = JSON.stringify(candidate);
+        const pending = (async () => {
+          try {
+            if (!await saveBackground(true, view, background)) throw new Error('Background storage failed');
+            if (!requestIsCurrent(generation, selected, view)) return;
+            setButtonCaption(result.title, result.copyright);
+            await updateBackground({ fade: !result.unchanged });
+          } catch (error) {
+            if (requestIsCurrent(generation, selected, view)) {
+              ctx.state.background = JSON.parse(background);
+              ctx.state.bingIndex = previousIndex;
+              await updateBackground({ fade: false });
+              if (requestIsCurrent(generation, background, view) && ctx.showToast) ctx.showToast(t('背景保存失败，请重试'));
+            }
+            console.warn('Failed to refresh background:', error);
+          }
+        })();
+        dailyPersistence = pending;
+        try { await pending; }
+        finally { if (dailyPersistence === pending) dailyPersistence = null; }
+        return;
+      }
       ctx.state.bingIndex = 1;
       if (result.unchanged) {
         ctx.state.background.bing = Object.assign({}, prev, {
@@ -396,7 +499,7 @@
       setButtonCaption(result.title, result.copyright);
       await updateBackground({ fade: true });
     } catch (e) {
-      if (!requestIsCurrent(generation, background)) return;
+      if (!requestIsCurrent(generation, background, view)) return;
       console.warn('Failed to refresh background:', e);
       await updateBackground({ fade: false });
     }
@@ -404,6 +507,9 @@
 
   function refreshDailyIfNeeded() {
     if (suspended) return Promise.resolve();
+    // A manual choice pins today's wallpaper. Do not start daily work from its
+    // provisional state while that choice is being saved or rolled back.
+    if (sceneEnabled() && manualInflight) return manualInflight;
     if (dailyInflight) return dailyInflight;
     const pending = doRefreshDailyIfNeeded().finally(() => {
       if (dailyInflight === pending) dailyInflight = null;
@@ -431,6 +537,7 @@
 
   function describeBackground() {
     const bg = ctx.state.background || {};
+    scopeMetadata(bg);
     if (bg.type === 'gradient') {
       return { kind: 'gradient', css: bg.value || ctx.DEFAULT_GRADIENT, lqip: '', color: '' };
     }
@@ -463,6 +570,20 @@
       ctx = c;
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local') return;
+        if (sceneEnabled()) {
+          const change = changes.sceneProfiles;
+          if (!change) return;
+          const view = sceneView();
+          if (!view) return;
+          const id = view.sceneId;
+          const profile = value => Array.isArray(value) ? value.find(item => item.id === id) : undefined;
+          const old = profile(change.oldValue), next = profile(change.newValue);
+          if (JSON.stringify(old?.background) !== JSON.stringify(next?.background)
+            && JSON.stringify(next?.background) !== JSON.stringify(ctx.state.background)) invalidatePending();
+          // The controller reloads the whole active profile. Never adopt legacy
+          // aliases, or cancel this view because another scene changed.
+          return;
+        }
         if (['icons', 'folders'].some((key) => changes[key]
           && JSON.stringify(changes[key].newValue) !== JSON.stringify(ctx.state[key]))) {
           invalidatePending();
@@ -480,6 +601,7 @@
         if (!document.hidden) onVisible();
       });
     },
+    invalidatePending: invalidatePending,
     suspendUpdates: suspendUpdates,
     updateBackground: updateBackground,
     fetchRandomBackground: fetchRandomBackground,

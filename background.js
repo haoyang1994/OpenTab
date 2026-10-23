@@ -1,4 +1,4 @@
-importScripts('lib/bing-daily.js', 'workspace-persistence.js');
+importScripts('lib/bing-daily.js', 'scene-schema.js', 'workspace-persistence.js');
 
 const BING_CACHE = 'opentab-bing-v1';
 const DEFAULT_LOCAL_BG = 'assets/default_background/default.webp';

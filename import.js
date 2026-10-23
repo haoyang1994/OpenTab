@@ -18,6 +18,9 @@
   const UNDO_KEY = 'opentab.importUndo';
   const NOTICE_KEY = 'opentab.importNotice';
   const EPOCH_KEY = 'opentab.workspaceEpoch';
+  const SCENE_SCHEMA_KEY = 'opentab.sceneSchemaVersion';
+  const SCENE_KEYS = [SCENE_SCHEMA_KEY, 'scenes', 'sceneProfiles'];
+  const GRAPH_KEYS = ['icons', 'folders', 'todos', ...SCENE_KEYS];
   const SECRET_FIELDS = ['sshPassword', 'sshGatewayToken', 'sshSocksPassword'];
 
   const MSG_BOOKMARKS_DENIED = '未获得书签权限，已取消导入。可在下次点击时重新授权。';
@@ -27,6 +30,7 @@
 
   let chromeRef = null;
   let workspaceRef = null;
+  let sceneContextProvider = null;
   let idFactory = null;
   let reloader = null;
   let urlListPreviews = new WeakMap();
@@ -39,6 +43,7 @@
   function setChrome(api) {
     chromeRef = api || null;
     workspaceRef = null;
+    sceneContextProvider = null;
     urlListPreviews = new WeakMap();
   }
 
@@ -50,6 +55,108 @@
     }
     if (typeof OpenTabWorkspace !== 'undefined') return OpenTabWorkspace;
     throw new Error('Workspace persistence is unavailable.');
+  }
+
+  function getSceneSchema() {
+    if (typeof module === 'object' && module.exports) return require('./scene-schema.js');
+    if (globalThis.OpenTabSceneSchema) return globalThis.OpenTabSceneSchema;
+    throw new Error('Scene schema support is unavailable.');
+  }
+
+  function compatibilityError(code) {
+    const error = new Error(t('导入失败：JSON 无效或结构不支持。'));
+    error.code = code;
+    error.recoverable = true;
+    return error;
+  }
+
+  function validateSceneState(state) {
+    if (Object.hasOwn(state, SCENE_SCHEMA_KEY)) {
+      getSceneSchema().validate(state);
+      return true;
+    }
+    if (Object.hasOwn(state, 'scenes') || Object.hasOwn(state, 'sceneProfiles')
+      || ['icons', 'folders', 'todos'].some(key => Array.isArray(state[key]) && state[key].some(item => item && Object.hasOwn(item, 'sceneId')))) {
+      throw compatibilityError('PARTIAL_SCHEMA');
+    }
+    return false;
+  }
+
+  // Hidden integration seam: selection belongs to this tab, not a persisted
+  // last-opened scene. Explicit options are useful for a destination picker.
+  function setSceneContextProvider(provider) {
+    sceneContextProvider = typeof provider === 'function' ? provider : null;
+    urlListPreviews = new WeakMap();
+  }
+
+  function captureSceneContext(options) {
+    const explicit = options && Object.hasOwn(options, 'sceneId');
+    const provider = explicit ? null : sceneContextProvider;
+    const value = explicit ? options : provider && provider();
+    return { provider, value: value ? { sceneId: value.sceneId, generation: value.generation, currentFolderId: value.currentFolderId } : null };
+  }
+
+  function sceneConflict() {
+    const error = new Error(t('其他标签页已修改此内容，请刷新后重试。'));
+    error.code = 'WORKSPACE_CONFLICT';
+    return error;
+  }
+
+  function selectedScene(current, context) {
+    if (!validateSceneState(current)) {
+      if (context && context.value && context.value.sceneId) throw sceneConflict();
+      return null;
+    }
+    const value = context && context.value;
+    if (!value || typeof value.sceneId !== 'string') throw compatibilityError('SCENE_CONTEXT_REQUIRED');
+    if (context.provider) {
+      const latest = context.provider();
+      if (context.provider !== sceneContextProvider || !latest || latest.sceneId !== value.sceneId || latest.generation !== value.generation) throw sceneConflict();
+    }
+    const scene = current.scenes.find(item => item.id === value.sceneId);
+    if (!scene || scene.archivedAt !== null) throw sceneConflict();
+    return scene;
+  }
+
+  async function captureStoredSceneContext(context) {
+    const current = await getWorkspace().read(GRAPH_KEYS.concat([EPOCH_KEY]));
+    const scene = selectedScene(current, context);
+    return { ...context, epoch: current[EPOCH_KEY] || 0, scene: sceneReceipt(scene) };
+  }
+
+  function graphSnapshot(current) {
+    return Object.fromEntries(GRAPH_KEYS.concat([EPOCH_KEY]).filter(key => Object.hasOwn(current, key)).map(key => [key, current[key]]));
+  }
+
+  function sceneReceipt(scene, target) {
+    return scene ? { sceneId: scene.id, identity: urlListTargetIdentity(scene), target: target ? urlListTargetIdentity(target) : null, targetId: target ? target.id : null } : null;
+  }
+
+  function checkSceneReceipt(current, receipt) {
+    const sceneMode = validateSceneState(current);
+    if (!receipt) { if (sceneMode) throw sceneConflict(); return; }
+    if (!sceneMode) throw sceneConflict();
+    const scene = current.scenes.find(item => item.id === receipt.sceneId);
+    const target = receipt.targetId && current.folders.find(item => item.id === receipt.targetId);
+    if (!scene || scene.archivedAt !== null || urlListTargetIdentity(scene) !== receipt.identity
+      || (receipt.target && (!target || urlListTargetIdentity(target) !== receipt.target))) throw sceneConflict();
+  }
+
+  function sceneNavigation(sceneId, currentFolderId, context) {
+    const value = context && context.value;
+    return { sceneId, currentFolderId, ...(value && value.generation !== undefined ? { generation: value.generation } : {}) };
+  }
+
+  function localUndoNavigation(current, snapshot, context) {
+    const saved = snapshot.navigation, value = context && context.value;
+    if (!saved || !context.provider || context.provider !== sceneContextProvider || !value) return undefined;
+    const live = context.provider();
+    if (!live || live.sceneId !== value.sceneId || live.currentFolderId !== value.currentFolderId || live.generation !== value.generation
+      || value.sceneId !== saved.after.sceneId || value.currentFolderId !== saved.after.currentFolderId) return undefined;
+    const scene = current.scenes.find(item => item.id === value.sceneId);
+    if (!scene || scene.archivedAt !== null) return undefined;
+    const previous = current.folders.find(group => group.id === saved.before.currentFolderId && group.sceneId === scene.id);
+    return sceneNavigation(scene.id, previous ? previous.id : scene.homeGroupId, context);
   }
 
   function setIdFactory(fn) {
@@ -65,9 +172,9 @@
     return 'imp-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
-  function reloadPage() {
+  function reloadPage(navigation) {
     if (reloader) {
-      reloader();
+      reloader(navigation);
       return;
     }
     if (typeof location !== 'undefined' && typeof location.reload === 'function') {
@@ -119,8 +226,9 @@
 
   function copyGroupRecord(item) {
     const group = { id: String(item.id), name: String(item.name) };
-    if (item.parentId != null && item.parentId !== '') group.parentId = String(item.parentId);
-    if (item.type) group.type = String(item.type);
+    for (const key of ['parentId', 'type', 'sceneId']) {
+      if (Object.hasOwn(item, key)) group[key] = item[key];
+    }
     return group;
   }
 
@@ -144,7 +252,7 @@
   }
 
   function withIconGroup(icon, groupId) {
-    const next = Object.assign({}, icon);
+    const next = { ...icon };
     next.folderId = groupId || HOME_GROUP_ID;
     return next;
   }
@@ -155,11 +263,10 @@
     const out = {};
     Object.keys(input).forEach((key) => {
       if (key === 'opentab.secretVault' || key === 'opentab.cryptoKey') return;
-      if (SECRET_FIELDS.indexOf(key) >= 0) {
-        out[key] = '';
-        return;
-      }
-      out[key] = stripSecretsFromState(input[key]);
+      const value = SECRET_FIELDS.indexOf(key) >= 0 ? '' : stripSecretsFromState(input[key]);
+      // Assignment invokes Object.prototype.__proto__ instead of copying that
+      // legitimate JSON key. Define data properties to preserve opaque records.
+      Object.defineProperty(out, key, { value, enumerable: true, writable: true, configurable: true });
     });
     return out;
   }
@@ -168,6 +275,7 @@
   const BACKUP_MAX_SNAPSHOTS = 20;
   const BACKUP_SNAPSHOT_MAX_BYTES = 1500 * 1024;
   const BACKUP_CORE_KEYS = [
+    ...SCENE_KEYS,
     'icons',
     'folders',
     'currentFolderId',
@@ -207,7 +315,8 @@
   }
 
   function unwrapBackupPayload(rawPayload) {
-    if (!rawPayload || typeof rawPayload !== 'object') return {};
+    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) throw compatibilityError('INVALID_BACKUP');
+    if (Object.hasOwn(rawPayload, 'version') && ![1, 2].includes(rawPayload.version)) throw compatibilityError('UNSUPPORTED_BACKUP_VERSION');
     if (rawPayload.data && typeof rawPayload.data === 'object' && !Array.isArray(rawPayload.data)
       && (rawPayload.version || rawPayload.exportedAt || rawPayload.data.icons || rawPayload.data.background)) {
       return rawPayload.data;
@@ -231,34 +340,52 @@
     return (prefix || 'opentab-backup') + '-' + ts + '.json';
   }
 
-  function mergeBackupPayload(rawPayload, current) {
+  function inspectBackup(rawPayload) {
     const payload = unwrapBackupPayload(rawPayload);
-    const includeHistory = payload.searchHistory !== undefined || (current && current.searchHistory !== undefined);
-    const keys = backupStateKeys(includeHistory);
+    const backupVersion = Object.hasOwn(rawPayload, 'version') ? rawPayload.version : payload.version;
+    if ((Object.hasOwn(payload, 'version') && ![1, 2].includes(payload.version))
+      || (payload !== rawPayload && Object.hasOwn(rawPayload, 'version') && Object.hasOwn(payload, 'version') && payload.version !== rawPayload.version)
+      || (payload !== rawPayload && SCENE_KEYS.some(key => Object.hasOwn(rawPayload, key)))) throw compatibilityError('INVALID_BACKUP_VERSION');
+    const sceneMode = validateSceneState(payload);
+    if ((backupVersion === 2 && !sceneMode) || (backupVersion === 1 && sceneMode)) throw compatibilityError('INVALID_BACKUP_VERSION');
+    return { payload, sceneMode, version: backupVersion };
+  }
+
+  function mergeBackupPayload(rawPayload, current = {}) {
+    const { payload, sceneMode: payloadSceneMode } = inspectBackup(rawPayload);
+    const currentSceneMode = validateSceneState(current);
+    const includeHistory = payload.searchHistory !== undefined || current.searchHistory !== undefined;
     const merged = {};
-    keys.forEach((key) => {
+    backupStateKeys(includeHistory).forEach((key) => {
       if (payload[key] !== undefined) merged[key] = payload[key];
-      else if (current && current[key] !== undefined) merged[key] = current[key];
+      else if (current[key] !== undefined) merged[key] = current[key];
     });
-    if (typeof OpenTabSearch !== 'undefined' && OpenTabSearch.normalizeBackup) {
-      const normalizedSearch = OpenTabSearch.normalizeBackup(Object.assign({}, current || {}, payload));
-      searchBackupKeys(true).forEach((key) => {
-        if (payload[key] !== undefined || (current && current[key] !== undefined)) {
-          merged[key] = normalizedSearch[key];
-        }
-      });
-      if (payload.searchHistory === undefined && !(current && current.searchHistory !== undefined)) {
-        delete merged.searchHistory;
-      }
+    if (payloadSceneMode || currentSceneMode) {
+      // A restore replaces the entire ownership graph. Never fill missing
+      // legacy graph fields with unrelated records from the current scenes.
+      const restored = payloadSceneMode ? payload : getSceneSchema().migrateLegacy(payload);
+      GRAPH_KEYS.forEach(key => { merged[key] = restored[key]; });
+      const requested = payload.currentFolderId;
+      merged.currentFolderId = restored.folders.some(group => group.id === requested) ? requested : HOME_GROUP_ID;
     }
-    return stripSecretsFromState(merged);
+    if (typeof OpenTabSearch !== 'undefined' && OpenTabSearch.normalizeBackup) {
+      const normalizedSearch = OpenTabSearch.normalizeBackup({ ...current, ...payload });
+      searchBackupKeys(true).forEach((key) => {
+        if (payload[key] !== undefined || current[key] !== undefined) merged[key] = normalizedSearch[key];
+      });
+      if (payload.searchHistory === undefined && current.searchHistory === undefined) delete merged.searchHistory;
+    }
+    const clean = stripSecretsFromState(merged);
+    validateSceneState(clean);
+    return clean;
   }
 
   async function buildBackupPayload(includeHistory) {
     const keys = backupStateKeys(!!includeHistory);
     const current = await storageLocalGet(keys);
+    const sceneMode = validateSceneState(current);
     const payload = {
-      version: 1,
+      version: sceneMode ? 2 : 1,
       exportedAt: new Date().toISOString()
     };
     keys.forEach((key) => {
@@ -274,7 +401,7 @@
   function stripSnapshotIconData(icons) {
     return (Array.isArray(icons) ? icons : []).map((icon) => {
       if (!icon || typeof icon !== 'object') return icon;
-      const next = Object.assign({}, icon);
+      const next = { ...icon };
       ['uploadedIconDataUrl', 'resolvedIconUrl', 'customIconUrl'].forEach((field) => {
         const value = next[field];
         if (typeof value === 'string' && (value.indexOf('data:') === 0 || value.indexOf('blob:') === 0 || value.indexOf('chrome-extension:') === 0)) {
@@ -298,18 +425,24 @@
     return trimmed;
   }
 
-  function prepareSnapshotRecord(reason, current) {
+  function prepareSnapshotRecord(reason, current, options = {}) {
+    const completeness = options.completeness || 'compact';
+    if (!['compact', 'full'].includes(completeness)) throw compatibilityError('INVALID_SNAPSHOT_MODE');
     const list = Array.isArray(current[BACKUP_SNAPSHOTS_KEY]) ? current[BACKUP_SNAPSHOTS_KEY].slice() : [];
     const data = mergeBackupPayload(current, current);
     delete data[BACKUP_SNAPSHOTS_KEY];
-    if (Array.isArray(data.icons)) data.icons = stripSnapshotIconData(data.icons);
+    if (completeness === 'compact' && Array.isArray(data.icons)) data.icons = stripSnapshotIconData(data.icons);
     list.unshift({
       id: generateId(),
       createdAt: new Date().toISOString(),
       reason: reason || 'manual',
+      completeness,
       data
     });
-    const records = trimSnapshotList(list);
+    // A full recovery point must not trade away local assets or older recovery
+    // records to fit the compact budget. The caller's atomic write owns quota
+    // failure, so a failure preserves both the live graph and prior backups.
+    const records = completeness === 'full' ? list : trimSnapshotList(list);
     return { record: records[0], records };
   }
 
@@ -323,6 +456,8 @@
   }
 
   async function applyOpenTabBackup(rawPayload, options) {
+    const inspected = inspectBackup(rawPayload);
+    if (inspected.version === undefined && !backupStateKeys(true).some(key => Object.hasOwn(inspected.payload, key))) throw compatibilityError('INVALID_BACKUP');
     const resumeBackground = typeof OpenTabBingCache !== 'undefined' && OpenTabBingCache.suspendUpdates
       ? OpenTabBingCache.suspendUpdates() : null;
     try {
@@ -332,16 +467,17 @@
         Object.keys(writePayload).forEach((key) => {
           if (writePayload[key] === undefined) delete writePayload[key];
         });
-        if (Array.isArray(writePayload.icons) && typeof OpenTabFolders !== 'undefined' && OpenTabFolders.repairIconGraph) {
+        if (!Object.hasOwn(writePayload, SCENE_SCHEMA_KEY) && Array.isArray(writePayload.icons) && typeof OpenTabFolders !== 'undefined' && OpenTabFolders.repairIconGraph) {
           OpenTabFolders.repairIconGraph(writePayload.icons);
         }
-        if (options && options.snapshotReason) {
-          const prepared = prepareSnapshotRecord(options.snapshotReason, current);
+        const sceneRestore = Object.hasOwn(current, SCENE_SCHEMA_KEY);
+        if (sceneRestore || options && options.snapshotReason) {
+          const prepared = prepareSnapshotRecord(options && options.snapshotReason || 'before-restore', current, { completeness: sceneRestore ? 'full' : 'compact' });
           writePayload[BACKUP_SNAPSHOTS_KEY] = prepared.records;
         }
         return writePayload;
       });
-      reloadPage();
+      reloadPage({ resetSceneSelection: true });
       return writePayload;
     } catch (error) {
       if (resumeBackground) resumeBackground();
@@ -376,7 +512,8 @@
       return;
     }
     updateBackupStatus(t('正在恢复快照并刷新页面...'), false);
-    await applyOpenTabBackup(list[0].data || {}, { snapshotReason: 'before-restore' });
+    const data = list[0].data || {};
+    await applyOpenTabBackup({ version: Object.hasOwn(data, SCENE_SCHEMA_KEY) ? 2 : 1, data }, { snapshotReason: 'before-restore' });
   }
 
   function noticeMessage(notice) {
@@ -537,13 +674,14 @@
     return { ok: true, format: 'url-list', rows, counts: urlListCounts(rows), acceptedUrls: rows.filter((row) => row.status === 'ready').map((row) => row.url) };
   }
 
-  function urlListGroups(current) {
-    const groups = Array.isArray(current.folders) ? current.folders : [];
+  function urlListGroups(current, scene) {
+    const groups = Array.isArray(current.folders) ? current.folders.filter(group => !scene || group.sceneId === scene.id) : [];
     const valid = groups.filter((group) => group && typeof group.id === 'string' && group.id && typeof group.name === 'string' && group.name
       && groups.filter((item) => item && item.id === group.id).length === 1);
     // Home exists logically even before a fresh profile has saved folders.
     // Never synthesize an arbitrary destination or replace a malformed record.
-    if (!groups.some((group) => group && group.id === HOME_GROUP_ID)) valid.unshift({ id: HOME_GROUP_ID, name: t('主页') });
+    const homeId = scene ? scene.homeGroupId : HOME_GROUP_ID;
+    if (!groups.some((group) => group && group.id === homeId)) valid.unshift({ id: homeId, name: t('主页'), ...(scene ? { sceneId: scene.id } : {}) });
     return valid;
   }
 
@@ -555,9 +693,13 @@
     return JSON.stringify(Object.fromEntries(Object.keys(target).sort().map((key) => [key, target[key]])));
   }
 
-  async function readUrlListContext() {
-    const current = await getWorkspace().read(['folders', 'currentFolderId', EPOCH_KEY]);
-    return { groups: urlListGroups(current).map(({ id, name }) => ({ id, name })), currentFolderId: current.currentFolderId || HOME_GROUP_ID, epoch: current[EPOCH_KEY] || 0 };
+  async function readUrlListContext(options) {
+    const context = captureSceneContext(options);
+    const current = await getWorkspace().read(GRAPH_KEYS.concat(['currentFolderId', EPOCH_KEY]));
+    const scene = selectedScene(current, context), groups = urlListGroups(current, scene);
+    const preferred = context.value && context.value.currentFolderId || current.currentFolderId;
+    const currentFolderId = groups.some(group => group.id === preferred) ? preferred : scene ? scene.homeGroupId : HOME_GROUP_ID;
+    return { groups: groups.map(({ id, name }) => ({ id, name })), currentFolderId, epoch: current[EPOCH_KEY] || 0, ...(scene ? { sceneId: scene.id } : {}) };
   }
 
   function targetUrlSet(current, targetId) {
@@ -572,11 +714,13 @@
     return urls;
   }
 
-  async function previewUrlList(text, targetGroupId) {
+  async function previewUrlList(text, targetGroupId, options) {
+    const context = captureSceneContext(options);
     const parsed = parseUrlList(text);
     if (!parsed.ok) return { ...parsed, message: t(parsed.message) };
-    const current = await getWorkspace().read(['icons', 'folders', EPOCH_KEY]);
-    const target = urlListGroups(current).find((group) => group.id === targetGroupId);
+    const current = await getWorkspace().read(GRAPH_KEYS.concat([EPOCH_KEY]));
+    const scene = selectedScene(current, context);
+    const target = urlListGroups(current, scene).find((group) => group.id === targetGroupId);
     if (!target) return urlListFailure('target-missing', '目标分组不存在，请重新选择分组并预览。');
     const existing = targetUrlSet(current, target.id);
     const rows = parsed.rows.map((row) => row.status === 'ready' && existing.has(row.url)
@@ -585,7 +729,7 @@
     // A preview is an in-memory confirmation receipt, not a new durable store.
     // Retain its private copy so edits or synthetic objects cannot change what
     // was reviewed, and an already-confirmed receipt cannot be replayed.
-    urlListPreviews.set(preview, { signature: JSON.stringify(preview), target: urlListTargetIdentity(target), snapshot: JSON.parse(JSON.stringify(preview)) });
+    urlListPreviews.set(preview, { signature: JSON.stringify(preview), target: urlListTargetIdentity(target), context, scene: sceneReceipt(scene, target), snapshot: JSON.parse(JSON.stringify(preview)) });
     return preview;
   }
 
@@ -600,11 +744,17 @@
         return urlListFailure('invalid-preview', '预览已失效，请重新预览后确认。');
       }
       const expected = receipt.snapshot;
-      const current = await read(['icons', 'folders', 'currentFolderId', EPOCH_KEY]);
+      const current = await read(GRAPH_KEYS.concat(['currentFolderId', EPOCH_KEY]));
       if ((current[EPOCH_KEY] || 0) !== expected.epoch) {
         return urlListFailure('workspace-changed', '工作区已被替换，请重新预览后确认。');
       }
-      const groups = urlListGroups(current);
+      let scene;
+      try { scene = selectedScene(current, receipt.context); checkSceneReceipt(current, receipt.scene); }
+      catch (error) {
+        if (error.code !== 'WORKSPACE_CONFLICT') throw error;
+        return urlListFailure('target-changed', '目标分组已变化，请重新预览后确认。');
+      }
+      const groups = urlListGroups(current, scene);
       const target = groups.find((group) => group.id === expected.target.id);
       const storedTarget = hasStoredUrlListTarget(current, expected.target.id);
       if (!target || (expected.targetSource === 'stored' && !storedTarget)) return urlListFailure('target-missing', '目标分组不存在，请重新选择分组并预览。');
@@ -625,27 +775,34 @@
       // the latest stored Home (including a newer name) whenever one exists.
       // Identical before/after folders make this normalization non-destructive
       // on undo, including when the prior implicit current group was Home.
-      const materializeHome = !hasStoredUrlListTarget(current, HOME_GROUP_ID);
-      const logicalFolders = materializeHome ? [groups.find((group) => group.id === HOME_GROUP_ID), ...folders] : folders;
-      const before = stripSecretsFromState({ icons, folders: logicalFolders, currentFolderId: current.currentFolderId || HOME_GROUP_ID, [EPOCH_KEY]: expected.epoch });
+      const homeId = scene ? scene.homeGroupId : HOME_GROUP_ID;
+      const materializeHome = !hasStoredUrlListTarget(current, homeId);
+      const logicalFolders = materializeHome ? [groups.find((group) => group.id === homeId), ...folders] : folders;
+      const before = stripSecretsFromState({ ...graphSnapshot(current), icons, folders: logicalFolders, currentFolderId: current.currentFolderId || homeId, [EPOCH_KEY]: expected.epoch });
       const after = stripSecretsFromState({ ...before, icons: icons.concat(additions), currentFolderId: target.id });
       // Reuse workspace graph validation and the existing storage wrapper. The
       // lock spans the latest read, validation and single atomic storage write.
       const merged = merge(before, after, { ...current, folders: logicalFolders, currentFolderId: before.currentFolderId });
+      validateSceneState(merged);
       const message = urlListResultMessage(additions.length, target.name, counts.duplicate);
+      const previousLocalGroup = scene && groups.find(group => group.id === (receipt.context.value && receipt.context.value.currentFolderId));
+      const navigation = scene ? {
+        before: sceneNavigation(scene.id, previousLocalGroup ? previousLocalGroup.id : scene.homeGroupId, receipt.context),
+        after: sceneNavigation(scene.id, target.id, receipt.context)
+      } : undefined;
       await write({ icons: merged.icons, currentFolderId: target.id, ...(materializeHome ? { folders: logicalFolders } : {}),
-        [UNDO_KEY]: { id: generateId(), format: 'url-list', createdAt: new Date().toISOString(), before, after },
+        [UNDO_KEY]: { id: generateId(), format: 'url-list', createdAt: new Date().toISOString(), before, after, scene: receipt.scene, ...(navigation ? { navigation } : {}) },
         [NOTICE_KEY]: { format: 'url-list', text: message, targetName: target.name, iconCount: additions.length, duplicateCount: counts.duplicate, canUndo: true }
       });
       urlListPreviews.delete(preview);
-      return { ok: true, format: 'url-list', iconCount: additions.length, groupCount: 0, rows, counts, skippedDuplicateCount, message };
+      return { ok: true, format: 'url-list', iconCount: additions.length, groupCount: 0, rows, counts, skippedDuplicateCount, message, ...(navigation ? { navigation: navigation.after } : {}) };
     });
     if (result.ok) {
       // A rendering/reload failure after a successful write is not a failed
       // import, and must not encourage submitting the same list again.
       try { setStatus(result.message, false); } catch (_) { /* Already saved. */ }
       try { Promise.resolve(refreshUndoButton()).catch(() => {}); } catch (_) { /* Already saved. */ }
-      try { reloadPage(); } catch (_) { result.reloadRequired = true; }
+      try { reloadPage(result.navigation); } catch (_) { result.reloadRequired = true; }
     } else setStatus(result.message, true);
     return result;
   }
@@ -857,9 +1014,18 @@
       return { ok: false, error: 'unrecognized', message: t(MSG_UNRECOGNIZED) };
     }
 
+    const openTabFile = looksOpenTab(raw) || SCENE_KEYS.some(key => Object.hasOwn(raw, key))
+      || raw.data && (looksOpenTab(raw.data) || SCENE_KEYS.some(key => Object.hasOwn(raw.data, key)));
+    if (openTabFile) {
+      try { inspectBackup(raw); }
+      catch (_) { return { ok: false, error: 'unsupported-schema', message: t(MSG_UNRECOGNIZED) }; }
+    }
     let format = '';
     let groups = [];
-    if (looksInfinity(raw, filename)) {
+    if (openTabFile) {
+      format = 'opentab';
+      groups = parseOpenTab(unwrapBackupPayload(raw));
+    } else if (looksInfinity(raw, filename)) {
       format = 'infinity';
       groups = parseInfinity(raw);
     } else if (looksWeTab(raw, filename)) {
@@ -868,9 +1034,6 @@
     } else if (looksITab(raw)) {
       format = 'itab';
       groups = parseITab(raw);
-    } else if (looksOpenTab(raw)) {
-      format = 'opentab';
-      groups = parseOpenTab(raw);
     } else {
       return { ok: false, error: 'unrecognized', message: t(MSG_UNRECOGNIZED) };
     }
@@ -882,12 +1045,13 @@
     return { ok: true, format, groups, iconCount, groupCount: groups.length };
   }
 
-  function materializeImport(parsed, current) {
-    const currentFolders = groupsToFolders(foldersToGroups(current && current.folders));
-    let groups = foldersToGroups(currentFolders);
+  function materializeImport(parsed, current, options) {
+    const scene = selectedScene(current || {}, captureSceneContext(options));
+    // Existing records, opaque metadata, IDs and order are never normalized by
+    // an additive import. Only newly created groups receive scene ownership.
+    const groups = Array.isArray(current && current.folders) ? current.folders.slice() : [];
     const icons = Array.isArray(current && current.icons) ? current.icons.slice() : [];
-    let iconCount = 0;
-    let groupCount = 0;
+    let iconCount = 0, groupCount = 0;
     (parsed.groups || []).forEach((incoming) => {
       const made = [];
       (incoming.icons || []).forEach((item) => {
@@ -895,21 +1059,13 @@
         if (shortcut) made.push(shortcut);
       });
       if (!made.length) return;
-      const name = nextGroupName(incoming.name, groups);
-      const group = { id: 'folder-' + generateId(), name };
-      groups = groups.concat([group]);
+      const name = nextGroupName(incoming.name, groups.filter(group => !scene || group.sceneId === scene.id));
+      const group = { id: 'folder-' + generateId(), name, ...(scene ? { sceneId: scene.id } : {}) };
+      groups.push(group);
       groupCount += 1;
-      made.forEach((shortcut) => {
-        icons.push(withIconGroup(shortcut, group.id));
-        iconCount += 1;
-      });
+      made.forEach((shortcut) => { icons.push(withIconGroup(shortcut, group.id)); iconCount += 1; });
     });
-    return {
-      folders: groupsToFolders(groups),
-      icons,
-      iconCount,
-      groupCount
-    };
+    return { folders: groups, icons, iconCount, groupCount };
   }
 
   function importResultMessage(iconCount, groupCount) {
@@ -956,29 +1112,41 @@
     });
   }
 
-  async function commitImport(parsed) {
+  async function commitImport(parsed, options) {
+    return commitImportWithContext(parsed, captureSceneContext(options));
+  }
+
+  async function commitImportWithContext(parsed, context) {
     const result = await getWorkspace().transaction(async ({ read, write }) => {
-      const current = await read(['icons', 'folders', EPOCH_KEY]);
-      const materialized = materializeImport(parsed, current);
+      const current = await read(GRAPH_KEYS.concat([EPOCH_KEY]));
+      const scene = selectedScene(current, context);
+      if (Object.hasOwn(context, 'epoch')) {
+        if (context.epoch !== (current[EPOCH_KEY] || 0)) throw sceneConflict();
+        checkSceneReceipt(current, context.scene);
+      }
+      const materialized = materializeImport(parsed, current, context.value);
       if (!materialized.iconCount) {
         return { ok: false, error: 'empty', message: t('备份里没有可导入的图标，现有数据未改动。') };
       }
       const epoch = current[EPOCH_KEY] || 0;
       const before = stripSecretsFromState({
+        ...graphSnapshot(current),
         icons: Array.isArray(current.icons) ? current.icons : [],
         folders: Array.isArray(current.folders) ? current.folders : [],
         [EPOCH_KEY]: epoch
       });
       const after = stripSecretsFromState({
+        ...before,
         icons: materialized.icons,
         folders: materialized.folders,
         [EPOCH_KEY]: epoch
       });
+      validateSceneState(after);
       const text = importResultMessage(materialized.iconCount, materialized.groupCount);
       await write({
         icons: materialized.icons,
         folders: materialized.folders,
-        [UNDO_KEY]: { id: generateId(), createdAt: new Date().toISOString(), before, after },
+        [UNDO_KEY]: { id: generateId(), createdAt: new Date().toISOString(), before, after, scene: sceneReceipt(scene) },
         [NOTICE_KEY]: { text, iconCount: materialized.iconCount, groupCount: materialized.groupCount, canUndo: true }
       });
       return { ok: true, format: parsed.format, iconCount: materialized.iconCount, groupCount: materialized.groupCount, message: text };
@@ -1039,8 +1207,12 @@
     return { ok: true, format: 'topsites', groups, iconCount: groups[0].icons.length, groupCount: 1 };
   }
 
-  async function importTopSites() {
-    const permission = await requestOptionalPermission('topSites');
+  async function importTopSites(options) {
+    const context = captureSceneContext(options);
+    const permissionPromise = requestOptionalPermission('topSites');
+    const baselinePromise = captureStoredSceneContext(context);
+    baselinePromise.catch(() => {});
+    const permission = await permissionPromise;
     if (!permission.granted) {
       setStatus(MSG_TOPSITES_DENIED, true);
       return { ok: false, denied: true, message: t(MSG_TOPSITES_DENIED) };
@@ -1051,14 +1223,19 @@
       return { ok: false, denied: true, message: t(MSG_TOPSITES_DENIED) };
     }
     try {
+      const baseline = await baselinePromise;
       const sites = await chromeCall(api.topSites.get.bind(api.topSites), []);
       const parsed = parsedFromTopSites(sites);
       if (!parsed.ok) {
         setStatus(parsed.message, true);
         return parsed;
       }
-      return commitImport(parsed);
+      return await commitImportWithContext(parsed, baseline);
     } catch (error) {
+      if (error.code) {
+        setStatus(error.message, true);
+        return { ok: false, error: error.code, message: error.message };
+      }
       setStatus(MSG_TOPSITES_DENIED, true);
       return { ok: false, denied: true, message: t(MSG_TOPSITES_DENIED) };
     }
@@ -1071,33 +1248,38 @@
   }
 
   async function undoLastImport() {
+    const context = captureSceneContext();
     let result;
     try {
       result = await getWorkspace().transaction(async ({ read, write, merge }) => {
         const current = await read(null);
+        validateSceneState(current);
         const snapshot = current[UNDO_KEY];
         if (!snapshot) return { ok: false, message: t('没有可撤销的导入。') };
         if (!snapshot.before || !snapshot.after) {
           return { ok: false, error: 'legacy-undo', message: t('该导入记录较旧，无法安全撤销。现有数据未改动。') };
         }
+        checkSceneReceipt(current, snapshot.scene);
         // Apply only the inverse import delta, preserving later independent edits.
         const before = { ...snapshot.before }, after = { ...snapshot.after };
         if (snapshot.format === 'url-list' && current.currentFolderId !== after.currentFolderId) {
-          // Later independent navigation wins. Undo the imported records, not
-          // the user's newer group selection, without weakening graph checks.
+          // Preserve the shared compatibility alias if another tab changed it.
+          // This is independent of the invoking tab's local inverse navigation.
           delete before.currentFolderId;
           delete after.currentFolderId;
         }
         const merged = merge(after, before, current);
+        validateSceneState(merged);
+        const navigation = snapshot.format === 'url-list' ? localUndoNavigation(current, snapshot, context) : undefined;
         const patch = {
           [UNDO_KEY]: null,
           [NOTICE_KEY]: { text: '已撤销上次导入。', canUndo: false }
         };
-        ['icons', 'folders', 'currentFolderId'].forEach((key) => {
+        GRAPH_KEYS.concat(['currentFolderId']).forEach((key) => {
           if (JSON.stringify(merged[key]) !== JSON.stringify(current[key])) patch[key] = merged[key];
         });
         await write(patch);
-        return { ok: true };
+        return { ok: true, ...(navigation ? { navigation } : {}) };
       });
     } catch (error) {
       setStatus(undoFailureMessage(error), true);
@@ -1109,8 +1291,8 @@
     }
     setStatus(t('已撤销上次导入。'), false);
     refreshUndoButton();
-    reloadPage();
-    return { ok: true };
+    reloadPage(result.navigation);
+    return result;
   }
 
   function fillBookmarkSelect(folders) {
@@ -1136,10 +1318,20 @@
     const fileInput = document.getElementById('import-file-input');
     const undoBtn = document.getElementById('import-undo-btn');
     let bookmarkTree = null;
+    let bookmarkContext = null;
+    let fileContext = null;
 
     if (bookmarkBtn) {
       bookmarkBtn.addEventListener('click', () => {
-        loadBookmarkFolders().then((result) => {
+        bookmarkTree = null;
+        const context = captureSceneContext();
+        const loading = loadBookmarkFolders();
+        const baseline = captureStoredSceneContext(context);
+        baseline.catch(() => {});
+        bookmarkContext = baseline;
+        loading.then(async (result) => {
+          await baseline;
+          if (bookmarkContext !== baseline) return;
           if (!result.ok) {
             setStatus(result.message, true);
             return;
@@ -1165,7 +1357,7 @@
           setStatus(parsed.message, true);
           return;
         }
-        commitImport(parsed).catch(() => setStatus(t('导入失败，现有数据未改动。'), true));
+        Promise.resolve(bookmarkContext).then(context => commitImportWithContext(parsed, context)).catch(() => setStatus(t('导入失败，现有数据未改动。'), true));
       });
     }
 
@@ -1177,19 +1369,24 @@
 
     if (fileBtn && fileInput) {
       fileBtn.addEventListener('click', () => {
+        fileContext = captureStoredSceneContext(captureSceneContext());
+        fileContext.catch(() => {});
         fileInput.value = '';
         fileInput.click();
       });
       fileInput.addEventListener('change', () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) return;
-        Promise.resolve(file.text()).then((text) => {
+        const baseline = fileContext || captureStoredSceneContext(captureSceneContext());
+        baseline.catch(() => {});
+        Promise.resolve(file.text()).then(async (text) => {
+          const context = await baseline;
           const parsed = parseBackupFile(text, file.name);
           if (!parsed.ok) {
             setStatus(parsed.message, true);
             return null;
           }
-          return commitImport(parsed);
+          return commitImportWithContext(parsed, context);
         }).catch(() => {
           setStatus(MSG_INVALID_JSON, true);
         }).then(() => {
@@ -1236,6 +1433,7 @@
     MSG_INVALID_JSON,
     setChrome,
     setIdFactory,
+    setSceneContextProvider,
     setReloader,
     foldersToGroups,
     groupsToFolders,

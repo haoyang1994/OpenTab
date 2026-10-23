@@ -61,11 +61,58 @@
     return Math.abs(x) >= 48 && Math.abs(x) > 1.3 * Math.abs(y) ? (x < 0 ? 1 : -1) : 0;
   }
 
-  // The existing list's DOM, save calls and handlers are kept here, unchanged.
-  // Keeping the list renderer independent of deck setup preserves the old UI.
-  function renderTodoList({ state, elements, saveState, renderTodos }) {
+  function sceneView(adapter) {
+    if (!adapter.getSceneView) return null;
+    const view = adapter.getSceneView();
+    return { sceneId: view?.sceneId, homeGroupId: view?.homeGroupId, generation: view?.generation };
+  }
+  function sameView(adapter, view) {
+    const current = sceneView(adapter);
+    return !view ? !current : !!current && current.sceneId === view.sceneId
+      && current.homeGroupId === view.homeGroupId && current.generation === view.generation;
+  }
+  function sceneActive(data, view) {
+    if (!view) return true;
+    const scene = (data.scenes || []).find(item => item.id === view.sceneId);
+    return !!scene && scene.archivedAt === null && scene.homeGroupId === view.homeGroupId;
+  }
+  function visibleTodos(adapter) {
+    const view = sceneView(adapter), todos = adapter.state.todos;
+    return !view ? todos : sceneActive(adapter.state, view) ? todos.filter(todo => todo.sceneId === view.sceneId) : [];
+  }
+  // Creation stays with the host's input/save lifecycle. This helper supplies
+  // ownership without clearing drafts or replacing the full task collection.
+  function createTodoRecord(adapter, record) {
+    const view = sceneView(adapter);
+    if (!sceneActive(adapter.state, view)) return null;
+    return { ...record, ...(view ? { sceneId: view.sceneId } : {}) };
+  }
+  function todoTarget(adapter, todo) {
+    return { id: todo.id, text: todo.text, done: Boolean(todo.done), sceneId: todo.sceneId,
+      view: sceneView(adapter), intent: adapter.workspace.captureIntent({ todos: [todo.id] }) };
+  }
+  function todoMatches(data, shown) {
+    return sceneActive(data, shown.view) && (data.todos || []).some(item => item.id === shown.id
+      && item.text === shown.text && Boolean(item.done) === shown.done && item.sceneId === shown.sceneId
+      && (!shown.view || item.sceneId === shown.view.sceneId));
+  }
+  function todoCurrent(adapter, shown) {
+    return !!shown && sameView(adapter, shown.view) && todoMatches(adapter.state, shown)
+      && adapter.workspace.isIntentCurrent(shown.intent);
+  }
+  function todoGuard(adapter, shown) {
+    return latest => sameView(adapter, shown.view) && todoMatches(latest, shown)
+      && (latest['opentab.workspaceEpoch'] || 0) === shown.intent.epoch;
+  }
+
+  // Keep the legacy renderer independent of optional deck setup. Scene mode
+  // projects only the DOM; handlers always update the full collection by ID.
+  function renderTodoList(adapter) {
+    const { state, elements, saveState, renderTodos } = adapter;
+    const todos = visibleTodos(adapter), view = sceneView(adapter);
     elements.todoList.innerHTML = '';
-    state.todos.forEach((todo) => {
+    todos.forEach((todo) => {
+      const shown = view ? todoTarget(adapter, todo) : null;
       const row = document.createElement('div');
       row.className = `todo-item${todo.done ? ' done' : ''}`;
       const checkbox = document.createElement('input');
@@ -73,8 +120,14 @@
       checkbox.checked = Boolean(todo.done);
       checkbox.setAttribute('aria-label', t(todo.done ? '标记为未完成' : '标记为已完成'));
       checkbox.addEventListener('change', () => {
-        todo.done = checkbox.checked;
-        saveState();
+        if (view) {
+          if (!todoCurrent(adapter, shown)) { renderTodos(); return; }
+          state.todos = state.todos.map(item => item.id === shown.id ? { ...item, done: checkbox.checked } : item);
+          saveState(undefined, undefined, todoGuard(adapter, shown));
+        } else {
+          todo.done = checkbox.checked;
+          saveState();
+        }
         renderTodos();
       });
       const text = document.createElement('span');
@@ -86,15 +139,17 @@
       remove.textContent = '×';
       remove.setAttribute('aria-label', t('删除待办：{name}', { name: todo.text }));
       remove.addEventListener('click', () => {
+        if (view && !todoCurrent(adapter, shown)) { renderTodos(); return; }
         state.todos = state.todos.filter((item) => item.id !== todo.id);
-        saveState();
+        if (view) saveState(undefined, undefined, todoGuard(adapter, shown));
+        else saveState();
         renderTodos();
       });
       row.appendChild(checkbox); row.appendChild(text); row.appendChild(remove);
       elements.todoList.appendChild(row);
     });
-    const done = state.todos.filter((item) => item.done).length;
-    const total = state.todos.length;
+    const done = todos.filter((item) => item.done).length;
+    const total = todos.length;
     const progress = total > 0 ? Math.round((done / total) * 100) : 0;
     if (elements.todoCount) elements.todoCount.textContent = `${done}/${total}`;
     if (elements.todoEmpty) elements.todoEmpty.classList.toggle('hidden', total > 0);
@@ -104,22 +159,22 @@
   function createTodoAction(host, onChange = () => {}) {
     let pending = false;
     function target() {
-      const todo = host.state.todos.find(item => !item.done);
-      return todo ? { id: todo.id, text: todo.text, intent: host.workspace.captureIntent({ todos: [todo.id] }) } : null;
+      const todo = visibleTodos(host).find(item => !item.done);
+      return todo ? todoTarget(host, todo) : null;
     }
     async function complete(shown) {
       if (pending) return 'pending';
       const current = host.state.todos.find(item => item.id === shown?.id);
-      if (!shown || !current || current.done || current.text !== shown.text || !host.workspace.isIntentCurrent(shown.intent)) return 'stale';
+      if (!shown || !current || current.done || !todoCurrent(host, shown)) return 'stale';
       pending = true;
       const intent = host.workspace.captureIntent();
-      const guard = latest => (latest.todos || []).some(item => item.id === shown.id && item.text === shown.text && !item.done);
+      const guard = todoGuard(host, shown);
       const optimistic = { ...current, done: true };
       host.state.todos = host.state.todos.map(item => item.id === shown.id ? optimistic : item);
       try {
         onChange();
         const saved = await host.saveState(undefined, undefined, guard);
-        return saved && host.workspace.isIntentCurrent(intent) ? 'saved' : 'failed';
+        return saved && sameView(host, shown.view) && host.workspace.isIntentCurrent(intent) ? 'saved' : 'failed';
       } catch (_) {
         // Only undo our exact in-memory object, never a newer/recovered record.
         host.state.todos = host.state.todos.map(item => item === optimistic ? current : item);
@@ -180,8 +235,8 @@
       refreshTodos();
     }
     function refreshTodos() {
-      if (!action.pending) shown = action.target();
-      const count = adapter.state.todos.filter(item => !item.done).length;
+      if (!action.pending || !shown || !sameView(adapter, shown.view) || !sceneActive(adapter.state, shown.view)) shown = action.target();
+      const count = visibleTodos(adapter).filter(item => !item.done).length;
       $('clock-todo-text').textContent = shown ? shown.text : t('暂时没有未完成待办，留一点空白也很好。');
       $('clock-todo-text').title = shown?.text || '';
       $('clock-todo-count').textContent = shown ? t('还有 {count} 件未完成', { count }) : t('一件一件，慢慢来');
@@ -272,5 +327,5 @@
     // Optional card enhancement must never prevent the existing list loading.
     try { deck = createDeck(adapter); } catch (error) { root.console?.warn('Clock cards unavailable', error); }
   }
-  root.OpenTabClockDeck = { init, renderTodos, createFocusTimer, formatRemaining, swipeDirection, createTodoAction, renderTodoList, DURATION, FOCUS_KEY };
+  root.OpenTabClockDeck = { init, renderTodos, createFocusTimer, formatRemaining, swipeDirection, createTodoAction, createTodoRecord, visibleTodos, renderTodoList, DURATION, FOCUS_KEY };
 })(globalThis);

@@ -8,6 +8,7 @@
   const FILTERS = ['all', 'sites', 'groups', 'actions'];
   const CATEGORIES = { site: '网站', group: '分组', action: '操作' };
   const ACTIONS = [
+    { id: 'manage-scenes', name: '管理场景空间', keywords: 'manage scenes workspace 管理 场景 工作区', symbol: '▦' },
     { id: 'add-website', name: '添加网站', keywords: 'add website shortcut new 添加 网站 快捷方式', symbol: '+' },
     { id: 'appearance', name: '外观', keywords: 'appearance theme clock minimal 外观 主题 时钟 极简', symbol: '◐' },
     { id: 'wallpaper', name: '壁纸', keywords: 'wallpaper background image bing 壁纸 背景 图片 必应', symbol: '▧' },
@@ -62,6 +63,7 @@
   }
 
   function blocked(target) {
+    if (document.querySelector('dialog[open]')) return true;
     if (global.OpenTabSiteList?.isBusy?.() || global.OpenTabSiteSelection?.isPending?.()
       || $('site-selection-dialog')?.open) return true;
     if (OVERLAYS.some((id) => { const node = $(id); return node && !node.classList.contains('hidden') && !node.hidden; })) return true;
@@ -139,6 +141,7 @@
   function availableActions(query) {
     const needle = String(query || '').trim().toLowerCase();
     return ACTIONS.filter((action) => {
+      if (action.id === 'manage-scenes') return typeof global.OpenTabSceneNavigation?.openManager === 'function';
       if (action.id === 'add-website') return typeof host.openAddWebsite === 'function';
       if (typeof global.OpenTabSettingsNav?.openSection !== 'function') return false;
       return action.id !== 'advanced' || global.OpenTabSettingsNav.isDeveloperToolsEnabled();
@@ -221,7 +224,7 @@
       const icon = textNode('span', 'command-palette-icon', symbol);
       icon.setAttribute('aria-hidden', 'true');
       const title = textNode('span', 'command-palette-row-title', entry.name);
-      const context = entry.type === 'site' ? `${entry.domain} · ${entry.location}` : entry.type === 'group' ? t('切换分组') : entry.id === 'add-website' ? t('创建快捷方式') : t('设置');
+      const context = entry.type === 'site' ? `${entry.domain} · ${entry.location}` : entry.type === 'group' ? entry.location || t('切换分组') : entry.id === 'add-website' ? t('创建快捷方式') : entry.id === 'manage-scenes' ? t('场景空间') : t('设置');
       const detail = textNode('span', 'command-palette-row-context', context);
       const text = document.createElement('span');
       text.className = 'command-palette-row-text';
@@ -275,7 +278,11 @@
     rows.forEach((row) => row.setAttribute('aria-disabled', 'true'));
     setStatus(t('正在切换分组…'), true);
     let saved = false;
-    try { saved = await global.OpenTabFolders.selectGroup(entry.id, true); }
+    try {
+      const navigation = global.OpenTabSceneNavigation;
+      saved = navigation ? await navigation.selectGroup(entry.id, { view: entry.view, scene: entry.scene, group: entry.group }) :
+        await global.OpenTabFolders.selectGroup(entry.id, true);
+    }
     catch (error) { saved = false; }
     finally { if (pendingActivation === operation) pendingActivation = null; }
     if (!opened) return saved === true;
@@ -295,11 +302,14 @@
         return true;
       }
       if (entry.type === 'group') {
-        if (!search().validateGroup(entry) || typeof global.OpenTabFolders?.selectGroup !== 'function') { stale(); return false; }
+        const navigation = global.OpenTabSceneNavigation;
+        if (!search().validateGroup(entry) || (navigation ? typeof navigation.selectGroup !== 'function' :
+          entry.sceneAware || typeof global.OpenTabFolders?.selectGroup !== 'function')) { stale(); return false; }
         return activateGroup(entry);
       }
       if (!availableActions('').some((action) => action.id === entry.id)) { stale(); return false; }
       close();
+      if (entry.id === 'manage-scenes') return global.OpenTabSceneNavigation.openManager();
       if (entry.id === 'add-website') host.openAddWebsite();
       else return global.OpenTabSettingsNav.openSection(entry.id);
       return true;

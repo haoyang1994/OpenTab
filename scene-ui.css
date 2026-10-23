@@ -1,0 +1,143 @@
+/* Isolated scene surfaces. Loading this file never changes the home layout. */
+.scene-trigger,
+.scene-dialog {
+  --scene-accent: #a5b4fc;
+  --scene-accent-bg: rgba(129, 140, 248, 0.14);
+  --scene-accent-border: rgba(165, 180, 252, 0.38);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  color: var(--text-primary, #f1f5f9);
+}
+body.theme-light .scene-trigger,
+body.theme-light .scene-dialog {
+  --scene-accent: #4f46e5;
+  --scene-accent-bg: rgba(79, 70, 229, 0.07);
+  --scene-accent-border: rgba(79, 70, 229, 0.28);
+}
+.scene-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(240px, 100%);
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--panel-border, #334155);
+  border-radius: 11px;
+  background: var(--button-bg, #182234);
+  box-shadow: 0 2px 8px -5px var(--shadow-color, #020617);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.scene-trigger-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-trigger > svg { width: 16px; height: 16px; flex: 0 0 16px; color: var(--scene-accent); }
+.scene-trigger > svg:last-child { width: 13px; height: 13px; flex-basis: 13px; color: var(--text-secondary, #94a3b8); }
+.scene-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--panel-border, #334155);
+  border-radius: var(--radius-md, 16px);
+  background: var(--panel-bg-solid, #0f172a);
+  box-shadow: var(--shadow-panel, 0 24px 70px #02061780);
+  overflow: hidden;
+  text-align: left;
+}
+.scene-dialog::backdrop { background: rgba(2, 6, 23, 0.5); backdrop-filter: blur(5px); }
+.scene-shell { display: flex; flex-direction: column; max-height: calc(100vh - 34px); max-height: calc(100dvh - 34px); min-height: 0; }
+.scene-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px 14px; flex: 0 0 auto; }
+.scene-title { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.4; }
+.scene-body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: 0 20px 16px; scrollbar-gutter: stable; }
+.scene-description { margin: 0 0 16px; color: var(--text-secondary, #94a3b8); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.scene-list { list-style: none; display: grid; gap: 7px; margin: 0; padding: 0; }
+.scene-row { display: flex; align-items: center; min-width: 0; border: 1px solid var(--section-border, #253047); border-radius: 12px; background: var(--section-bg, #172033); }
+.scene-row-current { border-color: var(--scene-accent-border); background: var(--scene-accent-bg); }
+.scene-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 36px; margin: 0; padding: 8px 12px;
+  color: var(--text-primary, #f1f5f9); background: var(--control-bg, #1e293b);
+  border: 1px solid var(--field-border, #334155); border-radius: 9px;
+  font: inherit; font-size: 12px; font-weight: 550; line-height: 1.4;
+  cursor: pointer; transition: background 150ms, border-color 150ms;
+}
+.scene-button svg { width: 17px; height: 17px; flex: 0 0 17px; }
+.scene-button:hover:not(:disabled), .scene-trigger:hover:not(:disabled) { background: var(--control-hover, #29354c); }
+.scene-dialog .scene-primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+.scene-dialog .scene-primary:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
+.scene-button:disabled, .scene-trigger:disabled { cursor: not-allowed; opacity: 0.48; }
+.scene-trigger:focus-visible, .scene-dialog :is(button, input, select, a):focus-visible { outline: 2px solid var(--scene-accent); outline-offset: 2px; }
+.scene-dialog .scene-row-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; border: 0; border-radius: 11px; padding: 12px; background: transparent; text-align: left; justify-content: flex-start; }
+.scene-row-main > svg { width: 21px; height: 21px; flex: 0 0 21px; color: var(--scene-accent); }
+.scene-row-text { display: grid; gap: 4px; min-width: 0; }
+.scene-row-name { font-size: 13px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.scene-row-counts { color: var(--text-secondary, #94a3b8); font-size: 11px; font-weight: 400; line-height: 1.4; }
+.scene-current-label { margin-left: auto; padding: 3px 6px; border-radius: 5px; color: var(--scene-accent); background: var(--scene-accent-bg); font-size: 10px; font-weight: 600; flex: 0 0 auto; }
+.scene-row-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; padding-right: 7px; }
+.scene-dialog .scene-icon-button { width: 32px; min-height: 32px; padding: 7px; border-color: transparent; background: transparent; color: var(--text-secondary, #94a3b8); flex: 0 0 auto; }
+.scene-icon-button > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.scene-list-footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.scene-dialog .scene-archived-toggle { margin-top: 20px; padding: 6px 0; border-color: transparent; background: transparent; color: var(--text-secondary, #94a3b8); }
+.scene-archived-list { margin-top: 7px; }
+.scene-archived-list .scene-row { background: transparent; }
+.scene-dialog [hidden] { display: none !important; }
+.scene-empty { color: var(--text-secondary, #94a3b8); font-size: 13px; line-height: 1.6; padding: 12px 0; }
+.scene-form { display: block; margin: 0; }
+.scene-field-label { display: block; font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+.scene-name-input, .scene-target-select { display: block; width: 100%; min-width: 0; min-height: 42px; padding: 10px 12px; border: 1px solid var(--field-border, #334155); border-radius: 9px; background: var(--field-bg, #1e293b); color: var(--text-primary, #f1f5f9); font: inherit; font-size: 13px; }
+.scene-name-input[aria-invalid="true"] { border-color: #e87979; }
+.scene-field-hint { margin: 8px 0 16px; color: var(--text-secondary, #94a3b8); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.scene-icon-choices { border: 0; padding: 0; margin: 20px 0 0; min-width: 0; }
+.scene-icon-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 7px; }
+.scene-dialog .scene-icon-choice { min-width: 0; min-height: 42px; padding: 9px; }
+.scene-dialog .scene-icon-choice[aria-pressed="true"] { color: var(--scene-accent); border-color: var(--scene-accent-border); background: var(--scene-accent-bg); }
+.scene-form-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 24px; }
+.scene-status { flex: 0 0 auto; margin: 0; padding: 0 20px 16px; color: var(--text-secondary, #94a3b8); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; max-height: 25vh; overflow-y: auto; }
+.scene-status:empty { padding: 0; }
+.scene-status-error { color: #fca5a5; }
+body.theme-light .scene-status-error { color: #b91c1c; }
+@media (max-width: 420px) {
+  .scene-header { padding: 14px 14px 12px; }
+  .scene-body { padding: 0 14px 14px; }
+  .scene-status:not(:empty) { padding: 0 14px 14px; }
+  .scene-row-main { gap: 8px; }
+  .scene-dialog .scene-row-main { padding: 10px 8px; }
+  .scene-row-counts { font-size: 10px; }
+  .scene-current-label { font-size: 9px; padding: 2px 4px; }
+  .scene-row-actions { padding-right: 4px; gap: 0; }
+  .scene-dialog .scene-icon-button { width: 30px; min-height: 34px; padding: 6px; }
+  .scene-icon-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-height: 460px) { .scene-header { padding-top: 10px; padding-bottom: 10px; } .scene-form-footer { padding-top: 16px; } }
+@media (prefers-reduced-motion: reduce) { .scene-trigger, .scene-dialog, .scene-dialog * { transition: none !important; animation: none !important; } }
+
+/* Reuse the reviewed slate/indigo surfaces, not the older near-black glass
+   tokens. This styling is local to scenes and leaves the user's theme intact. */
+.scene-dialog, .scene-introduction, .scene-recovery {
+  --panel-bg-solid: var(--form-surface, #334155);
+  --text-primary: var(--form-text, #f8fafc);
+  --text-secondary: var(--form-muted, #cbd5e1);
+  --section-bg: var(--form-field, #3d4d63);
+  --section-border: var(--form-border, #607088);
+  --control-bg: var(--form-field, #3d4d63);
+  --control-hover: var(--nav-hover, #52647d);
+  --field-bg: var(--form-field, #3d4d63);
+  --field-border: var(--form-border, #607088);
+  color: var(--text-primary);
+}
+.scene-dialog { border-color: var(--field-border); }
+#scene-switcher { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.scene-trigger { background: var(--nav-surface); color: var(--nav-text); border-color: var(--nav-border); }
+.scene-trigger:hover:not(:disabled) { background: var(--nav-hover); }
+.scene-row-current { --text-secondary: var(--nav-selected-text); --scene-accent: var(--nav-selected-text); background: var(--nav-selected); color: var(--nav-selected-text); }
+.scene-introduction { width: min(400px, calc(100vw - 32px)); padding: 18px; border: 1px solid var(--field-border); border-radius: 14px; background: var(--panel-bg-solid); text-align: left; box-shadow: 0 12px 32px #1e293b25; }
+.scene-introduction[hidden] { display: none; }
+.scene-introduction .scene-button + .scene-button { margin-left: 8px; }
+.scene-introduction .scene-primary { background: #4f46e5; border-color: #4f46e5; color: white; }
+.scene-recovery { position: fixed; z-index: 5000; inset: 0; margin: auto; height: fit-content; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px; border: 1px solid var(--field-border); border-radius: 14px; background: var(--panel-bg-solid); box-shadow: 0 20px 60px #1e293b40; }
+.scene-recovery .scene-status { padding: 0 0 16px; }
+.scene-recovery .scene-button + .scene-button { margin-left: 8px; }
+.scene-introduction :focus-visible, .scene-recovery :focus-visible { outline: 2px solid var(--nav-selected-text); outline-offset: 2px; }
+
+.scene-recovery::backdrop { background: rgb(30 41 59 / 30%); backdrop-filter: blur(5px); }

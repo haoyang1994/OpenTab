@@ -8,8 +8,19 @@
   const t = (source) => root.OpenTabI18n ? root.OpenTabI18n.t(source) : source;
   const LOCK_NAME = 'opentab-workspace-v1';
   const EPOCH_KEY = 'opentab.workspaceEpoch';
-  const ENTITIES = ['icons', 'folders', 'todos'];
-  const KEYS = ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode', EPOCH_KEY];
+  const SCHEMA_KEY = 'opentab.sceneSchemaVersion';
+  const ENTITIES = ['icons', 'folders', 'todos', 'scenes', 'sceneProfiles'];
+  const SCENE_GRAPH_KEYS = [SCHEMA_KEY, ...ENTITIES];
+  const SCENE_VIEW_KEYS = ['currentFolderId', 'background', 'bingIndex'];
+  function sceneSchema() { return root.OpenTabSceneSchema || (node ? require('./scene-schema.js') : null); }
+  function validateSceneState(value) {
+    if (!Object.hasOwn(value, SCHEMA_KEY) && !Object.hasOwn(value, 'scenes') && !Object.hasOwn(value, 'sceneProfiles')
+      && !['icons', 'folders', 'todos'].some(key => Array.isArray(value[key]) && value[key].some(item => item && Object.hasOwn(item, 'sceneId')))) return;
+    const schema = sceneSchema();
+    if (!schema) throw Object.assign(new Error('Scene data requires a compatible OpenTab version. Data is unchanged.'), { code: 'SCENE_SCHEMA_UNAVAILABLE' });
+    schema.validate(value);
+  }
+  const KEYS = ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode', SCHEMA_KEY, 'scenes', 'sceneProfiles', 'lastOpenedSceneId', 'todoButtonVisible', EPOCH_KEY];
   const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   function stable(value) {
     if (Array.isArray(value)) return value.map(stable);
@@ -88,11 +99,12 @@
       }
       if (result.currentFolderId && groups.size && !groups.has(result.currentFolderId)) result.currentFolderId = groups.has('folder-home') ? 'folder-home' : groups.keys().next().value;
     }
+    validateSceneState(result);
     return result;
   }
   function migrationOverrides(stored, view) {
     const overrides = {};
-    const oldFolders = Array.isArray(stored.folders) ? stored.folders.map((item) => item && ({ id: String(item.id || ''), name: String(item.name || '') })) : [];
+    const oldFolders = Array.isArray(stored.folders) ? (stored[SCHEMA_KEY] === 2 ? clone(stored.folders) : stored.folders.map((item) => item && ({ id: String(item.id || ''), name: String(item.name || '') }))) : [];
     if (!equal(oldFolders, view.folders)) overrides.folders = oldFolders;
     const oldIcons = new Map((stored.icons || []).filter(Boolean).map((item) => [item.id, item]));
     const priorIcons = (view.icons || []).map((item) => {
@@ -132,8 +144,26 @@
       return Promise.resolve().then(() => locks.request(LOCK_NAME, { mode: 'exclusive', signal: controller.signal }, async () => {
         clearTimeout(timer);
         const chrome = getChrome(), area = chrome.storage.local;
-        const read = async (keys = null) => (await call(chrome, area.get.bind(area), keys)) || {};
-        const write = (payload) => call(chrome, area.set.bind(area), payload);
+        let snapshot = {}, completeGraph = false;
+        const read = async (keys = null) => {
+          const value = (await call(chrome, area.get.bind(area), keys)) || {};
+          if (keys === null) { snapshot = clone(value); completeGraph = true; }
+          else if (Array.isArray(keys)) {
+            for (const key of keys) { if (Object.hasOwn(value, key)) snapshot[key] = clone(value[key]); else delete snapshot[key]; }
+            if (SCENE_GRAPH_KEYS.every(key => keys.includes(key))) completeGraph = true;
+          }
+          return value;
+        };
+        const write = async (payload) => {
+          if (!completeGraph) await read(null);
+          // Every coordinator writer (including import/popup transactions) must
+          // reject unknown or damaged scene graphs before storage changes.
+          validateSceneState(snapshot);
+          const next = { ...snapshot, ...payload };
+          validateSceneState(next);
+          await call(chrome, area.set.bind(area), payload);
+          snapshot = clone(next);
+        };
         return task({ read, write, merge });
       })).catch((error) => {
         if (error.name === 'AbortError') throw new Error(t('保存等待超时，请重试。'));
@@ -189,14 +219,15 @@
         }
       };
     }
-    function connect({ state, onChange, onError, onSaved }) {
-      let session = null, committed = null, epoch = 0;
-      const pick = (value) => Object.fromEntries(KEYS.filter((key) => Object.hasOwn(value, key)).map((key) => [key, clone(value[key])]));
+    function connect({ state, onChange, onError, onSaved, getViewIdentity }) {
+      let session = null, committed = null, epoch = 0, failedSinceIdle = false;
+      const inFlight = new Set();
+      const pick = (value) => Object.fromEntries(KEYS.filter((key) => Object.hasOwn(value, key) && !(value[SCHEMA_KEY] === 2 && SCENE_VIEW_KEYS.includes(key))).map((key) => [key, clone(value[key])]));
       function apply(saved) {
         epoch = saved[EPOCH_KEY] || 0;
         let changed = false;
         for (const key of KEYS) {
-          if (key === EPOCH_KEY || !Object.hasOwn(saved, key)) continue;
+          if (key === EPOCH_KEY || !Object.hasOwn(saved, key) || (saved[SCHEMA_KEY] === 2 && SCENE_VIEW_KEYS.includes(key))) continue;
           if (!equal(state[key], saved[key])) { state[key] = clone(saved[key]); changed = true; }
         }
         if (changed && onChange) onChange();
@@ -211,7 +242,7 @@
         const active = session;
         let operation;
         try { operation = active.save(pick(state), guard); } catch (error) { operation = Promise.reject(error); }
-        return operation.then((result) => {
+        const settled = operation.then((result) => {
           if (active !== session) return false;
           committed = { ...committed, ...pick(result.state) };
           if (result.current) {
@@ -219,7 +250,7 @@
             active.rebase(result.state, pick(state));
           }
           if (onOk) onOk();
-          if (onSaved) onSaved();
+          if (onSaved) onSaved(result.state);
           return true;
         }).catch(async (error) => {
           if (active !== session) return false;
@@ -227,15 +258,34 @@
           if (onError) onError(error);
           try { const latest = await read(); apply({ ...committed, ...latest }); seed(latest); }
           catch (_) { if (committed) apply(committed); } // Never keep an unsaved optimistic edit.
-          if (onSaved) onSaved();
+          if (onSaved) onSaved(committed);
           return false;
         });
+        inFlight.add(settled);
+        settled.then(value => { if (value !== true) failedSinceIdle = true; inFlight.delete(settled); }, () => { failedSinceIdle = true; inFlight.delete(settled); });
+        return settled;
+      }
+      async function whenIdle() {
+        // A later failed queue ticket can settle before an earlier async
+        // recovery read. Drain every save/recovery, not merely the last ticket.
+        let successful = !failedSinceIdle;
+        failedSinceIdle = false;
+        while (inFlight.size) {
+          const results = await Promise.allSettled([...inFlight]);
+          if (results.some(result => result.status !== 'fulfilled' || result.value !== true)) successful = false;
+        }
+        successful = successful && !failedSinceIdle;
+        failedSinceIdle = false;
+        return successful;
       }
       function intentRecord(record, key) {
         if (!record) return null;
         const fields = key === 'icons'
           ? ['id', 'name', 'url', 'type', 'folderId', 'parentId', 'customIconUrl', 'emoji', 'uploadedIconDataUrl', 'toolSubtype', 'sshGatewayUrl', 'sshHost', 'sshPort', 'sshUsername', 'sshSocksHost', 'sshSocksPort', 'sshSocksUsername']
-          : key === 'folders' ? ['id', 'name', 'parentId', 'type'] : ['id', 'text', 'done'];
+          : key === 'folders' ? ['id', 'name', 'parentId', 'type', 'sceneId']
+            : key === 'scenes' ? ['id', 'name', 'iconKey', 'homeGroupId', 'archivedAt']
+              : key === 'sceneProfiles' ? ['id', 'background', 'bingIndex', 'layoutIconSize', 'layoutColumns', 'layoutShowNames', 'layoutMaxWidth']
+                : ['id', 'text', 'done', 'sceneId'];
         return Object.fromEntries(fields.filter((field) => {
           const value = record[field];
           return value !== undefined && value !== '' && value !== false
@@ -249,15 +299,15 @@
           records[key] = Object.fromEntries(targets[key].map((id) => [id, intentRecord((state[key] || []).find((item) => item.id === id), key)]));
         }
         const groups = Object.fromEntries((targets.groupMembers || []).map((id) => [id, (state.icons || []).filter((item) => item.folderId === id).map((item) => item.id).sort()]));
-        return { epoch, records, groups };
+        return { epoch, records, groups, view: getViewIdentity ? clone(getViewIdentity()) : undefined };
       }
       function isIntentCurrent(intent) {
-        return !!intent && intent.epoch === epoch && Object.entries(intent.groups).every(([id, ids]) => equal(ids, (state.icons || []).filter((item) => item.folderId === id).map((item) => item.id).sort())) && Object.entries(intent.records).every(([key, entries]) =>
+        return !!intent && intent.epoch === epoch && (!getViewIdentity || equal(intent.view, getViewIdentity())) && Object.entries(intent.groups).every(([id, ids]) => equal(ids, (state.icons || []).filter((item) => item.folderId === id).map((item) => item.id).sort())) && Object.entries(intent.records).every(([key, entries]) =>
           Object.entries(entries).every(([id, before]) => equal(before, intentRecord((state[key] || []).find((item) => item.id === id), key))));
       }
-      return { seed, save, captureIntent, isIntentCurrent };
+      return { seed, save, captureIntent, isIntentCurrent, whenIdle };
     }
-    return { transaction, read, commit, replace, createSession, connect, merge, migrationOverrides, LOCK_NAME, EPOCH_KEY, KEYS };
+    return { transaction, read, commit, replace, createSession, connect, merge, migrationOverrides, LOCK_NAME, EPOCH_KEY, SCHEMA_KEY, KEYS };
   }
   const api = createAPI(() => root.chrome, () => root.navigator && root.navigator.locks);
   if (node) {
