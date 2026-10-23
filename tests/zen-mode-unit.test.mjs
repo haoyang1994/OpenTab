@@ -7,10 +7,10 @@ const zenSource = source('zen-mode.js'), clockSource = source('clock-deck.js');
 
 // Load both real modules, including getFocus(), subscription/ticking and the
 // entry click handler. Only browser primitives, storage and wall time are fake.
-function harness({ fullscreen = 'success', minimal = false, hiddenTodo = false, videoPlaying = false, homeReady = true } = {}) {
+function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal = false, hiddenTodo = false, videoPlaying = false, homeReady = true } = {}) {
   let now = 1_000_000, timerId = 0, document, root;
   const timers = new Map(), session = new Map(), writes = [], order = [], observers = [];
-  const pending = [], requests = [], exits = [], changes = [], warnings = [];
+  const pending = [], pendingExits = [], requests = [], exits = [], changes = [], warnings = [];
   const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
   const matches = (node, selector) => selector.split(',').some(part => {
     part = part.trim();
@@ -100,16 +100,20 @@ function harness({ fullscreen = 'success', minimal = false, hiddenTodo = false, 
   for (let index = 0; index < 3; index++) add(`dot-${index}`, nav, 'button').setAttribute('data-clock-card', index);
   document.getElementById = id => [html, ...descendants(html)].find(node => node.id === id) || null;
   const $ = document.getElementById;
-  const event = (type, extra = {}) => ({ type, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, stopImmediatePropagation() { this.immediateStopped = this.stopped = true; }, ...extra });
+  const event = (type, extra = {}) => ({ type, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, stopImmediatePropagation() { this.immediateStopped = this.stopped = true; }, ...extra });
   const fullscreenChange = node => { document.fullscreenElement = node; document.dispatchEvent(event('fullscreenchange')); };
   if (fullscreen !== 'unsupported') html.requestFullscreen = () => {
     order.push('requestFullscreen'); requests.push({ synchronous: inEntryClick, inert: home.inert });
     if (fullscreen === 'throw') throw Error('Synchronous fullscreen refusal');
     if (fullscreen === 'reject') return Promise.reject(Error('Fullscreen denied'));
-    if (fullscreen === 'pending') return new Promise((resolve, reject) => pending.push({ resolve: () => { fullscreenChange(html); resolve(); }, reject }));
+    if (fullscreen === 'pending') return new Promise((resolve, reject) => pending.push({ resolve: () => { fullscreenChange(html); resolve(); }, resolveWithoutFullscreen: resolve, reject }));
     fullscreenChange(html); return Promise.resolve();
   };
-  document.exitFullscreen = () => { exits.push(document.fullscreenElement); fullscreenChange(null); return Promise.resolve(); };
+  document.exitFullscreen = () => {
+    exits.push(document.fullscreenElement);
+    if (fullscreenExit === 'pending') return new Promise((resolve, reject) => pendingExits.push({ resolve: () => { fullscreenChange(null); resolve(); }, reject }));
+    fullscreenChange(null); return Promise.resolve();
+  };
   const state = { todos: [], minimalMode: minimal, todoButtonVisible: !hiddenTodo, todoPanelOpen: false, sceneId: 'study', folders: [{ id: 'study-home' }] };
   const pristine = structuredClone(state); let opened = 0, inEntryClick = false, restoreHome = homeReady;
   if (minimal) body.classList.add('minimal-mode');
@@ -129,7 +133,7 @@ function harness({ fullscreen = 'success', minimal = false, hiddenTodo = false, 
   vm.runInContext(zenSource, context);
   const options = { focus, closePopovers() { order.push('closePopovers'); }, onActiveChange: value => changes.push(value), canRestoreHome: () => restoreHome };
   context.OpenTabZenMode.init(options);
-  return { $, body, html, home, input, video, todo, script, panel, existingInert, document, root, state, pristine, focus, api: context.OpenTabZenMode, context, requests, exits, pending, order, changes, writes, session, timers,
+  return { $, body, html, home, input, video, todo, script, panel, existingInert, document, root, state, pristine, focus, api: context.OpenTabZenMode, context, requests, exits, pending, pendingExits, order, changes, writes, session, timers,
     event, fullscreenChange, setHomeReady: value => { restoreHome = value; },
     clickEntry() { entry.focus(); inEntryClick = true; entry.click(); inEntryClick = false; },
     key(key, extra = {}, type = 'keydown') { const e = event(type, { key, ...extra }); document.activeElement.dispatchEvent(e); return e; },
@@ -212,11 +216,113 @@ for (const fullscreen of ['reject', 'throw', 'unsupported']) {
   h.api.exit(); assert.equal(h.document.fullscreenElement, null); assert.equal(h.exits.length, 1);
 }
 {
-  const h = harness(); h.clickEntry();
-  const escape = h.key('Escape'); assert.equal(escape.defaultPrevented, undefined, 'Escape is never cancelled, so the browser can leave fullscreen');
-  h.fullscreenChange(null); await h.settle();
-  assert.equal(h.api.isActive(), true); assert.equal(h.panel.hidden, false); assert.equal(h.requests.length, 1, 'native fullscreen exit never requests fullscreen again');
-  h.advance(5000); assert.equal(h.requests.length, 1); h.api.exit(); assert.equal(h.exits.length, 0, 'no fullscreen ownership remains after browser Escape');
+  const h = harness({ fullscreen: 'pending' }); h.clickEntry();
+  assert.equal(h.key('Escape').defaultPrevented, false); h.api.exit(); h.clickEntry();
+  assert.equal(h.requests.length, 1, 'a fresh entry adopts the outstanding request rather than issuing another');
+  h.pending[0].resolve(); await h.settle();
+  assert.equal(h.api.isActive(), true); assert.equal(h.document.fullscreenElement, h.html);
+  assert.equal(h.exits.length, 0, 'the latest explicit entry supersedes cancellation from the previous Zen session');
+  h.api.exit(); await h.settle(); assert.equal(h.document.fullscreenElement, null); assert.equal(h.exits.length, 1);
+}
+// Overlapping browser transitions have no guaranteed success ordering. Model
+// late success, explicit rejection and fulfillment collapsed by the old exit;
+// only the new click may request entry, never a later promise continuation.
+for (const outcome of ['success', 'reject', 'collapsed']) for (const keepActive of [true, false]) {
+  const h = harness({ fullscreen: 'pending', fullscreenExit: 'pending' });
+  h.clickEntry(); h.pending[0].resolve(); await h.settle();
+  assert.equal(h.document.fullscreenElement, h.html); h.api.exit();
+  assert.equal(h.pendingExits.length, 1); assert.equal(h.document.fullscreenElement, h.html, 'the old fullscreen element remains until native exit finishes');
+  h.clickEntry();
+  assert.equal(h.requests.length, 2, 'new explicit entry immediately attempts fullscreen while old exit is pending');
+  assert.equal(h.requests[1].synchronous, true, 'the overlapping attempt uses the fresh click, without awaiting old exit');
+  assert.equal(h.pending.length, 2); assert.equal(h.api.isActive(), true);
+  if (!keepActive) h.api.exit();
+  assert.equal(h.exits.length, 1, 'the old native exit is still single-flight during replacement entry/exit');
+  h.pendingExits[0].resolve(); await h.settle();
+  assert.equal(h.document.fullscreenElement, null); assert.equal(h.requests.length, 2, 'settling the old exit never makes an unsolicited fullscreen request');
+  if (outcome === 'success') h.pending[1].resolve();
+  else if (outcome === 'reject') h.pending[1].reject(Error('Browser refused overlapping fullscreen request'));
+  else h.pending[1].resolveWithoutFullscreen();
+  await h.settle();
+  assert.equal(h.api.isActive(), keepActive); assert.equal(h.panel.hidden, !keepActive);
+  if (outcome === 'success') {
+    assert.equal(h.document.fullscreenElement, h.html);
+    assert.equal(h.exits.length, keepActive ? 1 : 2, 'late success remains for an active new session and is unwound for an already closed one');
+    if (keepActive) h.api.exit();
+    assert.equal(h.pendingExits.length, 2); h.pendingExits[1].resolve(); await h.settle();
+  } else {
+    assert.equal(h.document.fullscreenElement, null, `${outcome}: the usable Zen fallback accepts the browser outcome without claiming success`);
+    assert.equal(h.exits.length, 1); if (keepActive) h.api.exit();
+  }
+  h.advance(5000); await h.settle();
+  assert.equal(h.requests.length, 2, 'no later callback or timer tries to regain fullscreen without another explicit click');
+  assert.equal(h.document.fullscreenElement, null); assert.equal(h.api.isActive(), false);
+}
+for (const outcome of ['resolve', 'reject']) {
+  const h = harness({ fullscreenExit: 'pending' }); h.clickEntry(); await h.settle();
+  for (const repeat of [false, true, true, false]) {
+    assert.equal(h.key('Escape', { repeat }).defaultPrevented, false, 'pending exit never cancels Escape, including held-key repeats');
+    assert.equal(h.api.isActive(), true); assert.equal(h.panel.hidden, false);
+  }
+  assert.equal(h.exits.length, 1, 'only one native exit may be outstanding while repeated Escape events arrive');
+  assert.equal(h.pendingExits.length, 1); assert.equal(h.document.fullscreenElement, h.html);
+  if (outcome === 'reject') {
+    h.pendingExits[0].reject(Error('Synthetic fullscreen exit refusal')); await h.settle();
+    assert.equal(h.document.fullscreenElement, h.html, 'a failed exit leaves the browser fullscreen until retry');
+  } else {
+    h.pendingExits[0].resolve(); await h.settle(); assert.equal(h.document.fullscreenElement, null);
+    assert.equal(h.key('Escape').defaultPrevented, false); assert.equal(h.exits.length, 1, 'settled windowed state does not request another exit');
+    h.api.exit(); h.clickEntry(); await h.settle();
+    assert.equal(h.document.fullscreenElement, h.html, 'a later explicit entry can establish another real fullscreen session');
+  }
+  assert.equal(h.key('Escape').defaultPrevented, false);
+  assert.equal(h.exits.length, 2, `${outcome}: a later fullscreen Escape can request exit after the previous promise settles`);
+  assert.equal(h.key('Escape', { repeat: true }).defaultPrevented, false); assert.equal(h.exits.length, 2);
+  h.pendingExits[1].resolve(); await h.settle();
+  assert.equal(h.document.fullscreenElement, null); assert.equal(h.api.isActive(), true); h.api.exit();
+  assert.equal(h.exits.length, 2, 'closing Zen after successful exit never adds a redundant native request');
+}
+{
+  const h = harness({ fullscreenExit: 'pending' }); h.clickEntry(); await h.settle();
+  assert.equal(h.key('Escape').defaultPrevented, false); h.pendingExits[0].reject(Error('Synthetic fullscreen exit refusal')); await h.settle();
+  assert.equal(h.document.fullscreenElement, h.html); assert.equal(h.api.isActive(), true);
+  h.$('zen-exit').click();
+  assert.equal(h.api.isActive(), false); assert.equal(h.panel.hidden, true);
+  assert.equal(h.exits.length, 2, 'the quiet Zen exit retries owned fullscreen after an earlier Escape exit rejects');
+  h.pendingExits[1].resolve(); await h.settle();
+  assert.equal(h.document.fullscreenElement, null); assert.equal(h.exits.length, 2);
+}
+{
+  const h = harness(); h.clickEntry(); await h.settle();
+  const escape = h.key('Escape');
+  assert.equal(escape.defaultPrevented, false, 'Escape never cancels the browser default');
+  assert.equal(h.exits.length, 1, 'the Escape handler requests native exit exactly once while fullscreen');
+  assert.equal(h.document.fullscreenElement, null); assert.equal(h.api.isActive(), true); assert.equal(h.panel.hidden, false);
+  assert.equal(h.key('Escape').defaultPrevented, false); assert.equal(h.exits.length, 1, 'a windowed Escape never requests fullscreen exit');
+  assert.equal(h.api.isActive(), true, 'windowed Escape also leaves Zen active');
+  h.advance(5000); assert.equal(h.requests.length, 1, 'Escape never requests fullscreen again');
+  h.api.exit(); assert.equal(h.exits.length, 1, 'the explicit Zen exit does not repeat a completed fullscreen exit');
+}
+{
+  const h = harness(); h.clickEntry(); await h.settle(); h.fullscreenChange(null);
+  assert.equal(h.key('Escape').defaultPrevented, false);
+  assert.equal(h.api.isActive(), true); assert.equal(h.panel.hidden, false);
+  assert.equal(h.exits.length, 0, 'browser-initiated fullscreen exit before the key handler needs no redundant API request');
+  h.api.exit(); assert.equal(h.exits.length, 0);
+}
+{
+  const h = harness({ fullscreen: 'pending' }); h.clickEntry();
+  assert.equal(h.key('Escape').defaultPrevented, false); assert.equal(h.exits.length, 0, 'pending but windowed Escape makes no native exit call');
+  h.pending[0].resolve(); await h.settle();
+  assert.equal(h.exits.length, 1, 'a late success respects Escape pressed while the request was pending');
+  assert.equal(h.document.fullscreenElement, null); assert.equal(h.api.isActive(), true);
+  h.advance(5000); assert.equal(h.requests.length, 1, 'cancelled pending fullscreen never re-enters'); h.api.exit();
+}
+for (const fullscreen of ['unsupported', 'reject', 'throw']) {
+  const h = harness({ fullscreen }); h.clickEntry(); await h.settle();
+  assert.equal(h.key('Escape').defaultPrevented, false);
+  assert.equal(h.exits.length, 0, `${fullscreen}: windowed Escape never requests native exit`);
+  assert.equal(h.api.isActive(), true); assert.equal(h.panel.hidden, false); h.api.exit();
 }
 {
   const h = harness(); const unrelated = h.$('clock-widget'); h.fullscreenChange(unrelated); h.clickEntry();

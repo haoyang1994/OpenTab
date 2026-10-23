@@ -281,6 +281,11 @@ try {
     await page.fill('#settings-search', ''); await page.keyboard.press('Escape'); await closed('#settings-panel', '#settings-btn');
     for (const mode of ['add', 'edit']) {
       if (mode === 'add') await openAdd(); else await openMenuAction(item.id, '#edit-icon-btn');
+      // Empty drafts intentionally have no tutorial copy. Measure the real
+      // upload result after the native file input and image decoder finish.
+      const file = upload(`contrast-${theme}-${mode}.png`);
+      await page.setInputFiles('#icon-file', file);
+      await page.waitForFunction(name => document.querySelector('#icon-upload-status').textContent === `Selected: ${name}`, file.name);
       contrasts.push({ theme, mode, samples: [await contrast('#icon-upload-status', '.modal-content'), await contrast('#icon-url', '.modal-content', '::placeholder')] });
       await page.screenshot({ path: path.join(artifacts, `accessibility-en-${theme}-${mode}.png`), animations: 'disabled' });
       await page.keyboard.press('Escape'); await closed('#add-icon-modal', mode === 'add' ? '#add-shortcut-tile' : tile);

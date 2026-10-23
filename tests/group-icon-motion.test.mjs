@@ -35,10 +35,12 @@ try {
     : route.continue());
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
   const home = `chrome-extension://${worker.url().split('/')[2]}/home.html`;
-  for (const item of context.pages()) await item.close();
+  // A persistent Chromium context closes when its last tab closes. Keep the
+  // blank test tab alive while removing startup pages and seeding the workspace.
+  page = await context.newPage();
+  for (const item of context.pages()) if (item !== page) await item.close();
   const seeded = await worker.evaluate(data => OpenTabWorkspace.transaction(async ({ write, read }) => { await write(data); return read(Object.keys(data)); }), data);
   assert.deepEqual(seeded, data, 'seed under the installer/workspace lock');
-  page = await context.newPage();
   await page.addInitScript(() => {
     sessionStorage.setItem('opentab.scene.view', JSON.stringify({ sceneId: 'scene-default', lastGroupIds: { 'scene-default': 'folder-home' } }));
     window.__groupPops = []; window.__holdGroupPops = false;

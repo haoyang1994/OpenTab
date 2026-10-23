@@ -37,6 +37,23 @@ context.on('page', page => page.on('pageerror', error => errors.push(error.messa
 await context.route('**/*', route => /^https?:/.test(route.request().url()) ? route.abort() : route.continue());
 const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
 const url = `chrome-extension://${worker.url().split('/')[2]}/home.html`, page = await context.newPage();
+// Install before the production window capture handler, which intentionally
+// stops propagation to hidden UI. Observe final cancellation after dispatch,
+// not in an inter-listener microtask, and never change the event or browser API.
+await page.addInitScript(() => {
+  const log = window.__zenNativeEvents = { escape: [], fullscreen: [] };
+  window.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const entry = { trusted: event.isTrusted, target: event.target?.id || event.target?.tagName,
+      fullscreenBefore: Boolean(document.fullscreenElement), defaultPrevented: null, settled: false };
+    log.escape.push(entry);
+    setTimeout(() => { entry.defaultPrevented = event.defaultPrevented; entry.settled = true; }, 0);
+  }, true);
+  document.addEventListener('fullscreenchange', event => {
+    log.fullscreen.push({ trusted: event.isTrusted, active: Boolean(document.fullscreenElement),
+      target: document.fullscreenElement?.tagName || null });
+  });
+});
 const read = keys => worker.evaluate(keys => chrome.storage.local.get(keys), keys);
 const phase = () => page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase);
 const view = () => page.evaluate(() => OpenTabSceneNavigation.getView());
@@ -82,6 +99,8 @@ async function fullscreen(mode = 'native') {
       Object.defineProperty(element, 'requestFullscreen', { configurable: true, value: undefined }); log.status = 'unsupported'; return log.available;
     }
     if (mode === 'native') {
+      const nativeExit = document.exitFullscreen.bind(document);
+      document.exitFullscreen = () => { log.exits++; return nativeExit(); };
       element.requestFullscreen = () => {
         record(); log.status = 'pending';
         let result;
@@ -114,6 +133,43 @@ async function exit() {
   await page.click('#zen-exit'); await page.waitForSelector('#zen-mode[hidden]', { state: 'attached' });
   assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), false);
   assert.equal(await page.locator('#zen-toggle-btn').getAttribute('aria-expanded'), 'false');
+}
+async function nativeEscapeDiagnostics() {
+  return page.evaluate(() => ({ mode: __zenFullscreen.mode, supported: __zenFullscreen.available,
+    requestStatus: __zenFullscreen.status, requestCalls: __zenFullscreen.calls, exitCalls: __zenFullscreen.exits,
+    fullscreenElement: document.fullscreenElement?.tagName || null, zenActive: OpenTabZenMode.isActive(),
+    focusedElement: document.activeElement?.id || document.activeElement?.tagName,
+    events: __zenNativeEvents }));
+}
+async function assertNativeEscape(theme) {
+  try {
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.fullscreenElement === null
+      && __zenNativeEvents.escape.some(event => event.settled)
+      && __zenNativeEvents.fullscreen.some(event => event.trusted && !event.active), undefined, { timeout: 10000 });
+    const result = await nativeEscapeDiagnostics(), escape = result.events.escape[0];
+    assert.equal(escape.trusted, true, 'Escape comes from actual browser keyboard input, not dispatchEvent');
+    assert.equal(escape.defaultPrevented, false, 'the complete Escape dispatch never prevents the browser default');
+    assert.ok(result.events.fullscreen.some(event => event.trusted && event.active), 'real browser fullscreen entry emits fullscreenchange');
+    assert.ok(result.events.fullscreen.some(event => event.trusted && !event.active), 'real browser exit emits fullscreenchange');
+    assert.equal(result.zenActive, true, 'native Escape exits fullscreen, not Zen');
+    assert.equal(await page.locator('#zen-mode').isVisible(), true);
+    assert.equal(result.requestCalls.length, 1, 'no request to regain fullscreen after Escape');
+    assert.ok(result.exitCalls <= 1, 'the fallback never repeats native exit');
+    const calls = result.exitCalls, escapes = result.events.escape.length;
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(count => __zenNativeEvents.escape.length > count && __zenNativeEvents.escape.at(-1).settled, escapes);
+    const windowed = await nativeEscapeDiagnostics();
+    assert.equal(windowed.events.escape.at(-1).trusted, true);
+    assert.equal(windowed.events.escape.at(-1).defaultPrevented, false);
+    assert.equal(windowed.exitCalls, calls, 'windowed Escape never invokes native fullscreen exit');
+    assert.equal(windowed.requestCalls.length, 1, 'windowed Escape never re-enters fullscreen');
+    assert.equal(windowed.zenActive, true, 'windowed Escape keeps the Zen screen');
+    console.log(`Zen: native ${theme} fullscreen entry and trusted Escape passed (${result.exitCalls} app exit call, ${result.events.fullscreen.length} fullscreenchange events)`);
+  } catch (error) {
+    console.error(`Zen: native ${theme} Escape diagnostics ${JSON.stringify(await nativeEscapeDiagnostics().catch(diagnosticError => ({ error: diagnosticError.message })))}`);
+    throw error;
+  }
 }
 async function assertPlainScreen() {
   assert.equal(await page.locator('#zen-mode button').count(), 3, 'only exit, focus toggle and reset controls');
@@ -176,12 +232,7 @@ try {
     if (native.status === 'fulfilled') {
       assert.equal(await page.evaluate(() => document.fullscreenElement === document.documentElement), true, 'real browser entered fullscreen');
       await page.screenshot({ path: path.join(artifacts, `zen-${themeMode}-fullscreen.png`), animations: 'disabled' });
-      await page.keyboard.press('Escape');
-      await page.waitForFunction(() => document.fullscreenElement === null);
-      assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), true, 'native Escape exits fullscreen, not Zen');
-      assert.equal(await page.locator('#zen-mode').isVisible(), true);
-      assert.equal(await page.evaluate(() => __zenFullscreen.calls.length), 1, 'no attempt to regain fullscreen after native Escape');
-      console.log(`Zen: native ${themeMode} fullscreen entry and Escape passed`);
+      await assertNativeEscape(themeMode);
     } else {
       console.log(`Zen: native fullscreen unavailable (${themeMode}: ${native.status}${native.reason ? `, ${native.reason}` : ''}); deterministic fallback checks still run`);
     }
@@ -256,6 +307,14 @@ try {
   await enter(); assert.equal(await page.evaluate(() => __zenFullscreen.calls.length), 2, 'fresh re-entry can request fullscreen after settlement');
   await page.evaluate(() => __zenFullscreen.resolve()); await exit();
   await page.waitForFunction(() => document.fullscreenElement === null && __zenFullscreen.exits === 2);
+
+  await reset(); await fullscreen('pending'); await enter(); await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => __zenFullscreen.exits), 0, 'Escape cannot exit a fullscreen request that is still only pending');
+  assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), true);
+  await page.evaluate(() => __zenFullscreen.resolve());
+  await page.waitForFunction(() => document.fullscreenElement === null && __zenFullscreen.exits === 1);
+  assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), true, 'late fullscreen cancellation keeps Zen active');
+  assert.equal(await page.evaluate(() => __zenFullscreen.calls.length), 1); await exit();
 
   // Legacy minimal mode is separate, and TODO remains accessible from card 2.
   await reset(); await fullscreen('unsupported'); await page.click('[data-clock-card="2"]');

@@ -13,11 +13,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test
+  test-suites:
+    name: Native tests (${{ matrix.e2e_group }})
     runs-on: ubuntu-latest
     # Dependency downloads have a separate bounded budget from test execution.
     timeout-minutes: 35
+    # Each native group gets its own VM. Never share CPU with timing assertions,
+    # and never cancel the other group's coverage after an ordinary test failure.
+    strategy:
+      fail-fast: false
+      matrix:
+        e2e_group: [scenes, core]
+    outputs:
+      scenes: ${{ steps.complete.outputs.scenes }}
+      core: ${{ steps.complete.outputs.core }}
 
     steps:
       - name: Checkout
@@ -45,12 +54,72 @@ jobs:
       # Fail fast on the explicit tab-creation boundary before the broad suite.
       # The canonical npm test still reruns every suite, including this one.
       - name: Check explicit group launch in native Chromium
+        if: matrix.e2e_group == 'core'
         timeout-minutes: 3
         run: xvfb-run -a env HEADLESS=false PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1 node tests/group-launch.test.mjs
 
       - name: Run tests
         timeout-minutes: 15
+        env:
+          OPENTAB_E2E_GROUP: ${{ matrix.e2e_group }}
         run: npm test
+
+      - name: Record completed native group
+        id: complete
+        env:
+          E2E_GROUP: ${{ matrix.e2e_group }}
+        run: echo "$E2E_GROUP=success" >> "$GITHUB_OUTPUT"
+
+      - name: Upload browser verification screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-verification-${{ matrix.e2e_group }}
+          path: |
+            artifacts/*.png
+            artifacts/accessibility-contrast.json
+            artifacts/accessibility-chooser.json
+            artifacts/wallpaper-readability.json
+            artifacts/group-launch-*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  test:
+    # Preserve the required check name while requiring every native group green.
+    name: Test
+    if: always()
+    needs: [test-suites]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Require every test group to pass
+        env:
+          TEST_SUITES_RESULT: ${{ needs.test-suites.result }}
+          SCENES_RESULT: ${{ needs.test-suites.outputs.scenes }}
+          CORE_RESULT: ${{ needs.test-suites.outputs.core }}
+        run: |
+          echo "Native test groups: $TEST_SUITES_RESULT"
+          test "$TEST_SUITES_RESULT" = success
+          test "$SCENES_RESULT" = success
+          test "$CORE_RESULT" = success
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        timeout-minutes: 18
+        run: npx playwright install --with-deps chromium
 
       - name: Verify extracted release candidate
         timeout-minutes: 3
@@ -68,16 +137,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload browser verification screenshots
+      - name: Upload packaged extension screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: browser-verification
-          path: |
-            artifacts/*.png
-            artifacts/accessibility-contrast.json
-            artifacts/accessibility-chooser.json
-            artifacts/wallpaper-readability.json
-            artifacts/group-launch-*.json
+          name: browser-verification-package
+          path: artifacts/package-*.png
           if-no-files-found: ignore
           retention-days: 7

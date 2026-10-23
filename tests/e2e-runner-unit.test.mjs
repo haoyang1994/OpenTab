@@ -26,6 +26,60 @@ const suites = [
   'tests/settings-layout.test.mjs',
   'tests/weather.test.mjs',
 ];
+const groups = {
+  scenes: ['tests/scenes.test.mjs'],
+  core: suites.filter(suite => suite !== 'tests/scenes.test.mjs'),
+};
+assert.equal(suites.length, 16, 'the canonical native gate contains all 16 expected suites');
+assert.equal(new Set(suites).size, 16, 'canonical suites are unique');
+assert.equal(groups.core.length, 15);
+assert.deepEqual([...groups.scenes, ...groups.core], suites, 'CI groups form the exact ordered, exhaustive canonical suite list');
+assert.equal(groups.scenes.some(suite => groups.core.includes(suite)), false, 'CI groups never overlap');
+
+// Test the actual aggregate shell guard, not a separately reimplemented boolean.
+// Missing completion outputs, cancellation, skipping and failure must all block
+// the stable required Test check and its downstream package/candidate actions.
+const workflow = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+const workflowJobs = workflow.split('\n  test:\n');
+assert.equal(workflowJobs.length, 2, 'CI preserves one stable aggregate Test job');
+const [nativeJob, aggregateJob] = workflowJobs;
+assert.match(nativeJob, /e2e_group: \[scenes, core\]/);
+assert.match(nativeJob, /fail-fast: false/);
+assert.doesNotMatch(workflow, /continue-on-error:/);
+assert.match(nativeJob, /timeout-minutes: 35/);
+assert.match(nativeJob, /- name: Run tests\n        timeout-minutes: 15\n/);
+assert.match(nativeJob, /OPENTAB_E2E_GROUP: \$\{\{ matrix\.e2e_group \}\}/);
+assert.match(nativeJob, /scenes: \$\{\{ steps\.complete\.outputs\.scenes \}\}/);
+assert.match(nativeJob, /core: \$\{\{ steps\.complete\.outputs\.core \}\}/);
+assert.ok(nativeJob.indexOf('- name: Record completed native group') > nativeJob.indexOf('run: npm test'));
+assert.match(nativeJob, /run: echo "\$E2E_GROUP=success" >> "\$GITHUB_OUTPUT"/);
+assert.match(nativeJob, /name: browser-verification-\$\{\{ matrix\.e2e_group \}\}/);
+assert.doesNotMatch(nativeJob, /test:package:smoke|unsigned-extension-candidate/);
+assert.match(aggregateJob, /name: Test\n    if: always\(\)\n    needs: \[test-suites\]/);
+assert.match(aggregateJob, /timeout-minutes: 35/);
+assert.match(aggregateJob, /steps:\n      - name: Require every test group to pass/);
+assert.match(aggregateJob, /TEST_SUITES_RESULT: \$\{\{ needs\.test-suites\.result \}\}/);
+assert.match(aggregateJob, /SCENES_RESULT: \$\{\{ needs\.test-suites\.outputs\.scenes \}\}/);
+assert.match(aggregateJob, /CORE_RESULT: \$\{\{ needs\.test-suites\.outputs\.core \}\}/);
+assert.match(aggregateJob, /- name: Install Playwright Chromium\n        timeout-minutes: 18/);
+assert.match(aggregateJob, /- name: Verify extracted release candidate\n        timeout-minutes: 3/);
+assert.match(aggregateJob, /run: \|\n          npm run test:package:smoke/);
+assert.match(aggregateJob, /name: unsigned-extension-candidate/);
+assert.match(aggregateJob, /name: browser-verification-package/);
+const guardMatch = aggregateJob.match(/        run: \|\n((?:          [^\n]*\n)+)/);
+assert.ok(guardMatch, 'the aggregate gate has a testable shell guard');
+const guard = guardMatch[1].replace(/^          /gm, '');
+const results = ['success', 'failure', 'cancelled', 'skipped', ''];
+for (const overall of results) for (const scenes of results) for (const core of results) {
+  const guarded = spawnSync(bash, ['-e', '-c', guard], {
+    env: { ...process.env, TEST_SUITES_RESULT: overall, SCENES_RESULT: scenes, CORE_RESULT: core },
+    encoding: 'utf8', timeout: 5000,
+  });
+  assert.ifError(guarded.error);
+  assert.equal(guarded.signal, null);
+  assert.equal(guarded.status, [overall, scenes, core].every(result => result === 'success') ? 0 : 1,
+    `only both completed groups and an overall success can authorize packaging (${[overall, scenes, core].join('/')})`);
+}
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'opentab-e2e-runner-'));
 const bin = path.join(temp, 'bin');
 const log = path.join(temp, 'suites.log');
@@ -86,7 +140,7 @@ const modes = [
 function prepare(mode, extra = {}) {
   fs.writeFileSync(log, '');
   fs.writeFileSync(xvfbLog, '');
-  return {
+  const env = {
     ...process.env,
     PATH: bin,
     CI: mode.CI,
@@ -95,8 +149,11 @@ function prepare(mode, extra = {}) {
     PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS: '0',
     E2E_LOG: log,
     E2E_XVFB_LOG: xvfbLog,
-    ...extra,
   };
+  // CI deliberately sets this variable. Default-run coverage must remain full
+  // even when the runner unit tests execute inside either CI partition.
+  delete env.OPENTAB_E2E_GROUP;
+  return { ...env, ...extra };
 }
 
 function calls() {
@@ -108,7 +165,7 @@ function assertCalls(expected) {
     'each suite must run exactly once in order with the required browser environment');
 }
 
-function run(mode, extra = {}) {
+function run(mode, extra = {}, { xvfb = mode.xvfb } = {}) {
   const result = spawnSync(bash, [runner], {
     cwd: root,
     env: prepare(mode, extra),
@@ -117,14 +174,15 @@ function run(mode, extra = {}) {
   });
   assert.ifError(result.error);
   assert.equal(result.signal, null, `${mode.name}: unexpected runner signal`);
-  assert.equal(fs.readFileSync(xvfbLog, 'utf8'), mode.xvfb ? 'xvfb\n' : '');
+  assert.equal(fs.readFileSync(xvfbLog, 'utf8'), xvfb ? 'xvfb\n' : '');
   return result;
 }
 
-async function cancel(mode, signal, expectedStatus) {
+async function cancel(mode, signal, expectedStatus, selected = suites, extra = {}) {
+  const blockedIndex = Math.min(1, selected.length - 1);
   const child = spawn(bash, [runner], {
     cwd: root,
-    env: prepare(mode, { FAKE_BLOCK_SUITE: suites[1] }),
+    env: prepare(mode, { ...extra, FAKE_BLOCK_SUITE: selected[blockedIndex] }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
@@ -145,8 +203,8 @@ async function cancel(mode, signal, expectedStatus) {
   assert.equal(cancelled, true, 'the fixture must be cancelled while a suite is active');
   assert.equal(result.code, expectedStatus, `${mode.name}: ${signal} must remain a failed/cancelled run`);
   assert.equal(result.exitSignal, null);
-  assertCalls(suites.slice(0, 2));
-  assert.doesNotMatch(stdout, /all 13 suites passed/);
+  assertCalls(selected.slice(0, blockedIndex + 1));
+  assert.doesNotMatch(stdout, /E2E: all \d+ suites passed/);
 }
 
 try {
@@ -167,7 +225,7 @@ try {
     assert.ok(failed.stdout.includes(`E2E: ${suites[0]} exited 7\n`));
     assert.ok(failed.stdout.includes(`E2E: ${suites[5]} exited 19\n`));
     assert.ok(failed.stderr.endsWith(`E2E: 2 suite(s) failed:\n  ${suites[0]} (exit 7)\n  ${suites[5]} (exit 19)\n`));
-    assert.doesNotMatch(failed.stdout, /all 13 suites passed/);
+    assert.doesNotMatch(failed.stdout, /E2E: all \d+ suites passed/);
 
     const timedOut = run(mode, { FAKE_TIMEOUT_SUITE: suites[5] });
     assert.equal(timedOut.status, 1, 'a suite timeout must never be reported as success');
@@ -179,10 +237,48 @@ try {
       assert.equal(terminated.status, status, `${mode.name}: ${signal} suite termination must abort`);
       assertCalls(suites.slice(0, 2));
       assert.ok(terminated.stdout.includes(`E2E: ${suites[1]} exited ${status}\n`));
-      assert.doesNotMatch(terminated.stdout, /all 13 suites passed/);
+      assert.doesNotMatch(terminated.stdout, /E2E: all \d+ suites passed/);
     }
     await cancel(mode, 'SIGINT', 130);
     await cancel(mode, 'SIGTERM', 143);
+
+    const explicitAll = run(mode, { OPENTAB_E2E_GROUP: 'all' });
+    assert.equal(explicitAll.status, 0);
+    assertCalls(suites);
+    for (const [group, selected] of Object.entries(groups)) {
+      const env = { OPENTAB_E2E_GROUP: group };
+      const success = run(mode, env);
+      assert.equal(success.status, 0, `${mode.name}/${group}`);
+      assertCalls(selected);
+      assert.match(success.stdout, new RegExp(`E2E: all ${selected.length} suites passed`));
+
+      const failed = run(mode, { ...env, FAKE_FAIL_FIRST: selected[0], FAKE_FAIL_MIDDLE: selected.at(-1) });
+      assert.equal(failed.status, 1, `${group}: an ordinary failure must fail the partition`);
+      assertCalls(selected);
+      assert.ok(failed.stderr.includes(`${selected[0]} (exit 7)`));
+      if (selected.length > 1) assert.ok(failed.stderr.includes(`${selected.at(-1)} (exit 19)`));
+      assert.doesNotMatch(failed.stdout, /E2E: all \d+ suites passed/);
+
+      const timedOut = run(mode, { ...env, FAKE_TIMEOUT_SUITE: selected[0] });
+      assert.equal(timedOut.status, 1);
+      assertCalls(selected);
+      assert.ok(timedOut.stderr.includes(`${selected[0]} (exit 124)`));
+      for (const [signal, status] of [['HUP', 129], ['INT', 130], ['TERM', 143]]) {
+        const terminated = run(mode, { ...env, FAKE_SIGNAL_SUITE: selected[0], FAKE_SIGNAL: signal });
+        assert.equal(terminated.status, status);
+        assertCalls(selected.slice(0, 1));
+        assert.doesNotMatch(terminated.stdout, /E2E: all \d+ suites passed/);
+      }
+      await cancel(mode, 'SIGINT', 130, selected, env);
+      await cancel(mode, 'SIGTERM', 143, selected, env);
+    }
+
+    for (const invalid of ['', 'unknown', 'SCENES', 'scenes core', '../tests/scenes.test.mjs']) {
+      const rejected = run(mode, { OPENTAB_E2E_GROUP: invalid }, { xvfb: false });
+      assert.equal(rejected.status, 2, 'invalid groups fail before invoking either the display wrapper or a suite');
+      assertCalls([]);
+      assert.match(rejected.stderr, /invalid OPENTAB_E2E_GROUP/);
+    }
   }
 
   const xvfbFailure = run(modes[2], { FAKE_XVFB_EXIT: '42' });
@@ -196,7 +292,7 @@ try {
     assertCalls([]);
     assert.match(missing.stdout, /xvfb-run is not installed/);
   }
-  console.log('E2E runner tests passed: ordered aggregation, exit codes, output, cancellation, and xvfb prerequisites');
+  console.log('E2E runner tests passed: exact 16-suite partitions, strict CI/package gate, ordered aggregation, exit codes, output, cancellation, and xvfb prerequisites');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

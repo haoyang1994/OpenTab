@@ -7,6 +7,17 @@ set -euo pipefail
 
 export PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1
 
+# CI runs these exhaustive, disjoint groups on independent runners so native
+# performance checks do not compete for CPU. Local/default validation stays full.
+export OPENTAB_E2E_GROUP="${OPENTAB_E2E_GROUP-all}"
+case "$OPENTAB_E2E_GROUP" in
+  all|scenes|core) ;;
+  *)
+    echo "E2E: invalid OPENTAB_E2E_GROUP '$OPENTAB_E2E_GROUP' (expected all, scenes, or core)" >&2
+    exit 2
+    ;;
+esac
+
 run_command() {
   local child_pid='' status
   # Separate process groups let cancellation reach xvfb, Chromium, and any
@@ -44,6 +55,14 @@ run_headed() {
     tests/settings-layout.test.mjs
     tests/weather.test.mjs
   )
+  # Keep one canonical suite list. The scenes fixture is its first, independent
+  # suite; runner unit tests enforce the exact ordered partition and full union.
+  if [[ "$OPENTAB_E2E_GROUP" == "scenes" ]]; then
+    suites=("${suites[0]}")
+  elif [[ "$OPENTAB_E2E_GROUP" == "core" ]]; then
+    suites=("${suites[@]:1}")
+  fi
+  echo "E2E: group $OPENTAB_E2E_GROUP (${#suites[@]} suites)"
   local failures=() suite status
   for suite in "${suites[@]}"; do
     echo "E2E: running $suite"

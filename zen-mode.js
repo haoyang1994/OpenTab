@@ -2,12 +2,20 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const t = value => root.OpenTabI18n ? root.OpenTabI18n.t(value) : value;
-  let host, active = false, saved, fullscreenOwner = false, fullscreenRequest = null;
+  let host, active = false, saved, fullscreenOwner = false, fullscreenRequest = null, fullscreenExitPending = false;
   const fullscreenTarget = () => document.documentElement;
+  function leaveFullscreen() {
+    if (!document.fullscreenElement || fullscreenExitPending) return;
+    fullscreenExitPending = true;
+    try {
+      Promise.resolve(document.exitFullscreen?.()).then(
+        () => { fullscreenExitPending = false; },
+        () => { fullscreenExitPending = false; }
+      );
+    } catch (_) { fullscreenExitPending = false; /* Browser controls remain available. */ }
+  }
   function leaveOwnedFullscreen() {
-    if (!fullscreenOwner || document.fullscreenElement !== fullscreenTarget()) return;
-    fullscreenOwner = false;
-    try { Promise.resolve(document.exitFullscreen?.()).catch(() => {}); } catch (_) { /* Browser controls remain available. */ }
+    if (fullscreenOwner && document.fullscreenElement === fullscreenTarget()) leaveFullscreen();
   }
   function render(value) {
     const panel = $('zen-mode');
@@ -31,7 +39,10 @@
     $('zen-toggle-btn').setAttribute('aria-expanded', 'true');
     // Keep this request in the originating click stack: no await, timer, or
     // promise callback may precede the browser's user-activation boundary.
-    if (!document.fullscreenElement && !fullscreenRequest && fullscreenTarget().requestFullscreen) {
+    // A fresh explicit entry supersedes an Escape from a prior Zen session,
+    // while still adopting the single outstanding native request.
+    if (fullscreenRequest) fullscreenRequest.cancelled = false;
+    if ((!document.fullscreenElement || fullscreenExitPending) && !fullscreenRequest && fullscreenTarget().requestFullscreen) {
       // Only one browser request may be outstanding across quick exit/re-entry.
       // A late success is still ours and must be unwound if Zen has closed.
       const request = {};
@@ -40,7 +51,7 @@
         Promise.resolve(fullscreenTarget().requestFullscreen()).then(() => {
           if (fullscreenRequest === request) fullscreenRequest = null;
           fullscreenOwner = document.fullscreenElement === fullscreenTarget();
-          if (!active) leaveOwnedFullscreen();
+          if (!active || request.cancelled) leaveOwnedFullscreen();
         }, () => { if (fullscreenRequest === request) fullscreenRequest = null; });
       } catch (_) { fullscreenRequest = null; }
     }
@@ -71,8 +82,15 @@
   function keydown(event) {
     if (!active) return;
     event.stopImmediatePropagation();
-    // Never prevent Escape: the browser owns leaving fullscreen. Zen stays.
-    if (event.key === 'Escape' || event.isComposing || event.keyCode === 229) return;
+    // Leave the native browser action uncancelled. The API fallback also covers
+    // renderer-delivered Escape (for example DevTools keyboard input), which may
+    // not reach the browser UI accelerator. Never close or re-enter Zen here.
+    if (event.key === 'Escape') {
+      if (fullscreenRequest) fullscreenRequest.cancelled = true;
+      leaveFullscreen();
+      return;
+    }
+    if (event.isComposing || event.keyCode === 229) return;
     const controls = [...$('zen-mode').querySelectorAll('button')].filter(button => !button.disabled);
     if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
