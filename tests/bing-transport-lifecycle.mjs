@@ -13,8 +13,8 @@ export async function verifyBingTransportLifecycle({ chromium, extensionPath, ar
   const blue = 'https://www.bing.com/th?id=OpenTabTransportBlue.jpg';
   const green = 'https://www.bing.com/th?id=OpenTabTransportGreen.jpg';
   const svg = color => `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${color}"/></svg>`;
-  let cdp, page, today, primaryError, archiveRequests = 0, phase = 'seed fixture';
-  const errors = [], lifecycle = [], consoleErrors = [];
+  let cdp, page, managerPage, extensionId, home, today, primaryError, archiveRequests = 0, phase = 'seed fixture';
+  const errors = [], lifecycle = [], consoleErrors = [], profileEvidence = [];
   const versions = new Map(), registrations = new Map(), watchers = new Set();
   const record = entry => { lifecycle.push(entry); if (lifecycle.length > 40) lifecycle.shift(); };
   context.on('serviceworker', worker => record({ event: 'playwright-serviceworker', url: worker.url() }));
@@ -22,6 +22,49 @@ export async function verifyBingTransportLifecycle({ chromium, extensionPath, ar
     if (message.type() === 'error' && consoleErrors.length < 20) consoleErrors.push(message.text().slice(0, 500));
   });
   const reloadDisposed = error => /Execution context was destroyed|Target page, context or browser has been closed/.test(error.message);
+  const bounded = async (operation, label, milliseconds = 3000) => {
+    let timer;
+    try {
+      return await Promise.race([operation, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), milliseconds);
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+  const openManager = async () => {
+    if (!managerPage) {
+      managerPage = await bounded(context.newPage(), 'Create fixture extensions manager');
+      await managerPage.goto('chrome://extensions/', { timeout: 5000 });
+    }
+  };
+  const extensionState = () => bounded(managerPage.evaluate(async id => {
+    // These are Chrome's own extensions-UI APIs, used only in this fresh profile.
+    const call = (method, ...args) => new Promise((resolve, reject) => {
+      chrome.developerPrivate[method](...args, result => {
+        const message = chrome.runtime.lastError?.message;
+        if (message) reject(new Error(message)); else resolve(result);
+      });
+    });
+    const result = {};
+    try {
+      const profile = await call('getProfileConfiguration');
+      result.profile = { inDeveloperMode: profile.inDeveloperMode, canLoadUnpacked: profile.canLoadUnpacked,
+        isDeveloperModeControlledByPolicy: profile.isDeveloperModeControlledByPolicy };
+    } catch (error) { result.profileError = error.message.slice(0, 500); }
+    try {
+      const extension = await call('getExtensionInfo', id);
+      result.extension = { id: extension.id, state: extension.state, location: extension.location,
+        disableReasons: extension.disableReasons,
+        manifestErrors: extension.manifestErrors?.slice(0, 5).map(error => error.message.slice(0, 500)),
+        installWarnings: extension.installWarnings?.slice(0, 5).map(warning => warning.slice(0, 500)) };
+    } catch (error) { result.extensionError = error.message.slice(0, 500); }
+    return result;
+  }, extensionId), 'Fixture profile and extension snapshot');
+  const recordExtensionState = async label => {
+    const state = { phase: label, ...await extensionState() };
+    profileEvidence.push(state);
+    console.log('Native Bing fixture extension state', JSON.stringify(state));
+    return state;
+  };
   const ready = page => page.waitForFunction(() => globalThis.OpenTabBingCache
     && performance.getEntriesByName('opentab:initial-loader-end').length
     && !document.getElementById('homepage').inert, null, { timeout: 15000 });
@@ -62,7 +105,7 @@ export async function verifyBingTransportLifecycle({ chromium, extensionPath, ar
       return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', { timeout: 15000 });
-    const extensionId = new URL(worker.url()).host, home = `chrome-extension://${extensionId}/home.html`;
+    extensionId = new URL(worker.url()).host; home = `chrome-extension://${extensionId}/home.html`;
     const scope = `chrome-extension://${extensionId}/`;
     today = await worker.evaluate(() => OpenTabBing.ymd(new Date()));
     // Join installation's transaction before seeding isolated fixture data.
@@ -134,11 +177,34 @@ export async function verifyBingTransportLifecycle({ chromium, extensionPath, ar
     console.log(`Native Bing worker wake passed: version=${restarted.versionId}, reusedTarget=${restarted.targetId === running.targetId}, durable blue pixels, archiveRequests=${archiveRequests}`);
     await page.screenshot({ path: path.join(artifacts, 'bing-worker-restart-pixels.png'), animations: 'disabled' });
 
+    // Command-line loading bypasses the unpacked developer-mode policy, but
+    // runtime.reload uses the normal unpacked installer. Match that supported
+    // workflow with Chrome's ordinary Developer mode, only in this disposable
+    // profile. Never bypass policy with a flag or change the user's browser.
+    // Chromium 145: extensions_ui_prefs.cc defaults this to false;
+    // extension_management.cc::IsAllowedByUnpackedDeveloperModePolicy requires
+    // it for kUnpacked, unlike the initial kCommandLine location.
+    phase = 'prepare disposable unpacked reload';
+    await openManager();
+    const beforeSetup = await recordExtensionState('before developer-mode setup');
+    assert.equal(beforeSetup.extension?.state, 'ENABLED', 'fixture extension must initially be enabled');
+    assert.equal(beforeSetup.profile?.isDeveloperModeControlledByPolicy, false, 'fixture must not override managed Developer mode');
+    await bounded(managerPage.evaluate(() => new Promise((resolve, reject) => {
+      chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }, () => {
+        const message = chrome.runtime.lastError?.message;
+        if (message) reject(new Error(message)); else resolve();
+      });
+    })), 'Enable ordinary Developer mode in disposable profile');
+    const afterSetup = await recordExtensionState('after developer-mode setup');
+    assert.equal(afterSetup.profile?.inDeveloperMode, true, 'ordinary Developer mode must be acknowledged before reload');
+    assert.equal(afterSetup.extension?.state, 'ENABLED', 'setup must leave fixture extension enabled');
+    await page.bringToFront();
+
     // Reload the isolated extension with the tab still open. Chrome may close
     // extension tabs or replace their document; do not invent a stale context.
-    // Observe actual unload and re-registration, not eager worker startup.
-    // Waiting for a worker before fresh-page work can deadlock a lazy reload;
-    // navigating after only unload can race the extension becoming available.
+    // Observe explicit unload and re-registration rather than treating target
+    // creation as reload completion. Keep this native evidence separate from
+    // the later running-worker, durable-storage and decoded-pixel assertions.
     phase = 'reload extension';
     await page.evaluate(() => { window.__transportDocument = 'before-extension-reload'; });
     await Promise.all([
@@ -152,6 +218,9 @@ export async function verifyBingTransportLifecycle({ chromium, extensionPath, ar
     phase = 'observe replacement registration';
     const replacement = await waitRegistration(registration => registration.scopeURL === scope
       && registration.registrationId !== running.registrationId && !registration.isDeleted, 'replacement registration');
+    const afterReload = await recordExtensionState('after extension reload');
+    assert.equal(afterReload.profile?.inDeveloperMode, true);
+    assert.equal(afterReload.extension?.state, 'ENABLED', 'reloaded fixture extension must be enabled');
     console.log(`Native Bing extension reload observed: old registration=${running.registrationId} deleted, old version=${running.versionId} stopped, replacement registration=${replacement.registrationId}`);
     phase = 'observe old tab after extension reload';
     let oldTabState = 'closed';
@@ -197,7 +266,31 @@ export async function verifyBingTransportLifecycle({ chromium, extensionPath, ar
     primaryError = error;
     // This context contains only generated fixture data. Capture its own state,
     // not the unrelated primary suite page, and never replace the test failure.
-    const diagnostic = { phase, archiveRequests, lifecycle, errors, consoleErrors, pageClosed: !page || page.isClosed() };
+    const diagnostic = { phase, archiveRequests, lifecycle, errors, consoleErrors, profileEvidence,
+      pageClosed: !page || page.isClosed() };
+    if (extensionId) {
+      try { await openManager(); diagnostic.extensionState = await extensionState(); }
+      catch (failure) { diagnostic.extensionStateError = failure.message; }
+    }
+    if (home) {
+      // One failure-only resource probe, no reload/enable/retry or UI refresh.
+      // It may wake normal startup; record that evidence, never call it a pass.
+      diagnostic.freshHome = { archiveRequestsBefore: archiveRequests };
+      record({ event: 'fresh-home-diagnostic-start', archiveRequests });
+      try {
+        const probe = await bounded(context.newPage(), 'Create fresh-home diagnostic');
+        await probe.goto(home, { timeout: 5000 });
+        diagnostic.freshHome.document = await bounded(probe.evaluate(() => ({
+          url: location.href, readyState: document.readyState, runtimeId: globalThis.chrome?.runtime?.id,
+          homePresent: !!document.getElementById('homepage'),
+          loaderComplete: !!performance.getEntriesByName('opentab:initial-loader-end').length
+        })), 'Fresh-home diagnostic snapshot', 2000);
+      } catch (failure) { diagnostic.freshHome.error = failure.message.slice(0, 500); }
+      finally {
+        diagnostic.freshHome.archiveRequestsAfter = archiveRequests;
+        record({ event: 'fresh-home-diagnostic-end', archiveRequests });
+      }
+    }
     if (page && !page.isClosed()) {
       let timer;
       try {
