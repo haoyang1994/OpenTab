@@ -47,9 +47,17 @@ jobs:
       - name: Audit dependencies for high-severity advisories
         run: npm audit --audit-level=high
 
-      - name: Install Playwright Chromium
+      - name: Install Chromium and native desktop dependencies
         timeout-minutes: 18
-        run: npx playwright install --with-deps chromium
+        env:
+          E2E_GROUP: ${{ matrix.e2e_group }}
+        run: |
+          npx playwright install --with-deps chromium
+          # Playwright's dependency install has already refreshed apt indexes.
+          # Keep all dependency downloads within the existing setup budget.
+          if [[ "$E2E_GROUP" == core ]] && ! command -v openbox >/dev/null 2>&1; then
+            sudo apt-get install --no-install-recommends -y openbox
+          fi
 
       # Fail fast on the explicit tab-creation boundary before the broad suite.
       # The canonical npm test still reruns every suite, including this one.
@@ -83,7 +91,7 @@ jobs:
             artifacts/interface-glass.json
             artifacts/home-controls-viewport.json
             artifacts/clock-stack-pixels.json
-            artifacts/startup-diagnostics.json
+            artifacts/startup-diagnostics*.json
             artifacts/group-launch-*.json
           if-no-files-found: ignore
           retention-days: 7

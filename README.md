@@ -79,7 +79,7 @@ See the [scene guide](docs/SCENE-SPACES.md#english) for sync boundaries, recover
 - **Add with +**: a persistent + tile at the end of the current group grid (or right-click empty space)
 - **Drag to reorder**: mouse drag on the desktop grid, or Alt+←/→ when a shortcut is focused
 - **Folders**: hover one shortcut on another for about 500ms to make a folder named **Folder** in English (undoable). Drop onto an existing folder to add. Click a folder to open an overlay where you can reorder, drag out, and rename. Middle-click or **Open all** opens every link (confirms in-page above 10). A folder with one leftover icon dissolves.
-- **Groups**: tabs above the grid (click, mouse wheel, Alt+1–9). Create, rename, and delete groups in-page; deleting asks whether to move icons to the default group or delete them too (undoable). The old left drawer and 6px edge hover are gone.
+- **Groups**: tabs above the grid (click, mouse wheel, Alt+1–9 on Windows/Linux). Create, rename, and delete groups in-page; deleting asks whether to move icons to the default group or delete them too (undoable). The old left drawer and 6px edge hover are gone.
 - **Icons**: bundled HD tiles for 40+ common sites; other sites get a letter placeholder (color from the domain). Right-click **Change icon** to re-fetch, upload a picture, or change the placeholder. Cached as local data URLs so first paint stays local; uncached site icons may load after the grid is ready
 - **Real links**: middle-click / Ctrl / Cmd opens a new tab; hover shows the URL
 - **Undo delete**: deleting a shortcut shows a toast with Undo for 6 seconds

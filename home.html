@@ -555,7 +555,7 @@
           </div>
         </div>
 
-        <div class="setting-section" id="settings-section-shortcuts" data-settings-section="shortcuts" data-settings-search="shortcut layout icon size columns grid name frame 快捷方式 布局 图标 大小 每行 名称 网格 背景框 更换图标 图标库 占位">
+        <div class="setting-section" id="settings-section-shortcuts" data-settings-section="shortcuts" data-settings-search="shortcut layout icon size columns grid name frame keyboard fullscreen 快捷方式 布局 图标 大小 每行 名称 网格 背景框 更换图标 图标库 占位 快捷键 全屏">
           <h3 data-i18n="快捷方式与布局">快捷方式与布局</h3>
           <div class="setting-row">
             <label for="icon-frame-enabled" data-i18n="显示图标背景框">显示图标背景框</label>
@@ -564,6 +564,14 @@
           <div class="setting-row">
             <label for="open-in-new-tab" data-i18n="在新标签页打开快捷方式">在新标签页打开快捷方式</label>
             <input type="checkbox" id="open-in-new-tab">
+          </div>
+          <div class="setting-row">
+            <label for="window-fullscreen-shortcut-enabled" data-i18n="全屏快捷键">全屏快捷键</label>
+            <input type="checkbox" id="window-fullscreen-shortcut-enabled">
+          </div>
+          <div class="setting-row">
+            <output id="window-fullscreen-shortcut-binding" aria-label="当前快捷键" data-i18n-aria-label="当前快捷键" aria-live="polite" data-i18n="未设置">未设置</output>
+            <button type="button" id="manage-window-fullscreen-shortcut" class="btn-small ghost" data-i18n="管理快捷键">管理快捷键</button>
           </div>
           <div class="setting-row">
             <span id="layout-icon-size-label" data-i18n="图标大小">图标大小</span>

@@ -113,7 +113,7 @@ function installHarness(initial = {}, { pauseRead = true, failRead = false } = {
   h.chrome.runtime.onInstalled = { addListener(listener) { installed = listener; } };
   h.chrome.runtime.onMessage = { addListener() {} };
   const context = vm.createContext({
-    chrome: h.chrome, importScripts() {},
+    chrome: h.chrome, importScripts() {}, OpenTabWindowFullscreen: require('../lib/window-fullscreen.js'),
     console: { warn: (...args) => warnings.push(args) },
     OpenTabWorkspace: { ...h.api, transaction(task) {
       const result = h.api.transaction(async tx => {
@@ -425,13 +425,15 @@ function popupHarness(h) {
   const ready = Promise.all([new Promise((resolve) => { folderReady = resolve; }), new Promise((resolve) => { tabReady = resolve; })]);
   const elements = Object.fromEntries(['current-url', 'site-name', 'folder-select', 'save-btn', 'status'].map((id) => [id, {
     value: '', textContent: '', disabled: false,
-    classList: { toggle() {} }, focus() {}, select() { tabReady(); },
+    classList: { toggle() {} }, setAttribute(name, value) { this[name] = String(value); }, removeAttribute(name) { delete this[name]; }, focus() {}, select() { tabReady(); },
     appendChild() { folderReady(); }, addEventListener(name, handler) { this[name] = handler; }
   }]));
   h.chrome.tabs = { query: async () => [{ url: 'https://example.com/', title: 'Example' }] };
   const context = {
     chrome: h.chrome, OpenTabWorkspace: h.api, URL,
-    document: { getElementById: (id) => elements[id], createElement: () => ({}) },
+    document: { getElementById: (id) => elements[id], createElement: () => ({}),
+      body: { classList: { toggle() {} } }, documentElement: { style: { setProperty() {} } } },
+    matchMedia: () => ({ matches: false, addEventListener() {} }),
     setTimeout() {}, close() {}
   };
   context.window = context;
@@ -530,7 +532,7 @@ function popupHarness(h) {
   let listener, pending;
   const chrome = { ...h.chrome, runtime: { onInstalled: { addListener(fn) { listener = fn; } } } };
   const source = fs.readFileSync(new URL('../background.js', import.meta.url), 'utf8');
-  const context = { chrome, console, Intl, importScripts() {}, OpenTabWorkspace: { transaction(fn) { pending = h.api.transaction(fn); return pending; } } };
+  const context = { chrome, console, Intl, importScripts() {}, OpenTabWindowFullscreen: require('../lib/window-fullscreen.js'), OpenTabWorkspace: { transaction(fn) { pending = h.api.transaction(fn); return pending; } } };
   context.t ||= (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(context); vm.runInContext(source.slice(0, source.indexOf('async function fetchArchive')), context);
   const add = h.api.commit({}, { icons: [{ id: 'early', name: 'Early', folderId: 'folder-home' }], folders: base().folders });
   listener({ reason: 'install' }); await Promise.all([add, pending]);
@@ -548,7 +550,7 @@ for (const [initial, reason, expectedTheme] of [
   const h = memory(initial); let listener, pending;
   const chrome = { ...h.chrome, runtime: { onInstalled: { addListener(fn) { listener = fn; } } } };
   const source = fs.readFileSync(new URL('../background.js', import.meta.url), 'utf8');
-  const context = { chrome, console, Intl, importScripts() {}, OpenTabWorkspace: { transaction(fn) { pending = h.api.transaction(fn); return pending; } } };
+  const context = { chrome, console, Intl, importScripts() {}, OpenTabWindowFullscreen: require('../lib/window-fullscreen.js'), OpenTabWorkspace: { transaction(fn) { pending = h.api.transaction(fn); return pending; } } };
   context.t ||= (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token); vm.createContext(context); vm.runInContext(source.slice(0, source.indexOf('async function fetchArchive')), context);
   listener({ reason }); await pending;
   assert.equal(h.store.themeMode, expectedTheme, 'light default applies only to genuinely new install, preserving explicit and legacy implicit choice');

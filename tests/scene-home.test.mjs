@@ -39,11 +39,17 @@ assert.deepEqual(state.folders, raw.folders, 'scene graph preserves all IDs, inc
 assert.deepEqual(structuredClone(state.todos), raw.todos, 'full TODO data and scene ownership survive actual home normalization');
 assert.equal(state.icons[0].url, raw.icons[0].url); assert.equal(state.icons[0].folderId, 'folder-tools');
 assert.equal(state.currentFolderId, 'study-home'); assert.equal(state.todoButtonVisible, false);
+assert.equal(state.windowFullscreenShortcutEnabled, false, 'old missing preference is strictly off without a migration write');
+state.windowFullscreenShortcutEnabled = true;
+context.OpenTabSceneHome.create(context)(projected, raw);
+assert.equal(state.windowFullscreenShortcutEnabled, false, 'loading old settings also clears a stale enabled view');
+context.OpenTabSceneHome.create(context)({ ...projected, windowFullscreenShortcutEnabled: true }, { ...raw, windowFullscreenShortcutEnabled: true });
+assert.equal(state.windowFullscreenShortcutEnabled, true, 'the global opt-in survives scene projection');
 assert.deepEqual(state.scenes, raw.scenes); assert.deepEqual(state.sceneProfiles, raw.sceneProfiles);
 assert.deepEqual(state.background, profile.background);
 assert.deepEqual(calls.seed[0].data, raw, 'session baseline receives durable full graph, not projected background aliases');
 assert.equal(calls.layout[0].layoutColumns, 4); assert.equal(calls.saves, 0);
-assert.deepEqual(calls.calendar, [true], 'loader captures calendar date without constructing hidden DOM');
+assert.deepEqual(calls.calendar, [true, true, true], 'loader captures calendar date without constructing hidden DOM');
 assert.deepEqual(raw.todos.map(item => item.id), ['task', 'study-task'], 'loading is not a data replacement');
 const panels = { 'settings-panel': true, 'change-icon-modal': true };
 let inlineDraft = false, foreignDialog = false;

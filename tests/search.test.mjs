@@ -113,12 +113,23 @@ async function runSearchE2E() {
       return {
         dcl: nav ? nav.domContentLoadedEventEnd : null,
         load: nav ? nav.loadEventEnd : null,
-        gridReady: marks.length ? marks[0].startTime : null
+        gridReady: marks.length ? marks[0].startTime : null,
+        navigation: nav ? { responseEnd: nav.responseEnd, domInteractive: nav.domInteractive,
+          domContentLoadedEventStart: nav.domContentLoadedEventStart } : null,
+        // Read existing entries only after grid-ready. No added startup work,
+        // API wrappers, readiness changes, retry, or alternate timing threshold.
+        phases: performance.getEntriesByType('mark').filter(entry => entry.name.startsWith('opentab:'))
+          .slice(0, 64).map(entry => ({ name: entry.name, at: entry.startTime })),
+        resources: performance.getEntriesByType('resource').filter(entry => entry.name.startsWith(location.origin + '/'))
+          .slice(0, 128).map(entry => ({ path: new URL(entry.name).pathname, start: entry.startTime,
+            responseEnd: entry.responseEnd, duration: entry.duration }))
       };
     });
     console.log(
       `AC8 first-screen wall=${wallMs}ms dcl=${navTiming.dcl}ms load=${navTiming.load}ms grid-ready=${navTiming.gridReady}ms`
     );
+    fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+    fs.writeFileSync(path.join(ARTIFACT_DIR, 'startup-diagnostics-search.json'), JSON.stringify(navTiming, null, 2));
     assert.ok(navTiming.dcl != null && navTiming.dcl > 0, `AC8 DCL missing or zero: ${navTiming.dcl}`);
     assert.ok(navTiming.gridReady != null, 'AC8: opentab:grid-ready mark missing');
     assert.ok(

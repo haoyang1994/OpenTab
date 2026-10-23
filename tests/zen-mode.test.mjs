@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { waitForAsync } from './wait-for-async.mjs';
+import { verifyWindowFullscreenShortcut } from './window-fullscreen-native.mjs';
 
 // Native MV3 fixture. Do not substitute file://: extension lifecycle, shared
 // storage, scene navigation, focus, fullscreen and keyboard capture all matter.
@@ -28,7 +30,11 @@ function fixture(extra = {}) {
   data.todos.push({ id: 'study-task', text: 'Read one chapter', done: false, sceneId: 'study' });
   Schema.validate(data); return data;
 }
-const context = await chromium.launchPersistentContext('', {
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'opentab-zen-native-'));
+let context;
+// Own the explicit fixture directory even if browser/setup fails before checks.
+try {
+context = await chromium.launchPersistentContext(profile, {
   headless: process.env.HEADLESS === 'true', locale: 'en-US', viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce',
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : {}),
   args: [`--disable-extensions-except=${root}`, `--load-extension=${root}`, '--no-sandbox', '--disable-dev-shm-usage']
@@ -377,7 +383,6 @@ async function assertIsolatedKeys() {
   await page.locator('#zen-focus-toggle').focus();
 }
 
-try {
   // Exercise real native entry and real native Escape, separately in both themes.
   for (const themeMode of ['light', 'dark']) {
     await reset({ themeMode }); await fullscreen();
@@ -630,5 +635,9 @@ try {
     assert.equal(await phase(), 'idle'); assert.equal(await focusId(), 'zen-focus-toggle');
     await exit();
   }
+  await verifyWindowFullscreenShortcut({ context, worker, url, profile, root, artifacts });
   assert.deepEqual(errors, []); console.log('Zen mode native MV3 checks passed');
-} finally { await context.close(); }
+} finally {
+  try { await context?.close(); }
+  finally { fs.rmSync(profile, { recursive: true, force: true }); }
+}

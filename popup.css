@@ -4,44 +4,65 @@
 
 :root {
   color-scheme: dark;
-  --bg: #0b111d;
-  --bg-elevated: rgba(255, 255, 255, 0.055);
-  --border: rgba(255, 255, 255, 0.1);
-  --text: #f5f9ff;
-  --text-secondary: rgba(226, 239, 255, 0.6);
-  --accent: hsl(200, 92%, 62%);
-  --accent-soft: hsla(200, 92%, 62%, 0.16);
+  /* Match the add-site and scene dialogs without loading homepage layout. */
+  --form-surface: #334155;
+  --form-field: #3d4d63;
+  --form-border: #607088;
+  --form-text: #f8fafc;
+  --form-muted: #cbd5e1;
+  --accent-hue: 200;
+  /* Keep keyboard focus legible even when the user's hue is very bright/dark. */
+  --focus-ring: #a5b4fc;
+  --focus-soft: hsla(var(--accent-hue), 92%, 62%, 0.16);
+  --disabled-bg: #475569;
+  --status-success: #86efac;
+  --status-error: #fda4af;
+}
+
+body.theme-light {
+  color-scheme: light;
+  --form-surface: #f8fafc;
+  --form-field: #ffffff;
+  --form-border: #cbd5e1;
+  --form-text: #334155;
+  --form-muted: #64748b;
+  --focus-ring: #4338ca;
+  --focus-soft: hsla(var(--accent-hue), 78%, 46%, 0.12);
+  --disabled-bg: #e2e8f0;
+  --status-success: #166534;
+  --status-error: #b42318;
 }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI',
-    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background:
-    radial-gradient(120% 90% at 50% -10%, #1b3557 0%, transparent 55%),
-    var(--bg);
-  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--form-surface);
+  color: var(--form-text);
   -webkit-font-smoothing: antialiased;
 }
 
 .popup {
   width: 328px;
-  padding: 18px;
+  max-width: 100%;
+  padding: 20px;
 }
 
 h1 {
   margin: 0 0 6px;
-  font-size: 16px;
+  font-size: 18px;
+  line-height: 1.4;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .url {
-  margin: 0 0 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 11.5px;
-  color: var(--text-secondary);
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--form-border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--form-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -49,77 +70,111 @@ h1 {
 
 label {
   display: block;
-  margin: 12px 0 6px;
-  font-size: 11.5px;
+  margin: 14px 0 7px;
+  font-size: 13px;
+  line-height: 1.4;
   font-weight: 500;
-  letter-spacing: 0.03em;
-  color: var(--text-secondary);
+  color: var(--form-muted);
 }
 
 input,
 select {
   width: 100%;
-  height: 38px;
+  min-width: 0;
+  height: 40px;
   padding: 0 11px;
   border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-family: inherit;
+  border: 1px solid var(--form-border);
+  background: var(--form-field);
+  color: var(--form-text);
+  font: inherit;
   font-size: 13px;
   outline: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 input:focus,
 select:focus {
-  border-color: hsla(200, 92%, 62%, 0.55);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px var(--focus-soft);
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--status-error);
 }
 
 input::placeholder {
-  color: rgba(226, 239, 255, 0.36);
+  color: var(--form-muted);
+  opacity: 1;
 }
 
 select option {
-  background: #0b111d;
-  color: var(--text);
+  background: var(--form-surface);
+  color: var(--form-text);
 }
 
 .actions {
-  margin-top: 16px;
+  margin-top: 20px;
 }
 
 .primary {
   width: 100%;
   height: 40px;
-  border: 0;
-  border-radius: 11px;
-  background: var(--accent);
-  color: #fff;
-  font-family: inherit;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #4f46e5;
+  color: #ffffff;
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 0.18s ease, transform 0.18s ease;
+  transition: background-color 0.16s ease;
 }
 
-.primary:hover {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
+.primary:hover:not(:disabled) {
+  background: #4338ca;
 }
 
-.primary:active {
-  transform: scale(0.98);
+.primary:active:not(:disabled) {
+  background: #3730a3;
+}
+
+input:focus-visible,
+select:focus-visible,
+.primary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.primary:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--form-border);
+  color: var(--form-muted);
+  cursor: not-allowed;
+}
+
+input:disabled,
+select:disabled {
+  color: var(--form-muted);
+  cursor: not-allowed;
 }
 
 .status {
-  min-height: 17px;
-  margin: 9px 0 0;
-  font-size: 11.5px;
-  color: rgba(120, 226, 178, 0.9);
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  color: var(--status-success);
+}
+
+.status:empty {
+  display: none;
 }
 
 .status.error {
-  color: #ff9aa9;
+  color: var(--status-error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input, select, .primary { transition: none; }
 }

@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { PIXEL } from './scenes-fixtures.mjs';
+import { assertGroupShortcuts } from './group-shortcuts.mjs';
 
 // Real MV3 navigation/storage/DOM and real Web Animations. The observable wrapper
 // records effects; pausing is used only to make interruption tests deterministic.
@@ -42,6 +43,11 @@ try {
   const seeded = await worker.evaluate(data => OpenTabWorkspace.transaction(async ({ write, read }) => { await write(data); return read(Object.keys(data)); }), data);
   assert.deepEqual(seeded, data, 'seed under the installer/workspace lock');
   await page.addInitScript(() => {
+    // The animation's existing Alt navigation assertion is the non-Mac DOM
+    // contract. The helper below separately covers Mac/fallback platform data;
+    // neither emulation claims actual macOS OS/browser shortcut dispatch.
+    Object.defineProperty(navigator, 'userAgentData', { configurable: true, value: { platform: 'Linux' } });
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux x86_64' });
     sessionStorage.setItem('opentab.scene.view', JSON.stringify({ sceneId: 'scene-default', lastGroupIds: { 'scene-default': 'folder-home' } }));
     window.__groupPops = []; window.__holdGroupPops = false;
     const animate = Element.prototype.animate;
@@ -118,6 +124,7 @@ try {
   await page.locator('#group-tabs [data-group-id="empty"]').focus(); await page.keyboard.press('Alt+1');
   await page.waitForFunction(() => OpenTabSceneNavigation.getView()?.currentFolderId === 'folder-home' && !document.getElementById('homepage').inert);
   assert.equal(await page.evaluate(() => __groupPops.length), count + 1, 'native Alt+number uses the same bounded effect');
+  await assertGroupShortcuts(page);
   assert.deepEqual(await graph(), before, 'navigation preserves full graph records, IDs, order, hierarchy and scene ownership');
   assert.deepEqual(errors, []);
   console.log('Native MV3 group icon motion passed: 160ms unstaggered pop, native tab/Alt navigation, immediate folder/search input, rapid and reduced-motion cancellation, empty groups and graph preservation.');

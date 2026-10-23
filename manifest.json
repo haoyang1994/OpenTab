@@ -21,6 +21,11 @@
   "background": {
     "service_worker": "background.js"
   },
+  "commands": {
+    "toggle-window-fullscreen": {
+      "description": "__MSG_windowFullscreenShortcut__"
+    }
+  },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: blob: https:; connect-src 'self' https: https://www.bing.com https://wttr.in ws://127.0.0.1:* ws://localhost:* wss://127.0.0.1:* wss://localhost:*;"
   },

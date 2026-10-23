@@ -71,6 +71,7 @@
     if (result.uiBlur !== undefined) state.uiBlur = Number(result.uiBlur);
     if (result.iconFrameEnabled !== undefined) state.iconFrameEnabled = Boolean(result.iconFrameEnabled);
     state.openInNewTab = Boolean(result.openInNewTab);
+    state.windowFullscreenShortcutEnabled = result.windowFullscreenShortcutEnabled === true;
     // Keep the durable preference distinct from its effective system fallback.
     // Missing values clear stale boot state and remain absent until chosen.
     state.timezone = result.timezone;
