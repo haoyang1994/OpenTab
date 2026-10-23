@@ -14,6 +14,7 @@ function withBingDeadline(work) {
   let timer;
   const request = {
     signal: controller.signal,
+    stage: 'archive',
     async wait(promise) {
       const value = await promise;
       // Cache/storage operations cannot be aborted. Do not continue a late
@@ -32,7 +33,11 @@ function withBingDeadline(work) {
   // Racing is intentional: abort alone does not bound an unresponsive API or
   // CacheStorage operation. The guards above stop work that settles afterward.
   return Promise.race([Promise.resolve().then(() => work(request)), timeout])
-    .catch((error) => { throw expired ? timeoutError : error; })
+    .catch((error) => {
+      const failure = expired ? timeoutError : error;
+      failure.bingStage = expired ? 'timeout' : (failure.bingStage || request.stage);
+      throw failure;
+    })
     .finally(() => clearTimeout(timer));
 }
 
@@ -44,18 +49,20 @@ function absoluteBingUrl(url) {
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason !== 'install') return;
   OpenTabWorkspace.transaction(async ({ read, write }) => {
-    const result = await read(['icons', 'background', 'clockFormat', 'showSeconds', 'timezone', 'bingIndex', 'themeMode']);
+    const result = await read(['icons', 'background', 'clockFormat', 'showSeconds', 'timezone', 'timezoneMode', 'bingIndex', 'themeMode']);
     if (result.icons) return;
     const defaults = {
       icons: [], background: { type: 'image', value: DEFAULT_LOCAL_BG, source: 'preset' },
       clockFormat: '12h', showSeconds: false, themeMode: 'light',
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, bingIndex: 0
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezoneMode: result.timezone ? 'fixed' : 'system', bingIndex: 0
     };
     await write(Object.fromEntries(Object.entries(defaults).filter(([key]) => result[key] === undefined)));
   }).catch((error) => console.warn('Initial workspace setup failed:', error));
 });
 
 async function fetchArchive(idx, request) {
+  request.stage = 'archive';
   const safeIndex = Math.max(0, Math.min(Number.isInteger(idx) ? idx : 0, 7));
   const apiUrl = `https://www.bing.com/HPImageArchive.aspx?format=js&idx=${safeIndex}&n=1&mkt=zh-CN`;
   const response = await request.wait(fetch(apiUrl, { signal: request.signal }));
@@ -72,16 +79,20 @@ async function fetchArchive(idx, request) {
   };
 }
 
-async function ensureCached(url, request) {
+async function ensureCached(url, request, repair = false) {
+  request.stage = 'cache';
   const cache = await request.wait(caches.open(BING_CACHE));
-  const hit = await request.wait(cache.match(url));
+  const hit = !repair && await request.wait(cache.match(url));
   if (hit) return;
-  const imgResp = await request.wait(fetch(url, { signal: request.signal }));
+  request.stage = 'image';
+  const imgResp = await request.wait(fetch(url, { signal: request.signal, ...(repair ? { cache: 'reload' } : {}) }));
   if (!imgResp.ok) throw new Error(`Bing image status ${imgResp.status}`);
+  request.stage = 'cache';
   await request.wait(cache.put(url, imgResp.clone()));
 }
 
 async function pruneCache(meta, extra, request) {
+  request.stage = 'cache';
   const entries = (Array.isArray(meta) ? meta : []).concat(extra ? [extra] : []);
   const keep = OpenTabBing.keepSet(entries);
   const keepUrls = new Set(keep.map((item) => item.url));
@@ -129,6 +140,21 @@ function refreshBingDaily() {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'repairBingImage') {
+    // Only the official image path used by the archive may be repaired. This
+    // message must never become a general-purpose privileged fetch endpoint.
+    let url;
+    try { url = new URL(request.url); } catch (_) {}
+    if (!url || url.origin !== 'https://www.bing.com' || url.pathname !== '/th'
+      || url.username || url.password || !url.searchParams.get('id') || url.hash) {
+      sendResponse({ success: false, error: 'Invalid Bing image URL', stage: 'image' });
+      return false;
+    }
+    withBingDeadline(operation => ensureCached(url.href, operation, true))
+      .then(() => sendResponse({ success: true }))
+      .catch(error => sendResponse({ success: false, error: error.message, stage: error.bingStage }));
+    return true;
+  }
   if (request.action === 'fetchBingImage') {
     const index = Number.isInteger(request.index) ? request.index : 0;
     withBingDeadline(async (operation) => {
@@ -148,7 +174,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })
       .then((result) => sendResponse(result))
       .catch((error) => {
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: error.message, stage: error.bingStage });
       });
     return true;
   }
@@ -158,7 +184,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then((result) => sendResponse(result))
       .catch((error) => {
         console.warn('Failed to refresh background:', error);
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: error.message, stage: error.bingStage });
       });
     return true;
   }

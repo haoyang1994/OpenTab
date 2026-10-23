@@ -11,31 +11,7 @@
   const ICON_TYPE_SSH = 'ssh';
   const ICON_TYPE_TOOL = 'tool';
 
-  const COMMON_TIMEZONES = [
-    { id: 'Asia/Shanghai', name: '北京', offset: 8 },
-    { id: 'America/New_York', name: '美东', offset: -5 },
-    { id: 'America/Chicago', name: '美中', offset: -6 },
-    { id: 'UTC', name: 'UTC', offset: 0 },
-    { id: 'Asia/Hong_Kong', name: '香港', offset: 8 },
-    { id: 'Asia/Tokyo', name: '东京', offset: 9 },
-    { id: 'Asia/Singapore', name: '新加坡', offset: 8 },
-    { id: 'Asia/Seoul', name: '首尔', offset: 9 },
-    { id: 'Europe/London', name: '伦敦', offset: 0 },
-    { id: 'Europe/Paris', name: '巴黎', offset: 1 },
-    { id: 'Europe/Berlin', name: '柏林', offset: 1 },
-    { id: 'Europe/Moscow', name: '莫斯科', offset: 3 },
-    { id: 'Asia/Dubai', name: '迪拜', offset: 4 },
-    { id: 'Asia/Kolkata', name: '孟买', offset: 5.5 },
-    { id: 'Asia/Bangkok', name: '曼谷', offset: 7 },
-    { id: 'Australia/Sydney', name: '悉尼', offset: 10 },
-    { id: 'Pacific/Auckland', name: '奥克兰', offset: 12 },
-    { id: 'America/Los_Angeles', name: '洛杉矶', offset: -8 },
-    { id: 'America/Denver', name: '丹佛', offset: -7 },
-    { id: 'America/Sao_Paulo', name: '圣保罗', offset: -3 },
-    { id: 'Africa/Cairo', name: '开罗', offset: 2 },
-    { id: 'Pacific/Honolulu', name: '檀香山', offset: -10 },
-    { id: 'America/Anchorage', name: '安克雷奇', offset: -9 }
-  ];
+  const COMMON_TIMEZONES = OpenTabTimezone.ZONES;
 
   const DEFAULT_FOLDERS = [
     { id: HOME_FOLDER_ID, name: t('主页') }
@@ -216,7 +192,7 @@
     weatherTag: 'unknown',
     weatherDesc: '',
     weatherLocation: '',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ...OpenTabTimezone.preference(),
     bingIndex: 0,
     themeMode: 'dark',
     accentHue: 200,
@@ -384,39 +360,51 @@
     return trimmed ? trimmed[0].toUpperCase() : '•';
   }
 
-  function formatTimezoneOffset(offset) {
-    const sign = offset >= 0 ? '+' : '';
-    return `UTC${sign}${offset}`;
-  }
-
+  let timezoneMenuStamp = '';
   function renderTimezoneList() {
+    const current = OpenTabTimezone.preference(state);
+    const zones = COMMON_TIMEZONES.slice();
+    if (!zones.some(tz => OpenTabTimezone.sameZone(tz.id, current.timezone))) {
+      zones.unshift({ id: current.timezone, name: current.timezone });
+    }
     elements.timezoneList.innerHTML = '';
-    COMMON_TIMEZONES.forEach((tz) => {
+    [{ id: '', name: '跟随系统时区' }, ...zones].forEach((tz) => {
+      const automatic = !tz.id;
+      const selected = automatic ? current.timezoneMode === 'system'
+        : current.timezoneMode === 'fixed' && OpenTabTimezone.sameZone(tz.id, current.timezone);
       const item = document.createElement('button');
       item.type = 'button';
-      item.setAttribute('aria-pressed', tz.id === state.timezone);
-      item.className = `timezone-item${tz.id === state.timezone ? ' active' : ''}`;
+      item.setAttribute('aria-pressed', selected);
+      item.className = `timezone-item${selected ? ' active' : ''}`;
       item.dataset.tz = tz.id;
-      item.innerHTML = `
-        <span class="timezone-item-name">${t(tz.name)}</span>
-        <span class="timezone-item-offset">${formatTimezoneOffset(tz.offset)}</span>
-      `;
+      item.dataset.mode = automatic ? 'system' : 'fixed';
+      const name = document.createElement('span'), offset = document.createElement('span');
+      name.className = 'timezone-item-name'; name.textContent = t(tz.name);
+      offset.className = 'timezone-item-offset';
+      item.append(name, offset);
       item.addEventListener('click', () => selectTimezone(tz.id));
       elements.timezoneList.appendChild(item);
     });
+    timezoneMenuStamp = '';
+    refreshTimezoneOffsets();
+  }
+
+  function refreshTimezoneOffsets(now = new Date()) {
+    if (elements.timezoneSelector.classList.contains('hidden')) return;
+    const system = OpenTabTimezone.systemZone(), stamp = `${Math.floor(now.getTime() / 60000)}|${system}`;
+    if (stamp === timezoneMenuStamp) return;
+    timezoneMenuStamp = stamp;
+    for (const item of elements.timezoneList.children) {
+      item.children[1].textContent = OpenTabTimezone.offset(item.dataset.mode === 'system' ? system : item.dataset.tz, now);
+    }
   }
 
   function selectTimezone(tzId) {
-    state.timezone = tzId;
+    Object.assign(state, OpenTabTimezone.preference({ timezone: tzId, timezoneMode: tzId ? 'fixed' : 'system' }));
     saveState();
-    document.querySelectorAll('.timezone-item').forEach((item) => {
-      item.classList.toggle('active', item.dataset.tz === tzId);
-      item.setAttribute('aria-pressed', item.dataset.tz === tzId);
-    });
-    const tz = COMMON_TIMEZONES.find((item) => item.id === tzId);
-    elements.timezoneLabel.textContent = tz ? `${t(tz.name)} (${formatTimezoneOffset(tz.offset)})` : tzId;
     toggleTimezoneSelector(false);
     updateClock();
+    renderTimezoneList();
   }
 
   function toggleTimezoneSelector(forceOpen) {
@@ -425,60 +413,20 @@
       : elements.timezoneSelector.classList.contains('hidden');
     const focused = elements.timezoneSelector.contains(document.activeElement);
     elements.timezoneSelector.classList.toggle('hidden', !open);
+    if (open) renderTimezoneList();
     elements.timezoneBtn.setAttribute('aria-expanded', open);
-    if (open) (elements.timezoneList.querySelector('.active') || elements.timezoneList.firstChild)?.focus();
+    if (open) elements.timezoneList.querySelector('.active')?.focus();
     else if (focused) elements.timezoneBtn.focus();
   }
 
-  function getTimePartsInTimezone(date, timeZone) {
-    const formatter = new Intl.DateTimeFormat('en-GB', {
-      timeZone,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23'
-    });
-    const parts = formatter.formatToParts(date);
-    const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return {
-      hour: Number(map.hour || 0),
-      minute: Number(map.minute || 0),
-      second: Number(map.second || 0)
-    };
-  }
-
   function updateClock() {
-    const now = new Date();
-    const options = {
-      timeZone: state.timezone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: state.clockFormat === '12h'
-    };
-
-    if (state.showSeconds) options.second = '2-digit';
-    elements.time.textContent = new Intl.DateTimeFormat(window.OpenTabI18n?.locale || 'zh-CN', options)
-      .formatToParts(now)
-      .filter((part) => part.type !== 'dayPeriod')
-      .map((part) => part.value)
-      .join('')
-      .trim();
-
-    if (state.clockFormat === '12h') {
-      elements.ampm.textContent = getTimePartsInTimezone(now, state.timezone).hour >= 12 ? 'PM' : 'AM';
-      elements.ampm.style.display = 'block';
-    } else {
-      elements.ampm.style.display = 'none';
-    }
-
-    elements.date.textContent = now.toLocaleDateString(window.OpenTabI18n?.locale || 'zh-CN', {
-      timeZone: state.timezone,
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long'
-    });
-
+    const now = new Date(), clock = OpenTabTimezone.clock(now, state, window.OpenTabI18n?.locale || 'zh-CN');
+    elements.time.textContent = clock.time;
+    elements.ampm.textContent = clock.ampm;
+    elements.ampm.style.display = clock.ampm ? 'block' : 'none';
+    elements.date.textContent = clock.date;
+    elements.timezoneLabel.textContent = OpenTabTimezone.label(clock.timezone, now, t);
+    refreshTimezoneOffsets(now);
   }
 
   function cleanupRuntimeResources() {
@@ -700,7 +648,7 @@
   }
 
   function writeBootMirror() {
-    const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
+    const timezone = OpenTabTimezone.preference(state);
     OpenTabBoot.writeMirror(Object.assign({
       ...(sceneRuntime?.getView() ? { sceneId: sceneRuntime.getView().sceneId } : {}),
       theme: state.themeMode || 'dark',
@@ -709,8 +657,8 @@
       uiBlur: state.uiBlur,
       minimalMode: state.minimalMode,
       bg: OpenTabBingCache.describeBackground(),
-      tz: state.timezone,
-      tzLabel: tz ? `${t(tz.name)} (${formatTimezoneOffset(tz.offset)})` : state.timezone,
+      tz: timezone.timezone,
+      tzMode: timezone.timezoneMode,
       clockFormat: state.clockFormat,
       showSeconds: state.showSeconds
     }, window.OpenTabLayout ? OpenTabLayout.bootMirrorSlice() : {}));
@@ -719,12 +667,11 @@
   function applyBootMirror() {
     const mirror = OpenTabBoot.readMirror();
     if (!mirror) return;
-    if (mirror.tz) state.timezone = mirror.tz;
+    Object.assign(state, OpenTabTimezone.preference({ timezone: mirror.tz, timezoneMode: mirror.tzMode }));
     if (mirror.clockFormat === '12h' || mirror.clockFormat === '24h') {
       state.clockFormat = mirror.clockFormat;
     }
     if (mirror.showSeconds !== undefined) state.showSeconds = Boolean(mirror.showSeconds);
-    if (mirror.tzLabel) elements.timezoneLabel.textContent = mirror.tzLabel;
     updateClock();
   }
 
@@ -1159,8 +1106,7 @@
   }
 
   function renderWorkspaceSettings() {
-    const tz = COMMON_TIMEZONES.find((item) => item.id === state.timezone);
-    elements.timezoneLabel.textContent = tz ? `${t(tz.name)} (${formatTimezoneOffset(tz.offset)})` : state.timezone;
+    updateClock();
     applyUiOpacitySetting();
     applyUiBlurSetting();
     applyIconFrameSetting();

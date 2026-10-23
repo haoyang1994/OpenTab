@@ -50,7 +50,7 @@ function harness(initial = {}) {
     }
   };
   const context = {
-    AbortController, Date: TestDate,
+    AbortController, URL, Date: TestDate,
     console: { warn: (...args) => warnings.push(args) },
     setTimeout(fn, ms) { const id = ++nextTimer; timers.set(id, { fn, at: now + ms }); return id; },
     clearTimeout(id) { timers.delete(id); },
@@ -84,7 +84,7 @@ function harness(initial = {}) {
         responses.push(copy(response));
         done.resolve(response);
       });
-      assert.equal(keepAlive, true, 'the service worker must retain the async response channel');
+      if (!responses.length) assert.equal(keepAlive, true, 'the service worker must retain the async response channel');
       return { responses, done: done.promise };
     },
     async advance(ms) {
@@ -106,7 +106,7 @@ async function assertSingleTimeout(h, pending) {
   assert.equal(pending.responses.length, 0, 'must not expire before the configured total deadline');
   await h.advance(1);
   assert.equal(pending.responses.length, 1, 'hung operations must receive a bounded response');
-  assert.deepEqual(pending.responses[0], { success: false, error: 'Bing request timed out' });
+  assert.deepEqual(pending.responses[0], { success: false, error: 'Bing request timed out', stage: 'timeout' });
   assert.equal(h.timers.size, 0, 'timeout timer must be removed');
   h.requests.forEach(({ options }) => assert.equal(options.signal.aborted, true, 'timeout must abort actual fetch/body work'));
 }
@@ -147,7 +147,7 @@ for (const stage of ['imageFetch', 'imageBody']) {
   await h.advance(7999);
   assert.equal(pending.responses.length, 0);
   await h.advance(1);
-  assert.deepEqual(pending.responses, [{ success: false, error: 'Bing request timed out' }]);
+  assert.deepEqual(pending.responses, [{ success: false, error: 'Bing request timed out', stage: 'timeout' }]);
   assert.equal(h.timers.size, 0);
   imageGate.reject(new Error('late aborted body')); await settle();
   assert.equal(pending.responses.length, 1, 'a late body rejection remains handled');
@@ -258,3 +258,36 @@ for (const [stage, failure, error] of [
 }
 
 console.log('Bing background tests passed: bounded API/body/cache work, abort, truthful failures, cache hits, daily retry and pruning');
+
+// Repair may replace only the approved archive image endpoint, and must skip
+// both the rejected application-cache hit and any stale HTTP-cache response.
+for (const url of ['https://example.com/th?id=x', 'http://www.bing.com/th?id=x',
+  'https://www.bing.com/HPImageArchive.aspx?id=x', 'https://www.bing.com/th',
+  'https://attacker@www.bing.com/th?id=x', 'https://www.bing.com/th?id=x#fragment', 'not a URL']) {
+  const h = harness(), pending = h.send('repairBingImage', { url }); await pending.done;
+  assert.equal(pending.responses[0].success, false);
+  assert.equal(pending.responses[0].stage, 'image');
+  assert.equal(h.requests.length, 0); assert.equal(h.writes.length, 0);
+}
+{
+  const corrupt = { corrupt: true }, h = harness({ entries: [[IMAGE, corrupt]] });
+  const pending = h.send('repairBingImage', { url: IMAGE }); await pending.done;
+  assert.equal(pending.responses[0].success, true);
+  assert.equal(h.requests.length, 1); assert.equal(h.requests[0].url, IMAGE);
+  assert.equal(h.requests[0].options.cache, 'reload');
+  assert.notEqual(h.entries.get(IMAGE), corrupt);
+  assert.equal(h.writes.length, 0, 'repair cannot select a wallpaper or rewrite metadata');
+}
+for (const stage of ['imageBody', 'put']) {
+  const h = harness(), gate = deferred(); h.hooks[stage] = () => gate.promise;
+  const pending = h.send('repairBingImage', { url: IMAGE }); await settle();
+  await assertSingleTimeout(h, pending);
+  gate.reject(new Error('late repair failure')); await settle();
+  assert.equal(pending.responses.length, 1); assert.equal(h.writes.length, 0);
+}
+{
+  const h = harness(); h.hooks.imageFetch = () => ({ ok: false, status: 503 });
+  const pending = h.send('repairBingImage', { url: IMAGE }); await pending.done;
+  assert.equal(pending.responses[0].success, false); assert.equal(pending.responses[0].stage, 'image');
+}
+console.log('Bing repair worker tests passed: approved endpoint only, fresh body, bounded completion and truthful failures');

@@ -33,6 +33,7 @@
 <body>
   <div id="homepage">
     <div id="background-layer"></div>
+    <script src="lib/timezone.js"></script>
     <script src="scene-boot.js"></script>
     <script src="boot.js"></script>
     <canvas id="particles-canvas"></canvas>
@@ -185,7 +186,7 @@
     </div>
 
     <button id="zen-toggle-btn" class="floating-btn" type="button" title="禅模式" data-i18n-title="禅模式" aria-label="禅模式" data-i18n-aria-label="禅模式" aria-controls="zen-mode" aria-expanded="false">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M19.8 8.2a8.5 8.5 0 1 0 .6 6.2M18 4.5c1.3.8 2.3 1.9 3 3.2"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5c-2.8 3-4 5.3-4 8 0 3.2 1.8 5.6 4 7.5 2.2-1.9 4-4.3 4-7.5 0-2.7-1.2-5-4-8Z"/><path d="M8.2 10.2C6.2 8.9 4 8.3 2 8.5c0 6.3 3.7 10.5 10 10.5 6.3 0 10-4.2 10-10.5-2-.2-4.2.4-6.2 1.7"/></svg>
     </button>
 
     <button id="refresh-bg-btn" class="floating-btn" title="切换 Bing 壁纸" data-i18n-title="切换 Bing 壁纸">
@@ -803,18 +804,30 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
     </button>
     <div class="zen-center">
-      <div id="zen-time" role="timer" aria-live="off">25:00</div>
+      <div class="zen-dial">
+        <svg class="zen-ring" viewBox="0 0 320 320" aria-hidden="true">
+          <circle class="zen-ring-track" cx="160" cy="160" r="156"/>
+          <circle id="zen-progress" cx="160" cy="160" r="156" pathLength="100"/>
+        </svg>
+        <div class="zen-readout">
+          <div id="zen-time" role="timer" aria-live="off">25:00</div>
+          <div id="zen-status" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="zen-preset-slot">
+        <div id="zen-presets" role="group" aria-label="专注时长" data-i18n-aria-label="专注时长">
+          <button type="button" data-duration="900000" aria-pressed="false" data-i18n="15 分钟">15 分钟</button>
+          <button type="button" data-duration="1500000" aria-pressed="true" data-i18n="25 分钟">25 分钟</button>
+          <button type="button" data-duration="3000000" aria-pressed="false" data-i18n="50 分钟">50 分钟</button>
+        </div>
+      </div>
       <div class="zen-controls">
-        <button id="zen-focus-toggle" type="button" aria-label="开始专注">
-          <svg class="zen-play" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z"/></svg>
-          <svg class="zen-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M16 5v14"/></svg>
-        </button>
-        <button id="zen-focus-reset" type="button" aria-label="重置" data-i18n-aria-label="重置" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg>
-        </button>
+        <button id="zen-focus-toggle" type="button" aria-label="开始专注" data-i18n="开始专注">开始专注</button>
+        <div class="zen-reset-slot">
+          <button id="zen-focus-reset" type="button" aria-label="重置" data-i18n-aria-label="重置" data-i18n="重置" disabled hidden>重置</button>
+        </div>
       </div>
     </div>
-    <div id="zen-status" class="sr-only" role="status" aria-live="polite"></div>
   </section>
 
   <script src="vendor/flatpickr/flatpickr.min.js"></script>

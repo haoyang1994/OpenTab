@@ -13,6 +13,7 @@
   let requestGeneration = 0;
   let suspended = false;
   let manualCleanup = null;
+  let manualDisplayHold = null;
   let metaScene = '', metaBackground = '';
 
   function scopeMetadata(background) {
@@ -46,6 +47,7 @@
     paintGen += 1;
     dailyInflight = null;
     dailyPersistence = null;
+    manualDisplayHold = null;
     if (ctx && sceneEnabled()) {
       manualInflight = null;
       if (manualCleanup) manualCleanup();
@@ -103,11 +105,11 @@
 
   function send(action, extra) {
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Background script no response')), 25000);
+      const timeout = setTimeout(() => reject(bingError('timeout', 'Background script no response')), 25000);
       chrome.runtime.sendMessage(Object.assign({ action: action }, extra || {}), (response) => {
         clearTimeout(timeout);
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
+          reject(bingError('archive', chrome.runtime.lastError.message));
           return;
         }
         resolve(response);
@@ -115,31 +117,100 @@
     });
   }
 
-  async function resolveDisplayUrl(url) {
+  function bingError(stage, message) { return Object.assign(new Error(message), { bingStage: stage }); }
+
+  function failureMessage(error) {
+    const labels = {
+      archive: 'Bing 壁纸信息获取失败，已保留原背景，请稍后重试',
+      timeout: '壁纸更新超时，已保留原背景，请稍后重试',
+      image: '壁纸图片无法加载，已保留原背景，请稍后重试',
+      cache: '壁纸缓存失败，已保留原背景，请稍后重试',
+      storage: '壁纸保存失败，已保留原背景，请稍后重试'
+    };
+    return t(labels[error.bingStage] || '壁纸更新失败，已保留原背景，请稍后重试');
+  }
+
+  async function resolveDisplayUrl(url, bounded = false) {
     if (!url) return { display: '' };
     if (url.indexOf('data:') === 0 || g.OpenTabBoot.isLocalAsset(url)) {
       return { display: url, local: true };
     }
+    let expired = false, timer;
+    const read = async () => {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const hit = await cache.match(url);
+        if (hit) {
+          const blob = await hit.blob();
+          if (expired) return { display: url };
+          const obj = URL.createObjectURL(blob);
+          return { display: obj, fromCache: true, blobUrl: obj };
+        }
+      } catch (e) {}
+      return { display: url };
+    };
+    if (!bounded) return read();
     try {
-      const cache = await caches.open(CACHE_NAME);
-      const hit = await cache.match(url);
-      if (hit) {
-        const blob = await hit.blob();
-        const obj = URL.createObjectURL(blob);
-        return { display: obj, fromCache: true, blobUrl: obj };
-      }
-    } catch (e) {}
-    return { display: url };
+      return await Promise.race([read(), new Promise((_, reject) => {
+        timer = setTimeout(() => { expired = true; reject(bingError('timeout', 'bg cache timeout')); }, 15000);
+      })]);
+    } finally { clearTimeout(timer); }
   }
 
-  function loadImage(src) {
+  function loadImage(src, decode = false) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      const timer = setTimeout(() => { img.onload = img.onerror = null; img.src = ''; reject(new Error('bg image timeout')); }, 15000);
-      img.onload = function () { clearTimeout(timer); resolve(img); };
-      img.onerror = function () { clearTimeout(timer); reject(new Error('bg image failed')); };
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); img.onload = img.onerror = null;
+        if (error) reject(error); else resolve(img);
+      };
+      const timer = setTimeout(() => { finish(bingError('timeout', 'bg image timeout')); img.src = ''; }, 15000);
+      img.onload = async function () {
+        try {
+          if (decode && img.decode) await img.decode();
+          if (typeof img.naturalWidth === 'number' && !img.naturalWidth) throw new Error('empty image');
+          finish();
+        } catch (_) { finish(bingError('image', 'bg image decode failed')); }
+      };
+      img.onerror = function () { finish(bingError('image', 'bg image failed')); };
       img.src = src;
     });
+  }
+
+  async function prepareManualPhoto(background, canApply) {
+    let resolved = await resolveDisplayUrl(background.value, true), img;
+    try {
+      try { img = await loadImage(resolved.display, true); }
+      catch (error) {
+        if (!resolved.fromCache || error.bingStage === 'timeout' || !canApply()) throw error;
+        revokeBlob(resolved.blobUrl); resolved = null;
+        const repair = await send('repairBingImage', { url: background.value });
+        if (!repair?.success) throw bingError(repair?.stage || 'image', repair?.error || 'Bing image repair failed');
+        if (!canApply()) return null;
+        // The worker replaced the entry only after its complete body arrived.
+        // Do not reuse the rejected blob, and never repair more than once.
+        resolved = await resolveDisplayUrl(background.value, true);
+        img = await loadImage(resolved.display, true);
+      }
+      if (!canApply()) { revokeBlob(resolved?.blobUrl); return null; }
+      const extra = resolved.fromCache || resolved.local ? lqipFromImage(img) : { lqip: '', color: '' };
+      let released = false;
+      return {
+        release() { if (!released) { released = true; revokeBlob(resolved.blobUrl); } },
+        commit() {
+          if (released || !canApply()) return false;
+          released = true; ++paintGen;
+          ctx.elements.backgroundLayer.className = 'image-bg'; stopVideo();
+          paintPhoto(`url(${resolved.display})`, false);
+          scopeMetadata(background);
+          lastMeta = { kind: 'bing', css: resolved.local ? background.value : '', lqip: extra.lqip, color: extra.color || themeColor() };
+          adoptBlob(resolved.blobUrl || '');
+          return true;
+        }
+      };
+    } catch (error) { revokeBlob(resolved?.blobUrl); throw error; }
   }
 
   function lqipFromImage(img) {
@@ -215,6 +286,11 @@
     const layer = ctx.elements.backgroundLayer;
     const video = ctx.elements.backgroundVideo;
     const bg = (opts && opts.background) || ctx.state.background || {};
+    // A settings/storage callback may render the provisional candidate while
+    // its save is pending, or reread the old cache during rollback. Neither is
+    // allowed to replace the actual displayed image owned by this operation.
+    if (manualDisplayHold && manualDisplayHold.generation === requestGeneration && viewIsCurrent(manualDisplayHold.view)
+      && [manualDisplayHold.before, manualDisplayHold.selected].includes(JSON.stringify(bg))) return;
     const value = bg.value || '';
     const gen = ++paintGen;
     const view = sceneView(), request = requestGeneration;
@@ -352,8 +428,13 @@
     const background = JSON.stringify(ctx.state.background || {});
     const previousIndex = ctx.state.bingIndex;
     let selectedBackground = '';
+    let prepared = null;
     const btn = ctx.elements.refreshBgBtn;
     const layer = ctx.elements.backgroundLayer;
+    const hadDisplayed = Boolean(layer?.style.backgroundImage || layer?.style.background || ctx.elements.backgroundVideo?.style.display === 'block');
+    const hold = { generation, view, before: background, selected: '', description: describeBackground() };
+    manualDisplayHold = hold;
+    const choiceIsCurrent = () => requestIsCurrent(generation, selectedBackground || background, view);
     const wasDisabled = btn && btn.disabled;
     if (btn) { btn.classList.add('loading'); btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
     if (layer) layer.classList.add('loading');
@@ -374,8 +455,8 @@
         result = await send('fetchBingImage', { index: next });
       }
       if (!requestIsCurrent(generation, background, view)) return;
-      if (!result || !result.success) throw new Error((result && result.error) || 'Unknown Bing fetch error');
-      if (result.url === ctx.state.background.value) throw new Error('Bing returned the current wallpaper');
+      if (!result || !result.success) throw bingError(result?.stage || 'archive', result?.error || 'Unknown Bing fetch error');
+      if (result.url === ctx.state.background.value) throw bingError('image', 'Bing returned the current wallpaper');
       const nextIndex = Number.isInteger(result.nextIndex) ? result.nextIndex : ((index + 1) % 8);
       const today = g.OpenTabBing.ymd(new Date());
       const prev = (ctx.state.background && ctx.state.background.bing) || {};
@@ -391,28 +472,35 @@
           pinnedDate: today
         }
       };
-      // Commit the decoded image to the real layer before saving or enabling the
-      // button. A delayed fade commit could be cancelled by workspace changes
-      // after storage succeeded, leaving the previous pixels until reload.
-      await updateBackground({ fade: false, preserveOnError: true, background: candidate, deferMirror: Boolean(view),
-        canApply: () => requestIsCurrent(generation, background, view) });
-      if (!requestIsCurrent(generation, background, view)) return;
+      // Decode first without touching pixels or revoking their source. Keep
+      // unrelated renders from exposing the candidate before durable success.
+      prepared = await prepareManualPhoto(candidate, choiceIsCurrent);
+      if (!prepared || !requestIsCurrent(generation, background, view)) return;
       ctx.state.background = candidate;
       ctx.state.bingIndex = nextIndex;
       selectedBackground = JSON.stringify(candidate);
-      if (!await saveBackground(true, view, background)) throw new Error('Background storage failed');
-      if (view && !requestIsCurrent(generation, selectedBackground, view)) return;
+      hold.selected = selectedBackground;
+      try {
+        if (!await saveBackground(true, view, background)) throw new Error('Background storage failed');
+      } catch (error) { throw bingError('storage', error.message); }
+      if (!choiceIsCurrent() || !prepared.commit()) return;
+      if (manualDisplayHold === hold) manualDisplayHold = null;
       ctx.writeBootMirror();
       setButtonCaption(result.title, result.copyright);
     } catch (e) {
-      if (requestIsCurrent(generation, selectedBackground || background, view)) {
+      if (choiceIsCurrent() || requestIsCurrent(generation, background, view)) {
         ctx.state.background = JSON.parse(background);
         ctx.state.bingIndex = previousIndex;
-        await updateBackground({ fade: false });
-        if ((!view || requestIsCurrent(generation, background, view)) && ctx.showToast) ctx.showToast(t('壁纸更新失败，已保留原背景，请稍后重试'));
+        if (!hadDisplayed) {
+          if (manualDisplayHold === hold) manualDisplayHold = null;
+          try { await updateBackground({ fade: false, preserveOnError: true }); } catch (_) {}
+        }
+        if (requestIsCurrent(generation, background, view) && ctx.showToast) ctx.showToast(failureMessage(e));
       }
       console.warn('Failed to fetch Bing image:', e);
     } finally {
+      prepared?.release();
+      if (manualDisplayHold === hold) manualDisplayHold = null;
       cleanup();
     }
   }
@@ -536,6 +624,10 @@
   }
 
   function describeBackground() {
+    if (manualDisplayHold && manualDisplayHold.generation === requestGeneration && viewIsCurrent(manualDisplayHold.view)
+      && [manualDisplayHold.before, manualDisplayHold.selected].includes(JSON.stringify(ctx.state.background || {}))) {
+      return Object.assign({}, manualDisplayHold.description);
+    }
     const bg = ctx.state.background || {};
     scopeMetadata(bg);
     if (bg.type === 'gradient') {

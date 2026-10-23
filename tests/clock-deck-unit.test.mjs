@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const Workspace = require('../workspace-persistence.js');
 const source = fs.readFileSync(new URL('../clock-deck.js', import.meta.url), 'utf8');
 const apiContext = vm.createContext({ console }); vm.runInContext(source, apiContext);
-const { createFocusTimer, formatRemaining, swipeDirection, createTodoAction, DURATION, FOCUS_KEY } = apiContext.OpenTabClockDeck;
+const { createFocusTimer, formatRemaining, swipeDirection, createTodoAction, DURATION, DURATIONS, FOCUS_KEY } = apiContext.OpenTabClockDeck;
 const memory = initial => { const data = new Map(Object.entries(initial || {})); return { data, getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value) }; };
 {
   let now = 1_000_000; const storage = memory(); const timer = createFocusTimer({ storage, now: () => now });
@@ -23,6 +23,66 @@ const memory = initial => { const data = new Map(Object.entries(initial || {}));
   now -= 5_000_000; assert.equal(restored.snapshot().remaining, DURATION, 'wall-clock rollback does not extend the duration');
   now += 5000; assert.equal(restored.snapshot().remaining, DURATION - 5000, 'countdown resumes after a backwards clock adjustment');
   assert.equal(formatRemaining(1), '00:01'); assert.equal(formatRemaining(-10), '00:00');
+}
+// Every preset is the same deadline-based session, including reload, pause,
+// wall-clock rollback, completion, reset and replay. Choosing never autostarts.
+assert.deepEqual([...DURATIONS], [900000, 1500000, 3000000]);
+for (const duration of DURATIONS) {
+  let now = 10_000_000; const storage = memory();
+  let timer = createFocusTimer({ storage, now: () => now });
+  timer.setDuration(duration);
+  assert.equal(timer.snapshot().duration, duration); assert.equal(timer.snapshot().remaining, duration);
+  assert.equal(timer.snapshot().phase, 'idle'); assert.equal(timer.snapshot().deadline, null);
+  timer = createFocusTimer({ storage, now: () => now });
+  assert.equal(timer.snapshot().duration, duration, 'selected idle duration survives reload');
+  timer.toggle(); const deadline = timer.snapshot().deadline;
+  now += 12_345;
+  timer.setDuration(duration === DURATION ? 900000 : DURATION);
+  assert.equal(timer.snapshot().duration, duration); assert.equal(timer.snapshot().deadline, deadline, 'running selection cannot discard the session');
+  timer = createFocusTimer({ storage, now: () => now });
+  assert.equal(timer.snapshot().remaining, duration - 12_345); assert.equal(timer.snapshot().deadline, deadline);
+  timer.toggle(); const remaining = timer.snapshot().remaining;
+  timer.setDuration(duration === DURATION ? 900000 : DURATION); now += 5000;
+  assert.equal(timer.snapshot().duration, duration); assert.equal(timer.snapshot().remaining, remaining, 'paused selection cannot reset the session');
+  timer = createFocusTimer({ storage, now: () => now });
+  assert.equal(timer.snapshot().phase, 'paused'); assert.equal(timer.snapshot().duration, duration); assert.equal(timer.snapshot().remaining, remaining);
+  timer.toggle(); now -= 5000;
+  assert.equal(timer.snapshot().remaining, remaining, 'rollback preserves remaining time at every duration');
+  now += 1000; assert.equal(timer.snapshot().remaining, remaining - 1000);
+  now += duration; assert.equal(timer.snapshot().phase, 'done'); assert.equal(timer.snapshot().duration, duration);
+  timer = createFocusTimer({ storage, now: () => now });
+  assert.equal(timer.snapshot().phase, 'done'); assert.equal(timer.snapshot().duration, duration);
+  timer.toggle(); assert.equal(timer.snapshot().remaining, duration, 'replay retains the selected duration');
+  timer.reset(); assert.equal(timer.snapshot().phase, 'idle'); assert.equal(timer.snapshot().remaining, duration, 'reset retains the selected duration');
+  now += duration * 2; assert.equal(timer.snapshot().phase, 'idle');
+  timer.toggle(); now += duration; timer.snapshot();
+  const next = duration === DURATION ? 900000 : DURATION;
+  timer.setDuration(next); assert.equal(timer.snapshot().phase, 'idle'); assert.equal(timer.snapshot().remaining, next, 'a completed session may configure its successor without starting it');
+}
+for (const phase of ['idle', 'running', 'paused', 'done']) {
+  const remaining = phase === 'done' ? 0 : phase === 'paused' ? 123456 : DURATION;
+  const timer = createFocusTimer({ storage: memory({ [FOCUS_KEY]: JSON.stringify({ version: 1, phase, remaining, deadline: phase === 'running' ? 100000 + remaining : null }) }), now: () => 100000 });
+  assert.equal(timer.snapshot().phase, phase); assert.equal(timer.snapshot().duration, DURATION, 'legacy v1 duration defaults to 25 minutes');
+  assert.equal(timer.snapshot().remaining, remaining);
+}
+for (const duration of [null, '900000', 0, -1, 600000, Infinity, NaN, {}, []]) {
+  const storage = memory(), timer = createFocusTimer({ storage, now: () => 100000 });
+  timer.setDuration(duration);
+  assert.equal(timer.snapshot().duration, DURATION); assert.equal(timer.snapshot().phase, 'idle'); assert.equal(storage.data.size, 0, 'invalid selection never persists');
+  const restored = createFocusTimer({ storage: memory({ [FOCUS_KEY]: JSON.stringify({ version: 1, phase: 'paused', remaining: 5000, duration }) }), now: () => 100000 });
+  assert.equal(restored.snapshot().phase, 'idle'); assert.equal(restored.snapshot().duration, DURATION, 'invalid explicit durations are not legacy records');
+}
+for (const saved of [
+  { phase: 'idle', duration: 900000, remaining: DURATION },
+  { phase: 'done', duration: 900000, remaining: 1000 },
+  { phase: 'paused', duration: 900000, remaining: 0 },
+  { phase: 'paused', duration: 900000, remaining: DURATION },
+  { phase: 'running', duration: 900000, remaining: 900000, deadline: 100000 + 900001 },
+  { phase: 'running', duration: 900000, remaining: 0, deadline: 110000 },
+  { phase: 'unknown', duration: 900000, remaining: 900000 }
+]) {
+  const timer = createFocusTimer({ storage: memory({ [FOCUS_KEY]: JSON.stringify({ version: 1, ...saved }) }), now: () => 100000 });
+  assert.equal(timer.snapshot().phase, 'idle'); assert.equal(timer.snapshot().duration, DURATION, 'inconsistent saved states cannot start or resume');
 }
 for (const invalid of ['bad JSON', '{}', JSON.stringify({ version: 1, phase: 'running', remaining: DURATION, deadline: Infinity }), JSON.stringify({ version: 1, phase: 'paused', remaining: -1 }), JSON.stringify({ version: 1, phase: 'running', remaining: 1000, deadline: 5_000_000 })]) {
   const timer = createFocusTimer({ storage: memory({ [FOCUS_KEY]: invalid }), now: () => 100_000 });

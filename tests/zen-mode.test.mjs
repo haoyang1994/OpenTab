@@ -313,32 +313,46 @@ async function assertNativeEscape(theme) {
   }
 }
 async function assertPlainScreen() {
-  assert.equal(await page.locator('#zen-mode button').count(), 3, 'only exit, focus toggle and reset controls');
-  assert.deepEqual((await page.locator('#zen-mode button').allTextContents()).map(text => text.trim()), ['', '', ''], 'buttons contain icons, not visible instructional copy');
-  assert.equal(await page.locator('#zen-mode h1, #zen-mode h2, #zen-mode h3, #zen-mode progress, #zen-mode [role="progressbar"], #zen-mode circle, #zen-mode img, #zen-mode canvas').count(), 0, 'no heading, ring, progress or wallpaper decoration');
-  for (const id of ['zen-exit', 'zen-focus-toggle', 'zen-focus-reset']) assert.ok(await page.locator(`#${id}`).getAttribute('aria-label'), 'icon-only controls retain accessible names');
+  assert.equal(await page.locator('#zen-mode button').count(), 6, 'only exit, three durations, focus toggle and secondary reset');
+  assert.equal(await page.locator('#zen-mode h1, #zen-mode h2, #zen-mode h3, #zen-mode progress, #zen-mode [role="progressbar"], #zen-mode img, #zen-mode canvas').count(), 0, 'no headings, extra progress widgets, wallpaper or dashboard decoration');
+  assert.equal(await page.locator('.zen-ring circle').count(), 2, 'the only progress treatment is a restrained track and elapsed arc');
+  assert.equal(await page.locator('.zen-ring').getAttribute('aria-hidden'), 'true', 'decorative progress never duplicates the accessible countdown');
+  assert.equal((await page.locator('#zen-exit').textContent()).trim(), '', 'exit remains a quiet icon');
+  for (const id of ['zen-exit', 'zen-focus-toggle', 'zen-focus-reset']) assert.ok(await page.locator(`#${id}`).getAttribute('aria-label'), 'functional controls retain accessible names');
+  assert.equal(await page.locator('#zen-focus-toggle').getAttribute('aria-label'), await page.locator('#zen-focus-toggle').innerText(), 'visible action and accessible name agree');
   assert.equal(await page.locator('#zen-time').getAttribute('role'), 'timer');
   assert.equal(await page.locator('#zen-time').getAttribute('aria-live'), 'off', 'countdown is not announced every second');
   const appearance = await page.locator('#zen-mode').evaluate(panel => {
     const style = getComputedStyle(panel), timer = document.getElementById('zen-time'), timeRect = timer.getBoundingClientRect();
+    const ring = document.querySelector('.zen-ring'), ringStyle = getComputedStyle(ring), ringRect = ring.getBoundingClientRect();
     const walker = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT), visible = [];
     for (let text = walker.nextNode(); text; text = walker.nextNode()) {
       if (!text.textContent.trim() || text.parentElement.closest('.sr-only')) continue;
       const style = getComputedStyle(text.parentElement);
-      if (style.display !== 'none' && style.visibility !== 'hidden') visible.push(text.textContent.trim());
+      if (text.parentElement.getClientRects().length && style.display !== 'none' && style.visibility !== 'hidden') visible.push(text.textContent.trim());
     }
+    const state = OpenTabClockDeck.getFocus().snapshot(), editable = ['idle', 'done'].includes(state.phase), t = OpenTabI18n.t;
+    const expected = [timer.textContent];
+    if (state.phase !== 'idle') expected.push(t(state.phase === 'running' ? '专注中' : state.phase === 'paused' ? '已暂停' : '已完成'));
+    if (editable) expected.push(t('15 分钟'), t('25 分钟'), t('50 分钟'));
+    expected.push(t(state.phase === 'running' ? '暂停' : state.phase === 'paused' ? '继续专注' : state.phase === 'done' ? '再次专注' : '开始专注'));
+    if (state.phase !== 'idle') expected.push(t('重置'));
     return { background: style.backgroundColor, body: getComputedStyle(document.body).backgroundColor, image: style.backgroundImage,
-      backdrop: style.backdropFilter, fontSize: parseFloat(getComputedStyle(timer).fontSize), visible,
+      backdrop: style.backdropFilter, fontSize: parseFloat(getComputedStyle(timer).fontSize), visible, expected,
+      ring: { width: ringRect.width, stroke: ringStyle.strokeWidth, shadow: ringStyle.boxShadow, filter: ringStyle.filter },
       within: timeRect.left >= 0 && timeRect.right <= innerWidth && timeRect.top >= 0 && timeRect.bottom <= innerHeight,
       isolated: [...document.body.children].filter(node => node !== panel && node.tagName !== 'SCRIPT').every(node => node.inert && getComputedStyle(node).visibility === 'hidden') };
   });
   assert.equal(appearance.background, appearance.body, 'plain screen follows the current light/dark theme');
   assert.match(appearance.background, /^rgb\(/, 'background is fully opaque'); assert.equal(appearance.image, 'none'); assert.equal(appearance.backdrop, 'none');
   assert.ok(appearance.fontSize >= 70, 'large, legible countdown'); assert.equal(appearance.within, true);
-  assert.deepEqual(appearance.visible, [await page.locator('#zen-time').innerText()], 'countdown is the only visible text');
+  assert.ok(appearance.ring.width >= 300 && appearance.ring.width <= 340, 'progress ring remains restrained in scale');
+  assert.deepEqual({ ...appearance.ring, width: 320 }, { width: 320, stroke: '2px', shadow: 'none', filter: 'none' }, 'hairline progress has no glow');
+  assert.deepEqual(appearance.visible, appearance.expected, 'only time, functional state, available durations and actions are visible, never explanatory copy');
   assert.equal(appearance.isolated, true, 'underlying wallpaper, controls and content are hidden and inert');
   assert.equal(await page.locator('#homepage').evaluate(home => getComputedStyle(home).transitionProperty), 'none', 'Zen isolation never animates wrapper visibility');
 }
+
 async function assertIsolatedKeys() {
   const before = await view(), query = await page.locator('#search-input').inputValue();
   for (const key of ['Control+k', 'Meta+k', 'Alt+2', 'x']) {
@@ -362,6 +376,16 @@ try {
     assert.equal(await page.locator('#homepage').evaluate(home => getComputedStyle(home).transitionProperty), 'none', 'the isolation-wrapper transition guard exists before entering Zen');
     assert.equal(await page.locator('#todo-toggle-btn').count(), 0, 'the old floating TODO entry is removed');
     const entry = await page.locator('#zen-toggle-btn').boundingBox(); assert.ok(entry.x < 40 && entry.y < 40, 'Zen is the upper-left entry');
+    assert.equal(entry.width, 44); assert.equal(entry.height, 44, 'the icon replacement preserves the entry target size');
+    const entryButton = page.locator('#zen-toggle-btn');
+    assert.equal((await entryButton.textContent()).trim(), '', 'the Zen entry has no visible text');
+    assert.equal(await entryButton.getAttribute('aria-label'), 'Zen mode', 'the entry retains its localized accessible name');
+    assert.equal(await entryButton.getAttribute('title'), 'Zen mode', 'the entry retains its localized tooltip');
+    const entryIcon = entryButton.locator('svg');
+    assert.equal(await entryIcon.count(), 1);
+    assert.equal(await entryIcon.getAttribute('aria-hidden'), 'true', 'the icon remains decorative for assistive technology');
+    const iconBounds = await entryIcon.boundingBox();
+    assert.equal(iconBounds.width, 20); assert.equal(iconBounds.height, 20, 'the lotus preserves the existing icon footprint');
     const before = await read(protectedKeys), scene = await view();
     await page.fill('#search-input', 'keep this query');
     await page.locator('#search-input').evaluate(input => input.setSelectionRange(5, 9, 'backward'));
@@ -395,10 +419,12 @@ try {
   await page.waitForFunction(() => document.getElementById('clock-focus-time').textContent !== '25:00');
   const deadline = await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().deadline);
   await enter(); assert.equal(await phase(), 'running');
+  await assertPlainScreen();
   await page.screenshot({ path: path.join(artifacts, 'zen-light-running.png'), animations: 'disabled' });
   assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().deadline), deadline, 'Zen reuses the running deck deadline');
   await page.click('#zen-focus-toggle'); assert.equal(await phase(), 'paused');
   assert.equal(await page.locator('#zen-focus-toggle').getAttribute('aria-label'), 'Resume focus');
+  await assertPlainScreen();
   await page.screenshot({ path: path.join(artifacts, 'zen-light-paused.png'), animations: 'disabled' });
   const paused = await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().remaining);
   await page.evaluate(() => {
@@ -421,9 +447,53 @@ try {
   await page.click('#clock-focus-toggle'); assert.equal(await phase(), 'paused');
   await enter(); assert.equal(await page.locator('#zen-focus-toggle').getAttribute('aria-label'), 'Resume focus'); await exit();
 
+  // All three presets configure the existing controller and survive reload.
+  // Selection does not start focus; active/paused sessions cannot be overwritten.
+  for (const minutes of [15, 25, 50]) {
+    const duration = minutes * 60000;
+    await reset(); await fullscreen('unsupported'); await enter();
+    const before = await read(protectedKeys);
+    await page.click(`#zen-presets [data-duration="${duration}"]`);
+    assert.equal(await phase(), 'idle'); assert.equal(await page.locator('#zen-time').innerText(), `${minutes}:00`);
+    assert.equal(await page.locator('#clock-focus-time').textContent(), `${minutes}:00`);
+    assert.deepEqual(await page.locator('#clock-focus-progress').evaluate(el => [el.max, el.value]), [duration, 0]);
+    assert.equal(await page.locator('#zen-focus-reset').isVisible(), false);
+    assert.equal(await page.locator('#zen-progress').evaluate(el => el.style.strokeDashoffset), '100');
+    await page.reload(); await ready(fixture()); await fullscreen('unsupported'); await enter();
+    assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().duration), duration);
+    assert.equal(await phase(), 'idle'); assert.equal(await page.locator('#zen-time').innerText(), `${minutes}:00`);
+    await page.click('#zen-focus-toggle');
+    const deadline = await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().deadline);
+    assert.equal(await page.locator('#zen-presets').isVisible(), false);
+    assert.deepEqual(await page.locator('#zen-presets button').evaluateAll(buttons => buttons.map(button => button.disabled)), [true, true, true]);
+    await page.evaluate(() => OpenTabClockDeck.getFocus().setDuration(600000));
+    assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().deadline), deadline);
+    await page.reload(); await ready(fixture()); await fullscreen('unsupported'); await enter();
+    assert.equal(await phase(), 'running'); assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().deadline), deadline);
+    await page.click('#zen-focus-toggle'); const paused = await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().remaining);
+    await page.evaluate(duration => OpenTabClockDeck.getFocus().setDuration(duration === 900000 ? 3000000 : 900000), duration);
+    assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().duration), duration);
+    for (let index = 0; index < 6; index++) {
+      await page.keyboard.press('Tab'); assert.ok(['zen-exit', 'zen-focus-toggle', 'zen-focus-reset'].includes(await focusId()), 'hidden presets cannot trap keyboard focus');
+    }
+    await page.reload(); await ready(fixture()); await fullscreen('unsupported'); await enter();
+    assert.equal(await phase(), 'paused'); assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().remaining), paused);
+    const progress = await page.evaluate(() => {
+      const state = OpenTabClockDeck.getFocus().snapshot(), progress = document.getElementById('clock-focus-progress');
+      return { max: progress.max, value: progress.value, offset: Number(document.getElementById('zen-progress').style.strokeDashoffset), duration: state.duration, remaining: state.remaining };
+    });
+    assert.equal(progress.max, duration); assert.equal(progress.value, duration - paused);
+    assert.ok(Math.abs(progress.offset - 100 * paused / duration) < 0.001, 'native ring reflects the shared selected duration');
+    await page.locator('#zen-focus-reset').focus(); await page.keyboard.press('Enter');
+    assert.equal(await phase(), 'idle'); assert.equal(await focusId(), 'zen-focus-toggle', 'hiding reset restores focus immediately');
+    assert.equal(await page.locator('#zen-time').innerText(), `${minutes}:00`);
+    await exit(); assert.deepEqual(await read(protectedKeys), before, 'duration choices never persist new workspace settings');
+  }
+
   await reset({}, { version: 1, phase: 'running', remaining: 1500000, deadline: 1 }); await fullscreen('unsupported'); await enter();
   assert.equal(await page.locator('#zen-time').innerText(), '00:00'); assert.equal(await phase(), 'done');
   assert.equal(await page.locator('#zen-focus-toggle').getAttribute('aria-label'), 'Focus again');
+  await assertPlainScreen();
   await page.click('#zen-focus-toggle'); assert.equal(await phase(), 'running'); await exit();
 
   // Graceful unsupported/rejected APIs keep timer and exit usable. These are
@@ -503,10 +573,43 @@ try {
   const mobileBefore = await read(protectedKeys), mobileScene = await view();
   await enter();
   assert.equal(await page.locator('#zen-focus-toggle').getAttribute('aria-label'), '开始专注'); await assertPlainScreen();
-  for (const selector of ['#zen-exit', '#zen-focus-toggle', '#zen-focus-reset']) {
-    const box = await page.locator(selector).boundingBox(); assert.ok(box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, 'mobile icon controls have unclipped touch targets');
+  for (const selector of ['#zen-exit', '#zen-focus-toggle', ...[900000, 1500000, 3000000].map(duration => `#zen-presets [data-duration="${duration}"]`)]) {
+    const box = await page.locator(selector).boundingBox(); assert.ok(box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, 'mobile functional controls have unclipped touch targets');
   }
-  await page.screenshot({ path: path.join(artifacts, 'zen-light-mobile-zh.png'), animations: 'disabled' }); await exit();
+  await page.screenshot({ path: path.join(artifacts, 'zen-light-mobile-zh.png'), animations: 'disabled' });
+  await page.click('#zen-focus-toggle'); await page.click('#zen-focus-toggle'); await assertPlainScreen();
+  assert.equal(await page.locator('#zen-focus-toggle').innerText(), '继续专注');
+  const resetBox = await page.locator('#zen-focus-reset').boundingBox(); assert.ok(resetBox.width >= 44 && resetBox.height >= 44 && resetBox.x >= 0 && resetBox.x + resetBox.width <= 390);
+  await page.screenshot({ path: path.join(artifacts, 'zen-light-mobile-zh-paused.png'), animations: 'disabled' }); await exit();
   assert.deepEqual(await read(protectedKeys), mobileBefore); assert.deepEqual(await view(), mobileScene);
+  // These compact sizes must expose the timer, presets and start action on
+  // the very first viewport, not merely make them reachable after scrolling.
+  for (const viewport of [{ width: 640, height: 360 }, { width: 320, height: 480 }]) {
+    await page.setViewportSize(viewport); await reset({ themeMode: 'light', languagePreference: 'zh-CN' }); await fullscreen('unsupported'); await enter();
+    const geometry = await page.evaluate(() => {
+      const panel = document.getElementById('zen-mode');
+      const selectors = ['.zen-dial', '#zen-time', '#zen-exit', '#zen-focus-toggle', ...[900000, 1500000, 3000000].map(duration => `#zen-presets [data-duration="${duration}"]`)];
+      return { scrollTop: panel.scrollTop, horizontalOverflow: panel.scrollWidth - panel.clientWidth, fontSize: parseFloat(getComputedStyle(document.getElementById('zen-time')).fontSize),
+        items: selectors.map(selector => {
+          const el = document.querySelector(selector), rect = el.getBoundingClientRect();
+          return { selector, button: el.tagName === 'BUTTON', x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom };
+        }) };
+    });
+    assert.equal(geometry.scrollTop, 0, 'initial focus must not require automatic scrolling to discover the action');
+    assert.ok(geometry.horizontalOverflow <= 1, 'compact Zen never creates horizontal scrolling');
+    assert.ok(geometry.fontSize >= 64, 'compact countdown remains readable rather than shrinking to fit');
+    for (const item of geometry.items) {
+      assert.ok(item.width > 0 && item.height > 0 && item.x >= 0 && item.y >= 0 && item.right <= viewport.width + 1 && item.bottom <= viewport.height + 1,
+        `${viewport.width}×${viewport.height}: initially visible ${JSON.stringify(item)}`);
+      if (item.button) assert.ok(item.width >= 44 && item.height >= 44, 'compact controls retain 44px touch targets');
+    }
+    await page.screenshot({ path: path.join(artifacts, `zen-light-${viewport.width}x${viewport.height}-zh.png`), animations: 'disabled' });
+    await page.click('#zen-focus-toggle'); await page.click('#zen-focus-toggle');
+    const resetBox = await page.locator('#zen-focus-reset').boundingBox();
+    assert.ok(resetBox.width >= 44 && resetBox.height >= 44 && resetBox.y >= 0 && resetBox.y + resetBox.height <= viewport.height + 1, 'secondary reset also remains visible after starting');
+    await page.locator('#zen-focus-reset').focus(); await page.keyboard.press('Enter');
+    assert.equal(await phase(), 'idle'); assert.equal(await focusId(), 'zen-focus-toggle');
+    await exit();
+  }
   assert.deepEqual(errors, []); console.log('Zen mode native MV3 checks passed');
 } finally { await context.close(); }

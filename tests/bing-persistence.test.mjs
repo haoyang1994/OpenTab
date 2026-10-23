@@ -23,16 +23,17 @@ function harness() {
   const element = () => { const classes = new Set(); return { style: {}, children: [], querySelectorAll() { return this.children.filter(child => child.className === 'bg-fade-in'); }, appendChild(child) { this.children.push(child); child.parentNode = this; }, remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); }, disabled: false, classList: { add: key => classes.add(key), remove: key => classes.delete(key), contains: key => classes.has(key) }, pause() {}, setAttribute() {}, removeAttribute() {} }; };
   const g = { state, chrome, console, setTimeout, clearTimeout, queueMicrotask, Date, URL, AbortController, navigator: { locks: { request: async (_name, _options, task) => task() } }, showToast() {},
     document: { createElement: () => element(), readyState: 'loading', addEventListener() {}, documentElement: {} }, matchMedia: () => ({ matches: true }),
-    Image: class { set src(_) { queueMicrotask(() => this.onerror?.()); } },
+    Image: class { set src(url) { queueMicrotask(() => url.startsWith('assets/') ? this.onload?.() : this.onerror?.()); } },
     OpenTabBoot: { DEFAULT_BG: 'assets/default.jpg', isLocalAsset: () => true },
     OpenTabBing: { shouldCheck: () => true, ymd: () => '20261022' }
   };
   vm.createContext(g); vm.runInContext(read('workspace-persistence.js'), g); vm.runInContext(read('bing-cache.js'), g); vm.runInContext(read('import.js'), g);
   const elements = { backgroundLayer: element(), backgroundVideo: element(), refreshBgBtn: element() };
-  g.OpenTabBingCache.init({ state, elements, showToast: text => toasts.push(text), writeBootMirror() {}, isVideoBackground: () => false });
+  const host = { state, elements, showToast: text => toasts.push(text), writeBootMirror() {}, isVideoBackground: () => false };
+  g.OpenTabBingCache.init(host);
   g.OpenTabImport.setReloader(() => {});
   const respond = (index, extra = {}) => callbacks[index].cb({ success: true, url: 'assets/new.jpg', startdate: '20261022', nextIndex: 1, ...extra });
-  return { g, state, stored, writes, callbacks, listeners, respond, elements, toasts, failNextWrite() { failWrite = true; } };
+  return { g, host, state, stored, writes, callbacks, listeners, respond, elements, toasts, failNextWrite() { failWrite = true; } };
 }
 for (const method of ['refreshDailyIfNeeded', 'fetchRandomBackground']) {
   for (const unchanged of (method === 'refreshDailyIfNeeded' ? [false, true] : [false])) {
@@ -215,3 +216,144 @@ console.log('Immediate wallpaper tests passed: normal-motion base layer, workspa
   assert.equal(h.elements.backgroundLayer.style.backgroundImage, 'url(assets/new.jpg)', 'obsolete daily timer cannot replace the manual photo');
 }
 console.log('Overlapping wallpaper test passed: completed manual photo is not covered by an earlier daily fade');
+
+const flush = () => new Promise(setImmediate);
+const defer = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+function photoHarness() {
+  const h = harness(), revoked = [], entries = new Map(), created = [];
+  h.g.console = { warn() {} };
+  h.g.OpenTabBoot.isLocalAsset = url => url.startsWith('assets/');
+  h.g.URL = { createObjectURL: blob => { const url = `blob:${blob.name}-${created.length}`; created.push(url); return url; }, revokeObjectURL: url => revoked.push(url) };
+  h.g.caches = { open: async () => ({ match: async url => entries.has(url) ? { blob: async () => ({ name: entries.get(url) }) } : null }) };
+  h.g.Image = class {
+    set src(url) { this.url = url; queueMicrotask(() => url.includes('corrupt') ? this.onerror?.() : this.onload?.()); }
+    decode() { return Promise.resolve(); }
+  };
+  return { ...h, revoked, entries, created };
+}
+const oldUrl = 'https://www.bing.com/th?id=previous.jpg', nextUrl = 'https://www.bing.com/th?id=next.jpg';
+async function displayOld(h) {
+  h.state.background = { type: 'bing', value: oldUrl, bing: {} }; h.entries.set(oldUrl, 'previous');
+  await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  return h.elements.backgroundLayer.style.backgroundImage;
+}
+for (const repair of ['ok', 'bad-body', 'failed']) {
+  const h = photoHarness(), before = await displayOld(h);
+  h.entries.set(nextUrl, 'corrupt');
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground(); h.respond(0, { url: nextUrl }); await flush();
+  assert.equal(h.callbacks[1].message.action, 'repairBingImage');
+  assert.equal(h.callbacks[1].message.url, nextUrl);
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, before, 'old actual pixels remain throughout repair');
+  assert.equal(h.revoked.includes(h.created[0]), false, 'old displayed object URL remains alive');
+  if (repair === 'ok') h.entries.set(nextUrl, 'repaired');
+  h.respond(1, repair === 'failed' ? { success: false, stage: 'image', error: 'repair offline' } : {});
+  await pending;
+  assert.equal(h.callbacks.length, 2, 'one cache repair only, including a second corrupt body');
+  if (repair === 'ok') {
+    assert.equal(h.stored.background.value, nextUrl); assert.equal(h.toasts.length, 0);
+    assert.match(h.elements.backgroundLayer.style.backgroundImage, /repaired/);
+    assert.equal(h.revoked.includes(h.created[0]), true, 'retire old object URL only after successful commit');
+  } else {
+    assert.equal(h.elements.backgroundLayer.style.backgroundImage, before);
+    assert.equal(h.revoked.includes(h.created[0]), false);
+    assert.equal(h.writes.length, 0); assert.equal(h.toasts.length, 1);
+    assert.match(h.toasts[0], /图片无法加载/);
+  }
+}
+// An API failure must never reload or replace an already visible old blob even
+// if its cache entry has meanwhile become unusable.
+{
+  const h = photoHarness(), before = await displayOld(h);
+  h.entries.set(oldUrl, 'corrupt');
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  h.respond(0, { success: false, stage: 'archive', error: 'offline' }); await pending;
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, before);
+  assert.deepEqual(h.revoked, []); assert.equal(h.created.length, 1);
+  assert.match(h.toasts[0], /信息获取失败/);
+}
+// Exercise scene-mode persistence and callbacks with a held durable save. Both
+// optimistic candidate renders and rollback renders must leave old pixels live.
+for (const outcome of ['saved', 'failed', 'switched']) {
+  const h = photoHarness(), before = await displayOld(h), save = defer();
+  let view = { sceneId: 'a', homeGroupId: 'a-home', generation: 1 };
+  h.host.getSceneView = () => view;
+  h.host.persistBackground = async () => { await h.g.OpenTabBingCache.updateBackground({ fade: false }); return save.promise; };
+  h.entries.set(nextUrl, 'candidate');
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground(); h.respond(0, { url: nextUrl }); await flush();
+  assert.equal(h.state.background.value, nextUrl, 'save is holding a provisional candidate');
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, before, 'onChange cannot reveal it before storage succeeds');
+  assert.equal(h.revoked.includes(h.created[0]), false);
+  if (outcome === 'switched') {
+    h.g.OpenTabBingCache.invalidatePending(); view = { sceneId: 'b', homeGroupId: 'b-home', generation: 2 };
+    h.state.background = { type: 'image', value: 'assets/other.jpg' };
+    await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  } else if (outcome === 'failed') {
+    h.state.background = { type: 'bing', value: oldUrl, bing: {} };
+    h.entries.set(oldUrl, 'corrupt');
+    await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  }
+  save.resolve(outcome !== 'failed'); await pending;
+  assert.equal(h.elements.refreshBgBtn.disabled, false);
+  if (outcome === 'saved') assert.match(h.elements.backgroundLayer.style.backgroundImage, /candidate/);
+  if (outcome === 'failed') {
+    assert.equal(h.elements.backgroundLayer.style.backgroundImage, before);
+    assert.equal(h.revoked.includes(h.created[0]), false); assert.match(h.toasts[0], /保存失败/);
+  }
+  if (outcome === 'switched') {
+    assert.equal(h.elements.backgroundLayer.style.backgroundImage, 'url(assets/other.jpg)');
+    assert.equal(h.revoked.includes(h.created[1]), true, 'stale candidate released');
+    assert.equal(h.toasts.length, 0);
+  }
+}
+// A scene switch during the one repair attempt releases its rejected source and
+// cannot create another blob, paint, persist or send a follow-on repair.
+{
+  const h = photoHarness(); await displayOld(h); h.entries.set(nextUrl, 'corrupt');
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground(); h.respond(0, { url: nextUrl }); await flush();
+  h.g.OpenTabBingCache.invalidatePending(); h.state.background = { type: 'image', value: 'assets/other.jpg' };
+  await h.g.OpenTabBingCache.updateBackground({ fade: false });
+  h.entries.set(nextUrl, 'repaired'); h.respond(1); await pending;
+  assert.equal(h.created.length, 2); assert.equal(h.writes.length, 0);
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, 'url(assets/other.jpg)');
+}
+console.log('Bing display transaction tests passed: one repair, truthful failure, old pixel/blob lifetime, delayed storage and scene cancellation');
+
+// Cache materialization and decoder promises are finite too. Neither a late
+// cache body nor late decode completion may paint after the timeout.
+for (const stage of ['cache', 'decode']) {
+  const h = photoHarness(), before = await displayOld(h), gate = defer(), timers = new Map(); let timerId = 0;
+  h.g.setTimeout = (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; };
+  h.g.clearTimeout = id => timers.delete(id);
+  h.entries.set(nextUrl, 'candidate');
+  if (stage === 'cache') h.g.caches = { open: async () => ({ match: async () => ({ blob: () => gate.promise }) }) };
+  else h.g.Image = class { set src(_) { queueMicrotask(() => this.onload?.()); } decode() { return gate.promise; } };
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground(); h.respond(0, { url: nextUrl }); await flush();
+  const deadline = [...timers.values()].find(timer => timer.ms === 15000); assert.ok(deadline); deadline.fn(); await pending;
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, before); assert.equal(h.elements.refreshBgBtn.disabled, false);
+  assert.match(h.toasts[0], /超时/); assert.equal(h.callbacks.length, 1, 'a timeout does not trigger a corruption retry');
+  const created = h.created.length;
+  gate.resolve({ name: 'late' }); await flush();
+  assert.equal(h.created.length, created, 'late cache body does not allocate a leaked object URL');
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, before); assert.equal(h.writes.length, 0);
+}
+console.log('Bing display deadlines passed: bounded cache read and image decode, no late source or pixel leaks');
+
+// A newer same-tab appearance is not owned by a pending Bing display hold,
+// even when the scene/generation did not change. Its boot mirror must match the
+// visible choice immediately, not remain the previous Bing image indefinitely.
+for (const scene of [false, true]) for (const type of ['gradient', 'image']) {
+  const h = photoHarness(), mirrors = []; await displayOld(h);
+  if (scene) h.host.getSceneView = () => ({ sceneId: 'a', homeGroupId: 'a-home', generation: 1 });
+  h.host.writeBootMirror = () => mirrors.push(clone(h.g.OpenTabBingCache.describeBackground()));
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  const value = type === 'gradient' ? 'linear-gradient(red, blue)' : 'assets/new-preset.jpg';
+  h.state.background = { type, value };
+  await h.g.OpenTabBingCache.updateBackground({ fade: false }); await flush();
+  assert.equal(mirrors.at(-1).kind, type, 'new appearance owns the mirror before the old response arrives');
+  assert.equal(mirrors.at(-1).css, value);
+  h.respond(0, { success: false, stage: 'archive', error: 'old request failed' }); await pending;
+  assert.equal(h.state.background.value, value); assert.equal(h.toasts.length, 0);
+  assert.equal(mirrors.at(-1).css, value, 'late old completion cannot restore stale display metadata');
+  assert.equal(h.elements.backgroundLayer.style[type === 'gradient' ? 'background' : 'backgroundImage'], type === 'gradient' ? value : `url(${value})`);
+}
+console.log('Bing mirror supersession passed: newer same-tab gradient/preset wins in legacy and scene views');

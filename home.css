@@ -45,12 +45,25 @@
   --accent-line: hsla(var(--accent-hue), 92%, 68%, 0.5);
 
   /* Surfaces */
-  --glass-tint: 10, 16, 28;
-  --card-bg: rgba(var(--glass-tint), calc(var(--ui-frame-opacity) * 0.72 + 0.12));
-  --card-bg-hover: rgba(var(--glass-tint), calc(var(--ui-frame-opacity) * 0.78 + 0.2));
+  /* The setting remains global. Text-bearing glass keeps a contrast floor,
+     then changes continuously across the whole 12–70 range (63–77% tint).
+     Unlike stacked solid surfaces, at least 23% of wallpaper always survives. */
+  --glass-alpha: calc(0.60 + var(--ui-frame-opacity) * 0.24);
+  --glass-tint: 12, 18, 30;
+  --glass-bg: rgba(var(--glass-tint), var(--glass-alpha));
+  --glass-hover-bg: rgba(var(--glass-tint), calc(var(--glass-alpha) + 0.06));
+  --glass-selected-bg: rgba(var(--glass-tint), calc(var(--glass-alpha) + 0.08));
+  --glass-text: #ffffff;
+  --glass-muted: #f1f5f9;
+  --glass-section-bg: rgba(12, 18, 30, 0.04);
+  --glass-control-bg: rgba(12, 18, 30, 0.12);
+  --glass-control-hover: rgba(12, 18, 30, 0.20);
+  --glass-field-bg: rgba(12, 18, 30, 0.24);
+  --card-bg: rgba(10, 16, 28, calc(var(--ui-frame-opacity) * 0.72 + 0.12));
+  --card-bg-hover: rgba(10, 16, 28, calc(var(--ui-frame-opacity) * 0.78 + 0.2));
   --card-border: rgba(255, 255, 255, calc(var(--ui-border-opacity) * 0.42));
 
-  --panel-bg: rgba(12, 18, 30, 0.86);
+  --panel-bg: var(--glass-bg);
   --panel-bg-solid: #0c121e;
   --panel-border: rgba(255, 255, 255, 0.10);
   --section-bg: rgba(255, 255, 255, 0.045);
@@ -62,7 +75,7 @@
   --field-border: rgba(255, 255, 255, 0.11);
   --seg-bg: rgba(255, 255, 255, 0.05);
   --seg-active: rgba(255, 255, 255, 0.14);
-  --button-bg: rgba(12, 18, 30, 0.62);
+  --button-bg: var(--glass-bg);
 
   /* Typography */
   --text-primary: #f7fbff;
@@ -101,12 +114,21 @@ body.theme-light {
   --accent-soft: hsla(var(--accent-hue), 78%, 46%, 0.1);
   --accent-line: hsla(var(--accent-hue), 78%, 46%, 0.35);
 
-  --glass-tint: 255, 255, 255;
+  --glass-tint: 248, 250, 252;
+  --glass-bg: rgba(var(--glass-tint), var(--glass-alpha));
+  --glass-hover-bg: rgba(var(--glass-tint), calc(var(--glass-alpha) + 0.06));
+  --glass-selected-bg: rgba(var(--glass-tint), calc(var(--glass-alpha) + 0.08));
+  --glass-text: #101b2b;
+  --glass-muted: #233248;
+  --glass-section-bg: rgba(248, 250, 252, 0.08);
+  --glass-control-bg: rgba(248, 250, 252, 0.12);
+  --glass-control-hover: rgba(248, 250, 252, 0.20);
+  --glass-field-bg: rgba(248, 250, 252, 0.24);
   --card-bg: rgba(255, 255, 255, calc(var(--ui-frame-opacity) * 0.5 + 0.4));
   --card-bg-hover: rgba(255, 255, 255, calc(var(--ui-frame-opacity) * 0.5 + 0.5));
   --card-border: rgba(17, 33, 56, 0.1);
 
-  --panel-bg: rgba(250, 252, 255, 0.92);
+  --panel-bg: var(--glass-bg);
   --panel-bg-solid: #fbfcff;
   --panel-border: rgba(17, 33, 56, 0.09);
   --section-bg: rgba(255, 255, 255, 0.62);
@@ -118,7 +140,7 @@ body.theme-light {
   --field-border: rgba(17, 33, 56, 0.13);
   --seg-bg: rgba(17, 33, 56, 0.055);
   --seg-active: #ffffff;
-  --button-bg: rgba(255, 255, 255, 0.72);
+  --button-bg: var(--glass-bg);
 
   --text-primary: #101b2b;
   --text-secondary: rgba(25, 43, 68, 0.66);
@@ -129,6 +151,23 @@ body.theme-light {
   --shadow-color: rgba(30, 55, 90, 0.16);
   --shadow-panel: 0 32px 80px -28px rgba(30, 55, 90, 0.3), 0 2px 10px rgba(30, 55, 90, 0.06);
   --shadow-card: 0 24px 60px -30px rgba(30, 55, 90, 0.28), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+/* Local readability treatment, never element opacity. Nested controls tint in
+   the same direction as their shell rather than stacking a white sheet on it. */
+:is(#clock-widget, #todo-widget, .settings-panel, .folder-panel, .timezone-selector,
+    .inline-dialog, .toast, .modal-content, .floating-btn, .icon-context-menu, .group-inline-input) {
+  --text-primary: var(--glass-text);
+  --text-secondary: var(--glass-muted);
+  --text-tertiary: var(--glass-muted);
+  --text-hint: var(--glass-muted);
+  --section-bg: var(--glass-section-bg);
+  --control-bg: var(--glass-control-bg);
+  --control-hover: var(--glass-control-hover);
+  --control-active: var(--glass-field-bg);
+  --field-bg: var(--glass-field-bg);
+  --seg-bg: var(--glass-control-bg);
+  --seg-active: var(--glass-field-bg);
 }
 
 /* ==========================================================================
@@ -296,11 +335,11 @@ body.particles-enabled #particles-canvas {
   margin-top: clamp(12px, 6vh, 64px);
   padding: 38px clamp(28px, 5vw, 64px) 30px;
   text-align: center;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 46%), var(--card-bg);
+  background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--radius-xl);
-  backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-card);
   transition: background 0.4s var(--transition), border-color 0.4s var(--transition);
 }
@@ -493,8 +532,8 @@ body.theme-light .date-btn:hover {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: 0 18px 50px -30px var(--shadow-color);
 }
 
@@ -523,8 +562,8 @@ body:not(.minimal-mode) #search-widget-wrap:has(.search-history:not(.hidden)) {
   border-radius: 999px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: 0 18px 50px -28px var(--shadow-color);
   transition: border-color 0.25s var(--transition), box-shadow 0.25s var(--transition), background 0.25s var(--transition);
 }
@@ -955,8 +994,8 @@ body.theme-light .icon-widget:hover {
 body.icon-frame-enabled .icon-widget {
   background: var(--card-bg);
   border-color: var(--card-border);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: 0 10px 30px -24px var(--shadow-color);
 }
 
@@ -1157,8 +1196,8 @@ body.theme-light #icon-drop-indicator {
   background: var(--button-bg);
   color: var(--text-primary);
   cursor: pointer;
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: 0 14px 36px -18px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   transition: transform 0.22s var(--spring), background 0.22s var(--transition), border-color 0.22s var(--transition), color 0.22s var(--transition);
 }
@@ -1175,9 +1214,9 @@ body.theme-light #icon-drop-indicator {
 }
 
 .floating-btn.active {
-  background: var(--accent-soft);
+  background: var(--glass-selected-bg);
   border-color: var(--accent-line);
-  color: var(--accent-1);
+  color: var(--glass-text);
 }
 
 .floating-btn.loading svg {
@@ -1261,12 +1300,12 @@ body.theme-light #icon-drop-indicator {
 
 .group-tab:hover,
 .group-add-btn:hover {
-  background: linear-gradient(var(--control-hover), var(--control-hover)), var(--panel-bg-solid);
+  background: var(--glass-hover-bg);
   color: var(--text-primary);
 }
 
 .group-tab.active {
-  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--panel-bg-solid);
+  background: var(--glass-selected-bg);
   border-color: var(--accent-line);
   color: var(--text-primary);
 }
@@ -1359,8 +1398,8 @@ body.theme-light #icon-drop-indicator {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
-  backdrop-filter: blur(40px) saturate(160%);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-panel);
 }
 
@@ -1396,7 +1435,7 @@ body.theme-light #icon-drop-indicator {
   transform: translate(-50%, -50%);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
-  background: var(--panel-bg);
+  background: var(--panel-bg-solid);
   color: var(--text-primary);
   box-shadow: var(--shadow-panel);
 }
@@ -1455,8 +1494,8 @@ body.theme-light #icon-drop-indicator {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
-  backdrop-filter: blur(44px) saturate(170%);
-  -webkit-backdrop-filter: blur(44px) saturate(170%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-panel);
   transform: translateX(0);
   transition: transform 0.42s var(--spring), opacity 0.3s var(--transition);
@@ -2155,8 +2194,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
-  backdrop-filter: blur(40px) saturate(160%);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-panel);
   transform: translateX(0);
   transition: transform 0.36s var(--spring), opacity 0.28s var(--transition);
@@ -2336,8 +2375,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   background: var(--panel-bg);
-  backdrop-filter: blur(40px) saturate(160%);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-panel);
   opacity: 1;
   transform: translateY(0) scale(1);
@@ -2413,8 +2452,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   /* Dense dates need a solid local surface; nested backdrop filters cannot
      reliably blur the shortcuts behind the clock stacking context. */
   background: var(--panel-bg-solid);
-  backdrop-filter: blur(40px) saturate(160%);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-panel);
   transform: translateX(-50%);
 }
@@ -2633,8 +2672,8 @@ body.theme-light .calendar-popover {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
-  backdrop-filter: blur(44px) saturate(165%);
-  -webkit-backdrop-filter: blur(44px) saturate(165%);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-panel);
   transform: translateY(0) scale(1);
   opacity: 1;
@@ -2775,9 +2814,9 @@ body.theme-light .calendar-popover {
   padding: 5px;
   border: 1px solid var(--panel-border);
   border-radius: 13px;
-  background: var(--panel-bg);
-  backdrop-filter: blur(40px) saturate(160%);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  background: var(--panel-bg-solid);
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   box-shadow: var(--shadow-panel);
 }
 
@@ -3291,11 +3330,12 @@ body.theme-light {
   --form-text: #334155; --form-muted: #64748b;
 }
 .group-tab, .group-add-btn, .site-selection-entry, .search-shortcut-hint {
-  background: var(--nav-surface); color: var(--nav-text); border-color: var(--nav-border);
+  background: var(--glass-bg); color: var(--glass-text); border-color: var(--nav-border);
+  backdrop-filter: blur(var(--ui-blur-medium)); -webkit-backdrop-filter: blur(var(--ui-blur-medium));
 }
-.group-tab:hover, .group-add-btn:hover, .site-selection-entry:hover { background: var(--nav-hover); color: var(--nav-text); }
-.group-tab.active { background: var(--nav-selected); color: var(--nav-selected-text); border-color: #818cf8; }
-.group-tab-count { background: var(--nav-surface); color: var(--nav-text); }
+.group-tab:hover, .group-add-btn:hover, .site-selection-entry:hover { background: var(--glass-hover-bg); color: var(--glass-text); }
+.group-tab.active { background: var(--glass-selected-bg); color: var(--glass-text); border-color: #818cf8; }
+.group-tab-count { background: transparent; color: var(--glass-text); }
 .site-selection-entry { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 10px; }
 .search-shortcut-hint { border-radius: 6px; padding: 4px 6px; }
 #add-icon-modal { background: rgba(30, 41, 59, .28); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
@@ -3319,3 +3359,21 @@ body.theme-light {
 #add-icon-modal #save-btn { background: #4f46e5; color: #ffffff; }
 #add-icon-modal #save-btn:hover { background: #4338ca; filter: none; transform: none; }
 @media (max-width: 560px) { #add-icon-modal .modal-content { padding: 20px; } }
+
+/* Dense popovers must not inherit the glass hero's foreground palette. */
+.calendar-popover, .search-history {
+  --text-primary: #f7fbff; --text-secondary: #cbd5e1; --text-hint: #b6c6d8;
+}
+body.theme-light .calendar-popover, body.theme-light .search-history {
+  --text-primary: #101b2b; --text-secondary: #334155; --text-hint: #536176;
+}
+
+/* Active reading controls emphasize the border, not a contrast-reducing wash. */
+.settings-panel .settings-nav-btn.active, .timezone-selector .timezone-item.active {
+  background: var(--glass-control-hover); box-shadow: inset 2px 0 var(--accent-1);
+}
+.toast, .group-inline-input { backdrop-filter: blur(var(--ui-blur-medium)); -webkit-backdrop-filter: blur(var(--ui-blur-medium)); }
+
+.toast button { color: var(--text-primary); text-decoration: underline; }
+.settings-panel #search-custom-status.error { color: var(--text-primary); border-left: 2px solid #ef4444; padding-left: 8px; }
+#todo-widget .todo-delete:hover { color: var(--text-primary); background: var(--glass-control-hover); }

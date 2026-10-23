@@ -20,7 +20,7 @@
     if (!schema) throw Object.assign(new Error('Scene data requires a compatible OpenTab version. Data is unchanged.'), { code: 'SCENE_SCHEMA_UNAVAILABLE' });
     schema.validate(value);
   }
-  const KEYS = ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode', SCHEMA_KEY, 'scenes', 'sceneProfiles', 'lastOpenedSceneId', 'todoButtonVisible', EPOCH_KEY];
+  const KEYS = ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'timezone', 'timezoneMode', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode', SCHEMA_KEY, 'scenes', 'sceneProfiles', 'lastOpenedSceneId', 'todoButtonVisible', EPOCH_KEY];
   const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   function stable(value) {
     if (Array.isArray(value)) return value.map(stable);

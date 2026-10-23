@@ -1,4 +1,5 @@
 import { runUiRefinement } from './ui-refinement.mjs';
+import { verifyInterfaceGlass } from './interface-glass.mjs';
 import { verifySettingsDismissal } from './settings-dismiss.mjs';
 import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
@@ -512,6 +513,7 @@ async function runSettingsLayoutE2E() {
 
     await verifySettingsDismissal(page);
     await runUiRefinement(page, serviceWorker, ARTIFACTS);
+    await verifyInterfaceGlass(page, serviceWorker, ARTIFACTS);
 
     const leftover = unexpectedErrors(consoleErrors);
     assert.equal(leftover.length, 0, `AC7 console errors: ${leftover.join(' | ')}`);
