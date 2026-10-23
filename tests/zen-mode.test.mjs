@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { waitForAsync } from './wait-for-async.mjs';
 
 // Native MV3 fixture. Do not substitute file://: extension lifecycle, shared
 // storage, scene navigation, focus, fullscreen and keyboard capture all matter.
@@ -83,6 +84,8 @@ await page.addInitScript(() => {
   });
 });
 const read = keys => worker.evaluate(keys => chrome.storage.local.get(keys), keys);
+const waitForTodoPanelSaved = open => waitForAsync(worker,
+  async expected => (await chrome.storage.local.get('todoPanelOpen')).todoPanelOpen === expected, open);
 const phase = () => page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase);
 const view = () => page.evaluate(() => OpenTabSceneNavigation.getView());
 const focusId = () => page.evaluate(() => document.activeElement.id);
@@ -108,6 +111,9 @@ async function reset(extra = {}, timer = null) {
   }, timer);
   await page.reload(); await ready(data);
   await page.waitForFunction(() => document.getElementById('clock-todo-text').textContent === 'Read one chapter');
+  assert.deepEqual(await read(['minimalMode', 'todoButtonVisible', 'todoPanelOpen']),
+    { minimalMode: data.minimalMode, todoButtonVisible: data.todoButtonVisible, todoPanelOpen: data.todoPanelOpen },
+    'every ready fixture retains its explicitly seeded preferences before capturing a Zen baseline');
 }
 
 // Native mode wraps only to observe; it forwards requestFullscreen immediately,
@@ -238,7 +244,7 @@ async function verifyReducedMotionFocusFlows() {
   const flows = [
     { name: 'Zen', open: () => enter(), focused: '#zen-focus-toggle', close: () => exit(), opener: '#zen-toggle-btn' },
     { name: 'TODO', open: async () => { await page.click('[data-clock-card="2"]'); await page.click('#clock-todo-open'); }, focused: '#todo-input',
-      close: () => page.keyboard.press('Escape'), opener: '#clock-todo-open', finish: () => page.click('[data-clock-card="0"]') },
+      close: () => page.keyboard.press('Escape'), opener: '#clock-todo-open', persistsTodoPanel: true, finish: () => page.click('[data-clock-card="0"]') },
     { name: 'settings', open: () => page.click('#settings-btn'), focused: '#settings-search', close: () => page.click('#close-settings'), opener: '#settings-btn' },
     { name: 'command palette', open: async () => { await page.locator('#zen-toggle-btn').focus(); await page.keyboard.press('Control+k'); },
       focused: '#command-palette-input', close: () => page.keyboard.press('Escape'), opener: '#zen-toggle-btn' },
@@ -256,9 +262,11 @@ async function verifyReducedMotionFocusFlows() {
       assert.equal(focused[0].visibility, 'visible', `${flow.name} focus is visible immediately`);
       assert.equal(focused[0].inert, false, `${flow.name} focus is not inside an inert subtree`);
       await assertReducedTransitions(`${flow.name} open`);
+      if (flow.persistsTodoPanel) await waitForTodoPanelSaved(true);
       await flow.close();
       assert.equal(await page.locator(flow.opener).evaluate(element => element === document.activeElement), true, `${flow.name} immediately restores its exact opener`);
       await assertReducedTransitions(`${flow.name} closed`);
+      if (flow.persistsTodoPanel) await waitForTodoPanelSaved(false);
       await flow.finish?.();
     } catch (error) {
       console.error(`Zen: reduced-motion focus flow ${flow.name}: ${JSON.stringify({ active: await page.evaluate(() => ({ tag: document.activeElement?.tagName, id: document.activeElement?.id || '' })), surfaces: await transitionSnapshot(transitionSurfaces) })}`);
@@ -465,12 +473,18 @@ try {
   assert.ok(todoRow.row.width > 0 && todoRow.row.height > 0); assert.equal(todoRow.input.visibility, 'visible');
   assert.equal(todoRow.input.disabled, false); assert.equal(todoRow.reducedMotion, true, 'exercise the reduced-motion regression rather than the easier default-motion path');
   assert.equal((await page.locator('#todo-list').innerText()).includes('Read one chapter'), true);
+  // Opening focuses/renders synchronously, but setTodoPanelOpen does not await
+  // its normal workspace save. Compare Zen against that durable open baseline,
+  // not the stale closed value while the unrelated click's save is in flight.
+  await waitForTodoPanelSaved(true);
   const openTodoState = await read(protectedKeys);
+  assert.equal(openTodoState.todoPanelOpen, true, 'the pre-Zen baseline must include the completed normal TODO-open save');
   await enter(); assert.equal(await page.locator('#todo-widget').isVisible(), false); await exit();
   assert.equal(await page.locator('#todo-widget').isVisible(), true, 'an open TODO panel returns exactly as it was after Zen');
   assert.deepEqual(await read(protectedKeys), openTodoState, 'Zen never rewrites the panel-open preference or task data');
   await page.click('#todo-collapse-btn');
   assert.equal((await todoRowDiagnostics()).row.duration, '0s', 'closing the TODO panel retains the reduced-motion guard');
+  await waitForTodoPanelSaved(false);
   for (const minimalMode of [false, true]) for (const todoButtonVisible of [false, true]) {
     await reset({ minimalMode, todoButtonVisible }); await fullscreen('unsupported');
     const before = await read(protectedKeys), scene = await view();
@@ -485,11 +499,14 @@ try {
     }
   }
 
-  await page.setViewportSize({ width: 390, height: 760 }); await reset({ themeMode: 'light', languagePreference: 'zh-CN' }); await fullscreen('unsupported'); await enter();
+  await page.setViewportSize({ width: 390, height: 760 }); await reset({ themeMode: 'light', languagePreference: 'zh-CN' }); await fullscreen('unsupported');
+  const mobileBefore = await read(protectedKeys), mobileScene = await view();
+  await enter();
   assert.equal(await page.locator('#zen-focus-toggle').getAttribute('aria-label'), '开始专注'); await assertPlainScreen();
   for (const selector of ['#zen-exit', '#zen-focus-toggle', '#zen-focus-reset']) {
     const box = await page.locator(selector).boundingBox(); assert.ok(box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, 'mobile icon controls have unclipped touch targets');
   }
   await page.screenshot({ path: path.join(artifacts, 'zen-light-mobile-zh.png'), animations: 'disabled' }); await exit();
+  assert.deepEqual(await read(protectedKeys), mobileBefore); assert.deepEqual(await view(), mobileScene);
   assert.deepEqual(errors, []); console.log('Zen mode native MV3 checks passed');
 } finally { await context.close(); }
