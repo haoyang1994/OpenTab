@@ -298,7 +298,8 @@ try {
   });
 
   await phase('scene to-dos and pending saves never leak to another scene', async () => {
-    await click(page, '#todo-toggle-btn'); await page.waitForSelector('#todo-widget:not(.hidden)');
+    await click(page, '[data-clock-card="2"]');
+    await click(page, '#clock-todo-open'); await page.waitForSelector('#todo-widget:not(.hidden)');
     assert.equal(await page.locator('#todo-list .todo-item').count(), 0);
     await page.locator('#todo-input').fill('Work-only task'); await page.locator('#todo-input').press('Enter');
     await waitForAsync(worker, async id => (await chrome.storage.local.get('todos')).todos.some(item => item.text === 'Work-only task' && item.sceneId === id), workScene);

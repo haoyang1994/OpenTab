@@ -42,7 +42,7 @@ OpenTabI18n.register({
   "显示 {count} 个入口": "Showing {count} entries",
   "快捷入口": "Quick launcher",
   "搜索网站、分组或操作": "Search sites, groups, or actions",
-  "搜索网站、分组或操作…": "Search sites, groups, or actions\u2026",
+  "搜索网站、分组或操作…": "Search sites, groups, or actions…",
   "关闭快捷入口": "Close quick launcher",
   "入口类别": "Entry categories",
   "全部": "All",
@@ -61,7 +61,6 @@ OpenTabI18n.register({
   "暂无可用入口": "No entries available",
   "{count} 个入口": "{count} entries",
   "内容已更新，请重新选择。": "Content has changed. Choose an entry again.",
-
   "搜索框内按 Alt+↓ / Alt+↑ 切换引擎；Tab / Shift+Tab 移动焦点": "In the search input, Alt+ArrowDown / Alt+ArrowUp switches engines; Tab / Shift+Tab moves focus",
   "切换时区": "Change time zone",
   "查看日历": "View calendar",
@@ -251,5 +250,13 @@ OpenTabI18n.register({
   "未能验证分组，未打开新网站。请重试。": "Could not verify the group. No new websites were opened. Please retry.",
   "将 {count} 个网站移到「{path}」。": "Move {count} websites to “{path}”.",
   "移动后仍停留在当前场景，可撤销。": "You will stay in the current scene. This move can be undone.",
-  "已将 {count} 个网站移到「{path}」。": "Moved {count} websites to “{path}”."
+  "已将 {count} 个网站移到「{path}」。": "Moved {count} websites to “{path}”.",
+  "禅模式": "Zen mode",
+  "退出禅模式": "Exit Zen mode",
+  "暂无待办": "No tasks",
+  "暂无未完成待办": "No unfinished tasks",
+  "已保存本地图标": "Custom icon saved",
+  "专注中": "Focusing",
+  "已暂停": "Paused",
+  "已完成": "Completed"
 });

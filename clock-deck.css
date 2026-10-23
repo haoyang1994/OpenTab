@@ -102,22 +102,20 @@ body.theme-light #clock-deck {
 .clock-todo-mark { display: grid; place-items: center; width: 34px; height: 34px; margin-top: 14px; border: 1px solid var(--deck-border); border-radius: 11px; color: var(--deck-accent); font-size: 20px; }
 #clock-todo-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; width: 100%; max-height: 4.5em; margin-top: 12px; font-size: 21px; line-height: 1.5; font-weight: 500; }
 #clock-deck-peek { position: absolute; z-index: 0; bottom: -18px; left: 3%; width: 94%; height: 19px; padding: 0; border: 0; border-radius: 0 0 24px 24px; background: transparent; cursor: pointer; touch-action: manipulation; }
-#clock-deck-nav { display: flex; align-items: center; justify-content: center; gap: 7px; width: max-content; max-width: 100%; margin: 28px auto 0; padding: 1px 5px; border: 1px solid var(--deck-border); border-radius: 999px; background: var(--deck-surface); }
+#clock-deck-nav { display: flex; align-items: center; justify-content: center; gap: 0; width: max-content; max-width: 100%; margin: 28px auto 0; padding: 1px 5px; border: 1px solid var(--deck-border); border-radius: 999px; background: var(--deck-surface); }
 #clock-deck-nav button { display: grid; place-items: center; flex: none; min-width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--deck-muted); font: inherit; font-size: 23px; cursor: pointer; }
 #clock-deck-nav button:hover { background: var(--deck-under); color: var(--deck-text); }
 .clock-deck-dots { display: flex; gap: 0; }
 #clock-deck-nav .clock-deck-dots button { min-width: 24px; font-size: 0; }
-.clock-deck-dots span { width: 5px; height: 5px; border-radius: 999px; background: var(--deck-muted); transition: width 260ms var(--transition), background 260ms; }
-.clock-deck-dots [aria-pressed='true'] span { width: 16px; background: var(--deck-accent); }
-#clock-deck-label { min-width: 7em; font-size: 11px; text-align: center; color: var(--deck-muted); }
-.clock-deck-hint { width: max-content; max-width: 100%; margin: 6px auto 0; padding: 2px 8px; border-radius: 6px; background: var(--deck-surface); color: var(--deck-muted); font-size: 10px; text-align: center; }
+.clock-deck-dots span { width: 5px; height: 5px; border-radius: 999px; background: var(--deck-muted); transition: background 260ms; }
+.clock-deck-dots [aria-pressed='true'] span { background: var(--deck-accent); }
 #clock-deck button:focus-visible { outline: 3px solid var(--deck-accent); outline-offset: 3px; }
 body.hide-todo-entry #clock-todo-open { display: none !important; }
 body.minimal-mode #clock-deck { margin: 0; width: auto; max-width: 100%; }
 body.minimal-mode #clock-deck-stage { display: block; touch-action: auto; }
 body.minimal-mode #clock-deck-stage::before, body.minimal-mode #clock-deck-stage::after,
 body.minimal-mode #clock-deck-nav, body.minimal-mode #clock-deck-peek,
-body.minimal-mode .clock-deck-hint, body.minimal-mode .clock-extra-card { display: none !important; }
+body.minimal-mode .clock-extra-card { display: none !important; }
 body.minimal-mode #clock-deck #clock-widget { display: flex; min-height: 0; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; transform: none; visibility: visible; opacity: 1; }
 body.minimal-mode #clock-deck #time { font-size: clamp(110px, 19vw, 240px); color: var(--text-primary); text-shadow: 0 0 90px var(--accent-glow); }
 body.minimal-mode #clock-deck #ampm { color: var(--text-primary); }
@@ -126,6 +124,8 @@ body.minimal-mode #clock-deck #ampm { color: var(--text-primary); }
   #clock-deck .clock-deck-card { min-height: 306px; padding: 28px 18px 22px; border-radius: 26px; }
   #clock-deck-stage::before, #clock-deck-stage::after { border-radius: 26px; }
   #clock-deck #time { font-size: clamp(58px, 16vw, 84px); }
+  /* Keep the timezone text clear of the fixed top-left Zen entry. */
+  #clock-deck #timezone-label { margin-left: 36px; }
   #clock-todo-text { font-size: 19px; }
 }
 @media (max-width: 420px) {

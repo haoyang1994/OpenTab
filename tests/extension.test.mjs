@@ -859,12 +859,12 @@ async function runExtensionE2E() {
     await page.locator('#search-input').click({ button: 'right' });
     await page.waitForTimeout(200);
     assert.equal(await page.locator('#add-icon-modal').evaluate(el => el.classList.contains('hidden')), true, 'T2: search input keeps native menu');
-    await page.locator('#welcome-text').click({ button: 'right' });
+    await page.locator('#time').click({ button: 'right' });
     await page.waitForSelector('#add-icon-modal:not(.hidden)', { timeout: 5000 });
     await page.keyboard.press('Escape');
     await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached', timeout: 5000 });
     await page.keyboard.down('Alt');
-    await page.locator('#welcome-text').click({ button: 'right' });
+    await page.locator('#time').click({ button: 'right' });
     await page.keyboard.up('Alt');
     await page.waitForTimeout(200);
     assert.equal(await page.locator('#add-icon-modal').evaluate(el => el.classList.contains('hidden')), true, 'T2: Alt+right click does not open modal');

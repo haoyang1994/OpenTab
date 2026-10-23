@@ -34,7 +34,6 @@ for (const modifiers of [{ isComposing: true }, { keyCode: 229 }, { defaultPreve
 assert.deepEqual(key(']', { ctrlKey: true }), { prevented: true, value: 'a  d', start: 3, end: 3 });
 const html = fs.readFileSync(new URL('../tool.html', import.meta.url), 'utf8');
 assert.match(html, /<label[^>]*for="input-area"/);
-assert.match(html, /aria-describedby="input-keyboard-hint"/);
 assert.match(html, /aria-keyshortcuts="Control\+\]"/);
-assert.match(html, /id="input-keyboard-hint"[^>]*>[^<]*Ctrl\+\]/);
+assert.doesNotMatch(html, /input-keyboard-hint/, 'no visible keyboard tutorial or dangling description reference');
 console.log('JSON keyboard tests passed: native Tab/Shift+Tab, input preservation, explicit indent and IME/modifier guards');

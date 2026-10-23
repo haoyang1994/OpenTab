@@ -171,7 +171,7 @@ console.log('Changed destination capture disables confirmation and preserves sel
   assert.equal(option.dataset.groupId, 'g3');
   assert.match(el('site-selection-preview').textContent, /1 个网站/);
   assert.match(el('site-selection-preview').textContent, /Work \/ Projects \/ Read later \/ Research \(f3\)/);
-  assert.match(el('site-selection-preview').textContent, /仍停留在当前场景/);
+  assert.equal(el('site-selection-preview').textContent, '将 1 个网站移到「文件夹 · Work / Projects / Read later / Research (f3)」。', 'confirmation contains only the count and exact destination');
   h.invalidateDestination(); h.dispatch(el('site-selection-destination'), 'change');
   assert.equal(el('site-selection-preview').textContent, '', 'stale destinations do not retain a confirmable preview');
   assert.equal(h.counts().moves, 0);

@@ -162,6 +162,7 @@ function harness({ state = initialState(), view = { sceneId: 'daily', currentFol
   assert.equal(h.trigger().textContent, 'Daily'); assert.equal(h.trigger().getAttribute('aria-haspopup'), 'dialog');
   assert.equal(h.dialog().open, false); h.click(h.trigger());
   assert.equal(h.dialog().open, true); assert.equal(h.trigger().getAttribute('aria-expanded'), 'true');
+  assert.equal(h.dialog().querySelector('.scene-description'), null, 'scene list has no decorative subtitle');
   assert.equal(h.many('switch').length, 2); assert.equal(h.row('old'), null);
   assert.equal(h.row('daily').querySelector('[aria-current="true"]').textContent, 'Daily2 groups · 2 sites · 2 to-dosCurrent');
   assert.equal(h.doc.activeElement, h.one('close'));
@@ -178,6 +179,10 @@ function harness({ state = initialState(), view = { sceneId: 'daily', currentFol
   assert.equal(h.trigger().textContent, malicious); assert.ok(h.row('daily').textContent.includes(malicious));
   assert.equal(h.dialog().querySelectorAll('img').length, 0); assert.equal(h.trigger().querySelector('path').getAttribute('d').startsWith('M3 10'), true);
   h.click(h.one('create')); const name = h.input(' '); assert.equal(name.maxLength, 40);
+  assert.equal(name.required, true);
+  assert.equal(h.dialog().querySelector('.scene-field-hint'), null, 'name form has no persistent instructional prose');
+  assert.equal(name.getAttribute('aria-describedby'), h.dialog().querySelector('[role="status"]').id, 'name input describes only the live validation status');
+  assert.ok(h.dialog().querySelectorAll('label').some(label => label.htmlFor === name.id), 'name input retains its label');
   h.submit(); assert.equal(h.calls.length, 0); assert.equal(name.getAttribute('aria-invalid'), 'true');
   h.input('a'.repeat(41)); h.submit(); assert.equal(h.calls.length, 0);
   h.input(`  ${malicious}  `); h.click(h.many('choose-icon').find(node => node.dataset.iconKey === 'code')); h.submit(); await flush();

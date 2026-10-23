@@ -172,7 +172,11 @@ try {
   await page.evaluate(async () => { await chrome.storage.local.set({ languagePreference: 'en', themeMode: 'light', icons: [], todoPanelOpen: false }); });
   await page.reload(); await ready();
   await sweepClosed();
-  for (const [button, panel] of [['#settings-btn', '#settings-panel'], ['#todo-toggle-btn', '#todo-widget'], ['#timezone-btn', '#timezone-selector']]) {
+  for (const [button, panel, card] of [['#settings-btn', '#settings-panel', null], ['#clock-todo-open', '#todo-widget', 2], ['#timezone-btn', '#timezone-selector', 0]]) {
+    if (card !== null) {
+      await activate(`[data-clock-card="${card}"]`);
+      assert.equal(await page.locator('#clock-deck').getAttribute('data-card'), String(card));
+    }
     await activate(button); await page.waitForSelector(`${panel}:not(.hidden)`);
     await page.keyboard.press('Escape'); await closed(panel, button);
   }
@@ -277,6 +281,11 @@ try {
     await page.fill('#settings-search', ''); await page.keyboard.press('Escape'); await closed('#settings-panel', '#settings-btn');
     for (const mode of ['add', 'edit']) {
       if (mode === 'add') await openAdd(); else await openMenuAction(item.id, '#edit-icon-btn');
+      // Empty drafts intentionally have no tutorial copy. Measure the real
+      // upload result after the native file input and image decoder finish.
+      const file = upload(`contrast-${theme}-${mode}.png`);
+      await page.setInputFiles('#icon-file', file);
+      await page.waitForFunction(name => document.querySelector('#icon-upload-status').textContent === `Selected: ${name}`, file.name);
       contrasts.push({ theme, mode, samples: [await contrast('#icon-upload-status', '.modal-content'), await contrast('#icon-url', '.modal-content', '::placeholder')] });
       await page.screenshot({ path: path.join(artifacts, `accessibility-en-${theme}-${mode}.png`), animations: 'disabled' });
       await page.keyboard.press('Escape'); await closed('#add-icon-modal', mode === 'add' ? '#add-shortcut-tile' : tile);

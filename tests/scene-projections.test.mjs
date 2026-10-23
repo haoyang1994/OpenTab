@@ -78,7 +78,6 @@ function dom() {
   for (const id of ['clock-todo-text', 'clock-todo-count', 'clock-todo-status', 'clock-todo-complete', 'clock-todo-open']) add(id, todo, id.endsWith('complete') || id.endsWith('open') ? 'button' : 'p');
   add('clock-deck-peek', stage, 'button');
   const nav = add('clock-deck-nav', deck);
-  for (const id of ['clock-deck-prev', 'clock-deck-next', 'clock-deck-label']) add(id, nav, 'button');
   add('clock-deck-status', deck);
   for (let i = 0; i < 3; i++) add(`dot-${i}`, nav, 'button').setAttribute('data-clock-card', i);
   add('settings-btn', document.body, 'button');

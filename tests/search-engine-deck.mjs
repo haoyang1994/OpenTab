@@ -1,40 +1,55 @@
 import assert from 'node:assert/strict';
 import { waitForAsync } from './wait-for-async.mjs';
 
+async function settleDeck(page) {
+  await page.locator('#search-engine-switch').evaluate(async (host) => {
+    await Promise.all(host.getAnimations({ subtree: true }).map((animation) => animation.finished.catch(() => {})));
+    await new Promise(requestAnimationFrame);
+  });
+}
+
 export async function chooseSearchEngine(page, id) {
-  const trigger = page.locator('#search-engine-trigger');
-  if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click();
-  // Compare data values in the DOM instead of interpolating custom IDs into CSS.
-  const choice = page.locator('#search-engine-panel .engine-btn');
-  const index = await choice.evaluateAll((buttons, target) => buttons.findIndex((button) => button.dataset.engine === target), id);
+  const host = page.locator('#search-engine-switch');
+  if (await host.getAttribute('data-expanded') !== 'true') await page.locator('#search-engine-panel .engine-btn.active').click();
+  await settleDeck(page);
+  // Compare data values instead of interpolating custom IDs into selectors.
+  const choices = page.locator('#search-engine-panel .engine-btn');
+  const index = await choices.evaluateAll((buttons, target) => buttons.findIndex((button) => button.dataset.engine === target), id);
   assert.ok(index >= 0, `engine ${id} must have a real option`);
-  await choice.nth(index).click();
+  await choices.nth(index).click();
+  await settleDeck(page);
 }
 
 export async function verifyEngineDeck(page, serviceWorker, screenshot = async () => {}) {
-  const trigger = page.locator('#search-engine-trigger');
+  const host = page.locator('#search-engine-switch');
+  const selected = page.locator('#search-engine-panel .engine-btn.active');
   const panel = page.locator('#search-engine-panel');
   const input = page.locator('#search-input');
   const choices = page.locator('#search-engine-panel .engine-btn');
   const state = () => page.evaluate(() => OpenTabSearch.getState());
   const activeId = () => page.evaluate(() => document.activeElement?.dataset.engine || document.activeElement?.id);
   const navCount = () => page.evaluate(() => window.__navLog.length);
-  const waitClosed = () => page.waitForFunction(() => {
-    const trigger = document.getElementById('search-engine-trigger');
-    const panel = document.getElementById('search-engine-panel');
-    return trigger.getAttribute('aria-expanded') === 'false' && panel.inert && panel.getAttribute('aria-hidden') === 'true';
-  });
-  const waitOpen = () => page.waitForFunction(() => {
-    const panel = document.getElementById('search-engine-panel');
-    return !panel.inert && panel.getAttribute('aria-hidden') === 'false' && getComputedStyle(panel).opacity === '1';
-  });
+  async function waitClosed() {
+    await page.waitForFunction(() => {
+      const host = document.getElementById('search-engine-switch');
+      const buttons = Array.from(host.querySelectorAll('.engine-btn'));
+      return host.dataset.expanded === 'false' && buttons.filter((button) => !button.inert).length === 1 &&
+        buttons.find((button) => button.classList.contains('active'))?.getAttribute('aria-expanded') === 'false';
+    });
+    await settleDeck(page);
+  }
+  async function waitOpen() {
+    await page.waitForFunction(() => document.getElementById('search-engine-switch').dataset.expanded === 'true' &&
+      Array.from(document.querySelectorAll('#search-engine-panel .engine-btn')).every((button) => !button.inert));
+    await settleDeck(page);
+  }
   async function reload(expected) {
     await waitForAsync(page, async (id) => (await chrome.storage.local.get('searchEngine')).searchEngine === id, expected);
     const saved = await serviceWorker.evaluate(() => chrome.storage.local.get('searchEngine'));
     assert.equal(saved.searchEngine, expected, 'reload only after the chosen engine is durably stored');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction((id) => window.OpenTabEngineDeck && window.OpenTabSearch &&
-      OpenTabSearch.getState().searchEngine === id && document.getElementById('search-engine-trigger').dataset.engine === id, expected);
+      OpenTabSearch.getState().searchEngine === id && document.getElementById('search-engine-switch').dataset.engine === id, expected);
     await page.evaluate(() => {
       window.__navLog = [];
       OpenTabSearch.navigateHook = (url, openInNewTab) => window.__navLog.push({ url, openInNewTab });
@@ -43,60 +58,69 @@ export async function verifyEngineDeck(page, serviceWorker, screenshot = async (
   async function hitChoice(index) {
     await choices.nth(index).scrollIntoViewIfNeeded();
     const hit = await choices.nth(index).evaluate((button) => {
-      const b = button.getBoundingClientRect();
-      return button.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2));
+      const rect = button.getBoundingClientRect();
+      return button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
     });
-    assert.equal(hit, true, 'actual engine option must win the hit test above group tabs');
+    assert.equal(hit, true, 'the original engine button wins its native hit test');
   }
-  async function assertFloatingControlsClear() {
-    const controls = await panel.evaluate((el) => {
-      const card = el.getBoundingClientRect();
-      return Array.from(document.querySelectorAll('.floating-btn')).filter((button) => button.getClientRects().length).map((button) => {
-        const rect = button.getBoundingClientRect();
-        return { id: button.id,
-          overlaps: rect.left < card.right && rect.right > card.left && rect.top < card.bottom && rect.bottom > card.top,
-          reachable: button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)) };
-      });
+  async function assertHorizontalGeometry(before) {
+    const geometry = await host.evaluate((host) => {
+      const rail = document.getElementById('search-engine-panel');
+      const input = document.getElementById('search-input').getBoundingClientRect();
+      const rect = host.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, height: rect.height, right: rect.right, inputWidth: input.width,
+        railHeight: rail.getBoundingClientRect().height, scrollable: rail.scrollWidth > rail.clientWidth,
+        pageOverflow: document.documentElement.scrollWidth > window.innerWidth,
+        buttons: Array.from(rail.querySelectorAll('.engine-btn')).map((button) => {
+          const box = button.getBoundingClientRect(); return { x: box.x, y: box.y, width: box.width, height: box.height };
+        }) };
     });
-    for (const control of controls) {
-      assert.equal(control.overlaps, false, `${control.id} must not cover any part of the card`);
-      assert.equal(control.reachable, true, `${control.id} remains reachable outside the card`);
+    if (before) {
+      assert.ok(Math.abs(geometry.x - before.x) < 1, 'inline expansion keeps the original left anchor');
+      assert.ok(Math.abs(geometry.y - before.y) < 1, 'inline expansion never becomes a popup above/below');
+      assert.equal(geometry.height, before.height, 'expansion never adds another row');
     }
+    assert.equal(geometry.railHeight, 44);
+    assert.ok(geometry.inputWidth >= 80, 'the query retains usable space at 360px');
+    assert.equal(geometry.pageOverflow, false, 'the engine rail must not overflow the page');
+    assert.ok(geometry.right <= page.viewportSize().width, 'the rail stays within the viewport');
+    geometry.buttons.forEach((button, index) => {
+      assert.equal(button.y, geometry.buttons[0].y, 'all original icons remain on one row');
+      assert.equal(button.height, 40);
+      assert.equal(button.width, 40);
+      if (index) assert.ok(Math.abs(button.x - geometry.buttons[index - 1].x - 44) < 1, 'original icons unfold horizontally without overlap');
+    });
+    return geometry;
+  }
+  async function captureIdentity() {
+    await choices.evaluateAll((buttons) => { window.__engineNodes = buttons.map((button) => ({ button, children: [...button.childNodes] })); });
+  }
+  async function assertIdentity() {
+    assert.equal(await choices.evaluateAll((buttons) => window.__engineNodes.every((original, index) =>
+      original.button === buttons[index] && original.children.length === buttons[index].childNodes.length &&
+      original.children.every((child, offset) => child === buttons[index].childNodes[offset]))), true,
+    'the original buttons and SVG/initial nodes survive expansion, selection and collapse');
+    assert.equal(await page.locator('#search-engine-trigger, .engine-option-name, .engine-deck-panel').count(), 0, 'no replacement icon, second panel or text captions');
   }
   async function clickVisibleChoice(slot) {
-    // Recompute after every scroll/open. Sample corners as well as center:
-    // a top-left floating button can overlap an option without covering center.
-    const target = await panel.evaluate((el, position) => {
-      const card = el.getBoundingClientRect();
-      const visible = Array.from(el.querySelectorAll('.engine-btn')).map((button, index) => {
+    const target = await panel.evaluate((rail, position) => {
+      const clip = rail.getBoundingClientRect();
+      const visible = [...rail.querySelectorAll('.engine-btn')].map((button, index) => {
         const rect = button.getBoundingClientRect();
-        const style = getComputedStyle(button);
-        const radius = Math.max(...['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius']
-          .map((property) => parseFloat(style[property]) || 0));
-        // Intersect the inscribed rounded-rect interior with the scroll clip.
-        // Half-visible rows are sampled only where actual button content exists.
-        const left = Math.max(rect.left + radius + 2, card.left + el.clientLeft + 2);
-        const right = Math.min(rect.right - radius - 2, card.left + el.clientLeft + el.clientWidth - 2);
-        const top = Math.max(rect.top + radius + 2, card.top + el.clientTop + 2);
-        const bottom = Math.min(rect.bottom - radius - 2, card.top + el.clientTop + el.clientHeight - 2);
-        if (right - left < 4 || bottom - top < 4) return null;
-        const points = [[left + 1, top + 1], [right - 1, top + 1],
-          [(left + right) / 2, (top + bottom) / 2], [left + 1, bottom - 1], [right - 1, bottom - 1]];
-        return { index, id: button.dataset.engine,
-          hits: points.map(([x, y]) => button.contains(document.elementFromPoint(x, y))),
-          position: { x: points[0][0] - rect.left, y: points[0][1] - rect.top } };
+        if (rect.left < clip.left || rect.right > clip.right) return null;
+        const points = [[rect.left + 16, rect.top + 16], [rect.right - 16, rect.bottom - 16], [rect.left + 20, rect.top + 20]];
+        return { index, id: button.dataset.engine, hits: points.map(([x, y]) => button.contains(document.elementFromPoint(x, y))) };
       }).filter(Boolean);
       return visible[position === 'first' ? 0 : position === 'middle' ? Math.floor(visible.length / 2) : visible.length - 1];
     }, slot);
-    assert.ok(target, `a ${slot} visible option exists`);
-    assert.equal(target.hits.every(Boolean), true, `${slot} visible engine wins corner and center hit tests`);
+    assert.ok(target, `a complete ${slot} visible option exists`);
+    assert.ok(target.hits.every(Boolean), `${slot} original engine wins hit tests`);
     const count = await navCount();
-    await choices.nth(target.index).click({ position: target.position });
-    await waitClosed();
-    assert.equal((await state()).searchEngine, target.id, `${slot} visible engine responds to native pointer click`);
-    assert.equal(await navCount(), count, 'visible option activation only changes the engine');
-    assert.equal(await page.locator('#search-widget-wrap').evaluate((el) => getComputedStyle(el).zIndex), '6', 'closing restores the original search layer');
+    await choices.nth(target.index).click(); await waitClosed();
+    assert.equal((await state()).searchEngine, target.id);
+    assert.equal(await navCount(), count, 'selection never navigates');
   }
+
   await page.evaluate(() => {
     OpenTabSearch.replaceSettings({ ...OpenTabSearch.getState(), searchEngine: 'google', searchHistoryEnabled: false, customSearchEngines: [] });
     window.__navLog = [];
@@ -104,67 +128,67 @@ export async function verifyEngineDeck(page, serviceWorker, screenshot = async (
   });
   await waitClosed();
   assert.equal(await choices.count(), 5);
-  assert.equal(await trigger.getAttribute('data-engine'), 'google', 'production controller initializes the selected top card');
-  assert.equal(await choices.locator('.engine-option-name').count(), 5, 'actual options have readable native labels');
+  assert.equal(await selected.getAttribute('data-engine'), 'google');
+  await captureIdentity();
   await input.fill('query stays exactly here');
   await input.evaluate((el) => el.setSelectionRange(2, 9, 'backward'));
-  const originalWidth = await input.evaluate((el) => el.getBoundingClientRect().width);
+  const before = await host.boundingBox();
   const startCount = await navCount();
-  await trigger.click(); await waitOpen();
-  assert.equal(await input.evaluate((el) => el.getBoundingClientRect().width), originalWidth, 'opening the floating picker cannot squeeze the input');
-  assert.equal(await page.locator('#search-widget-wrap').evaluate((el) => getComputedStyle(el).zIndex), '1265');
-  await hitChoice(4);
-  await choices.nth(4).click();
-  await waitClosed();
+  await selected.click(); await waitOpen();
+  await assertIdentity();
+  await assertHorizontalGeometry(before);
+  await hitChoice(4); await choices.nth(4).click(); await waitClosed();
   assert.equal((await state()).searchEngine, 'github');
-  assert.equal(await trigger.getAttribute('data-engine'), 'github');
+  assert.equal(await selected.getAttribute('data-engine'), 'github');
   assert.equal(await choices.nth(4).getAttribute('aria-pressed'), 'true');
+  await assertIdentity();
   assert.equal(await input.inputValue(), 'query stays exactly here');
   assert.deepEqual(await input.evaluate((el) => [el.selectionStart, el.selectionEnd, el.selectionDirection]), [2, 9, 'backward']);
   assert.equal(await activeId(), 'search-input');
-  assert.equal(await navCount(), startCount, 'choosing an engine must never navigate or submit');
+  assert.equal(await navCount(), startCount);
+  const topHit = await selected.evaluate((button) => {
+    const rect = button.getBoundingClientRect();
+    return button.contains(document.elementFromPoint(rect.left + 20, rect.top + 20));
+  });
+  assert.equal(topHit, true, 'the selected original button is on top of the collapsed stack');
   await reload('github');
 
-  // Use native keyboard events, including default button Enter/Space actions.
-  await trigger.focus(); await page.keyboard.press('Space'); await waitOpen();
+  // Native keyboard activation and Tab order, not synthetic click stand-ins.
+  await selected.focus(); await page.keyboard.press('Space'); await waitOpen();
   assert.equal(await activeId(), 'github');
   for (const [key, id] of [['Home', 'google'], ['ArrowLeft', 'github'], ['ArrowRight', 'google'], ['ArrowDown', 'bing'], ['End', 'github'], ['ArrowUp', 'duckduckgo']]) {
     await page.keyboard.press(key); assert.equal(await activeId(), id, `${key} moves native option focus`);
   }
   await page.keyboard.press('Enter'); await waitClosed();
   assert.equal((await state()).searchEngine, 'duckduckgo');
-  await trigger.focus(); await page.keyboard.press('ArrowDown'); await waitOpen();
+  await selected.focus(); await page.keyboard.press('ArrowDown'); await waitOpen();
   assert.equal(await activeId(), 'duckduckgo');
   await page.keyboard.press('Home'); await page.keyboard.press('Space'); await waitClosed();
-  assert.equal((await state()).searchEngine, 'google', 'native Space activates an option once');
-  await trigger.focus(); await page.keyboard.press('Enter'); await waitOpen();
+  assert.equal((await state()).searchEngine, 'google');
+  await selected.focus(); await page.keyboard.press('Enter'); await waitOpen();
   await page.keyboard.press('Escape'); await waitClosed();
-  assert.equal(await page.evaluate(() => document.activeElement.id), 'search-engine-trigger');
-  await page.keyboard.press('Tab');
-  assert.equal(await activeId(), 'search-input', 'closed options are absent from native Tab order');
-  await page.keyboard.press('Shift+Tab');
-  assert.equal(await page.evaluate(() => document.activeElement.id), 'search-engine-trigger');
+  assert.equal(await activeId(), 'google', 'Escape returns to the selected original disclosure');
+  await page.keyboard.press('Tab'); assert.equal(await activeId(), 'search-input');
+  await page.keyboard.press('Shift+Tab'); assert.equal(await activeId(), 'google');
   await page.keyboard.press('ArrowUp'); await waitOpen();
-  await page.keyboard.press('Tab'); await waitClosed();
-  assert.equal(await activeId(), 'search-input', 'Tab leaves an expanded picker without a focus trap');
-  await trigger.click(); await waitOpen();
-  await page.keyboard.press('Shift+Tab');
-  assert.equal(await page.evaluate(() => document.activeElement.id), 'search-engine-trigger');
+  await page.keyboard.press('End'); await page.keyboard.press('Tab'); await waitClosed();
+  assert.equal(await activeId(), 'search-input', 'Tab leaves the rail without a trap');
+  await selected.click(); await waitOpen();
   await page.keyboard.press('Shift+Tab'); await waitClosed();
-  assert.notEqual(await page.evaluate(() => document.activeElement.id), 'search-engine-trigger', 'Shift+Tab can leave the complete widget');
-  await trigger.click(); await input.click(); await waitClosed();
-  assert.equal(await activeId(), 'search-input', 'outside pointer close never steals new focus');
+  assert.equal(await panel.evaluate((rail) => rail.contains(document.activeElement)), false, 'Shift+Tab leaves the complete widget');
+  await selected.click(); await input.click(); await waitClosed();
+  assert.equal(await activeId(), 'search-input', 'outside pointer close preserves new focus');
   await input.fill('unchanged');
   await page.keyboard.press('Alt+ArrowDown');
   assert.equal((await state()).searchEngine, 'bing');
-  assert.equal(await trigger.getAttribute('data-engine'), 'bing', 'Alt+Down updates the top card without opening it');
+  assert.equal(await selected.getAttribute('data-engine'), 'bing');
   await page.keyboard.press('Alt+ArrowUp'); assert.equal((await state()).searchEngine, 'google');
   assert.equal(await input.inputValue(), 'unchanged');
-  await trigger.focus();
+  await selected.focus();
   for (const key of ['Control+ArrowDown', 'Meta+ArrowUp', 'Alt+ArrowDown', 'Shift+ArrowDown']) {
     await page.keyboard.press(key); await waitClosed();
   }
-  const ignored = await trigger.evaluate((el) => {
+  assert.equal(await selected.evaluate((el) => {
     for (const extra of [{ isComposing: true }, { keyCode: 229 }, { prevented: true }]) {
       const event = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true, isComposing: extra.isComposing });
       if (extra.keyCode) Object.defineProperty(event, 'keyCode', { get: () => extra.keyCode });
@@ -173,44 +197,40 @@ export async function verifyEngineDeck(page, serviceWorker, screenshot = async (
       if (el.getAttribute('aria-expanded') !== 'false') return false;
     }
     return true;
-  });
-  assert.equal(ignored, true, 'IME/defaultPrevented arrow keys cannot open the deck');
-  assert.equal(await navCount(), 0, 'keyboard/pointer picker interactions never trigger navigation');
+  }), true, 'IME/defaultPrevented arrows cannot open the deck');
+  assert.equal(await navCount(), 0);
 
-  // The real custom-engine settings UI, including literal untrusted labels.
-  await page.click('#settings-btn');
-  await page.locator('#search-settings-section').scrollIntoViewIfNeeded();
+  // Real custom-engine add/delete/persistence and safe literal names.
+  await page.click('#settings-btn'); await page.locator('#search-settings-section').scrollIntoViewIfNeeded();
   await page.fill('#search-custom-name', '<img src=x>');
   await page.fill('#search-custom-template', 'https://example.com/find?q=%s');
   await page.click('#search-custom-save');
   const customId = (await state()).customSearchEngines[0].id;
   await page.click('#close-settings');
-  await trigger.click(); await waitOpen();
+  await selected.click(); await waitOpen();
   assert.equal(await choices.count(), 6);
-  assert.equal(await choices.nth(5).locator('.engine-option-name').textContent(), '<img src=x>');
+  assert.equal(await choices.nth(5).getAttribute('aria-label'), '<img src=x>');
+  assert.equal(await choices.nth(5).getAttribute('title'), '<img src=x>');
   assert.equal(await choices.nth(5).locator('img').count(), 0);
   await hitChoice(5); await choices.nth(5).click(); await waitClosed();
-  assert.equal((await state()).searchEngine, customId, 'real dynamically added custom option selects through native click');
-  assert.equal(await trigger.getAttribute('data-engine'), customId);
-  const orderedIds = await choices.evaluateAll((nodes) => nodes.map((node) => node.dataset.engine));
-  assert.deepEqual(orderedIds, ['google', 'bing', 'baidu', 'duckduckgo', 'github', customId], 'selection cannot reorder stored or displayed engines');
+  assert.equal((await state()).searchEngine, customId);
+  assert.equal(await selected.getAttribute('data-engine'), customId);
+  assert.deepEqual(await choices.evaluateAll((nodes) => nodes.map((node) => node.dataset.engine)), ['google', 'bing', 'baidu', 'duckduckgo', 'github', customId]);
   await reload(customId);
   await page.click('#settings-btn'); await page.locator('#search-custom-list').scrollIntoViewIfNeeded();
   await page.locator('#search-custom-list .search-custom-actions button').nth(1).click();
-  assert.equal((await state()).searchEngine, 'google', 'deleting the selected custom engine normalizes to Google');
-  assert.equal(await trigger.getAttribute('data-engine'), 'google');
+  assert.equal((await state()).searchEngine, 'google');
+  assert.equal(await selected.getAttribute('data-engine'), 'google');
   await page.click('#close-settings');
-  await trigger.click(); await waitOpen(); assert.equal(await choices.count(), 5);
+  await selected.click(); await waitOpen(); assert.equal(await choices.count(), 5);
   await page.keyboard.press('Escape'); await waitClosed();
 
-  // Native rapid reversals and touch taps exercise real pointer hit testing.
-  const triggerBox = await trigger.boundingBox(); assert.ok(triggerBox);
+  const selectedBox = await selected.boundingBox(); assert.ok(selectedBox);
   for (let index = 0; index < 6; index++) {
-    await page.mouse.click(triggerBox.x + triggerBox.width / 2, triggerBox.y + triggerBox.height / 2);
-    assert.equal(await trigger.getAttribute('aria-expanded'), index % 2 === 0 ? 'true' : 'false');
+    await page.mouse.click(selectedBox.x + 20, selectedBox.y + 20);
+    assert.equal(await host.getAttribute('data-expanded'), index % 2 === 0 ? 'true' : 'false');
   }
   await waitClosed();
-  await page.waitForFunction(() => getComputedStyle(document.getElementById('search-engine-panel')).visibility === 'hidden');
   const session = await page.context().newCDPSession(page);
   await session.send('Emulation.setTouchEmulationEnabled', { enabled: true });
   try {
@@ -219,68 +239,73 @@ export async function verifyEngineDeck(page, serviceWorker, screenshot = async (
       await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
       await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     };
-    await tap(trigger); await waitOpen(); await tap(choices.nth(1)); await waitClosed();
-    assert.equal((await state()).searchEngine, 'bing', 'touch selects the real second engine');
+    await tap(selected); await waitOpen(); await tap(choices.nth(1)); await waitClosed();
+    assert.equal((await state()).searchEngine, 'bing');
   } finally { await session.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await session.detach(); }
 
   const originalViewport = page.viewportSize();
   const originalTheme = await page.evaluate(() => document.body.classList.contains('theme-light'));
   const manyCustom = Array.from({ length: 12 }, (_, i) => ({ id: `deck-${i}`, name: `Custom engine ${i}`, template: `https://example.com/${i}?q=%s` }));
   await page.evaluate((engines) => OpenTabSearch.replaceSettings({ ...OpenTabSearch.getState(), customSearchEngines: engines }), manyCustom);
+  await captureIdentity();
   for (const theme of ['dark', 'light']) {
     await page.evaluate((light) => document.body.classList.toggle('theme-light', light), theme === 'light');
     for (const viewport of [{ width: 1024, height: 768 }, { width: 360, height: 560 }, { width: 640, height: 360 }]) {
-      await page.setViewportSize(viewport);
-      await trigger.scrollIntoViewIfNeeded();
-      await trigger.click(); await waitOpen();
+      await page.setViewportSize(viewport); await selected.scrollIntoViewIfNeeded();
+      const before = await host.boundingBox();
+      await screenshot(page, `engine_deck_${theme}_${viewport.width}x${viewport.height}_collapsed.png`);
+      await selected.click(); await waitOpen();
       assert.equal(await choices.count(), 17);
-      const box = await panel.boundingBox(); assert.ok(box);
-      assert.ok(box.x >= 0 && box.x + box.width <= viewport.width + 1, 'card stays inside narrow viewport');
-      assert.ok(box.y >= 0 && box.y + box.height <= viewport.height + 1, 'card stays inside short viewport');
-      await assertFloatingControlsClear();
-      const labels = await choices.locator('.engine-option-name').evaluateAll((nodes) => nodes.map((label) => ({
-        text: label.textContent, whitespace: getComputedStyle(label).whiteSpace,
-        clipped: label.scrollWidth > label.clientWidth || label.scrollHeight > label.clientHeight
-      })));
-      for (let index = 0; index < manyCustom.length; index++) {
-        assert.equal(labels[index + 5].text, manyCustom[index].name);
-        assert.equal(labels[index + 5].whitespace, 'normal', 'touch labels wrap to expose distinguishing suffixes');
-        assert.equal(labels[index + 5].clipped, false, 'custom engine label is fully laid out, not ellipsized or clamped');
-      }
+      assert.equal((await assertHorizontalGeometry(before)).scrollable, true, 'custom engines stay in a bounded horizontal rail');
+      await assertIdentity();
+      const labels = await choices.evaluateAll((nodes) => nodes.map((button) => button.getAttribute('aria-label')));
+      manyCustom.forEach((engine, index) => assert.equal(labels[index + 5], engine.name));
       for (const slot of ['first', 'middle', 'last']) {
-        await page.keyboard.press('End');
-        assert.equal(await activeId(), 'deck-11');
-        await assertFloatingControlsClear();
+        await page.keyboard.press('End'); assert.equal(await activeId(), 'deck-11');
+        const clipped = await choices.nth(16).evaluate((button) => {
+          const b = button.getBoundingClientRect(), r = document.getElementById('search-engine-panel').getBoundingClientRect();
+          return b.left < r.left || b.right > r.right;
+        });
+        assert.equal(clipped, false, 'End reveals the last custom engine without page scrolling');
         await clickVisibleChoice(slot);
-        await trigger.click(); await waitOpen();
+        await selected.click(); await waitOpen();
       }
-      await page.keyboard.press('End');
-      await assertFloatingControlsClear();
-      await hitChoice(16);
-      const surface = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
-      assert.match(surface, /^rgb\(/, 'dense option grid has an opaque surface in both themes');
+      await page.keyboard.press('Home'); assert.equal(await activeId(), 'google');
+      await hitChoice(0);
+      if (viewport.width === 360) {
+        const rail = await panel.boundingBox(); assert.ok(rail);
+        await page.mouse.move(rail.x + rail.width / 2, rail.y + rail.height / 2);
+        await page.mouse.wheel(160, 0);
+        await page.waitForFunction(() => document.getElementById('search-engine-panel').scrollLeft > 0);
+        assert.equal(await host.getAttribute('data-expanded'), 'true', 'native horizontal scrolling keeps the inline rail open');
+        await page.keyboard.press('End'); await hitChoice(16);
+        await page.keyboard.press('Home'); await hitChoice(0);
+      }
+
       await screenshot(page, `engine_deck_${theme}_${viewport.width}x${viewport.height}.png`);
       await page.keyboard.press('Escape'); await waitClosed();
+      await assertIdentity();
     }
   }
   await page.setViewportSize(originalViewport);
   await page.evaluate((light) => document.body.classList.toggle('theme-light', light), originalTheme);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await trigger.click(); await waitOpen();
-  assert.equal(await panel.evaluate((el) => getComputedStyle(el).transitionDuration), '0s', 'reduced motion eliminates open/close animation');
+  await selected.click(); await waitOpen();
+  assert.equal(await host.evaluate((el) => getComputedStyle(el).transitionDuration), '0s');
+  assert.ok((await choices.evaluateAll((nodes) => nodes.map((button) => getComputedStyle(button).transitionDuration))).every((duration) => duration === '0s'));
   await page.keyboard.press('Escape'); await waitClosed();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await trigger.click(); await waitOpen();
+  await selected.click(); await waitOpen();
   await page.keyboard.press('Control+k');
   await page.waitForSelector('#command-palette:not(.hidden)'); await waitClosed();
-  assert.equal(await panel.evaluate((el) => el.inert), true, 'command palette focus dismisses the lower-layer deck');
+  assert.equal(await choices.evaluateAll((buttons) => buttons.filter((button) => !button.inert).length), 1);
   await page.keyboard.press('Escape');
-  await trigger.click(); await waitOpen();
-  await page.evaluate(() => document.body.classList.add('minimal-mode')); await waitClosed();
-  assert.equal(await trigger.isVisible(), false, 'minimal mode keeps the search deck hidden');
-  await page.evaluate(() => document.body.classList.remove('minimal-mode'));
-  await waitClosed();
+  for (const mode of ['minimal-mode', 'zen-mode']) {
+    await selected.click(); await waitOpen();
+    await page.evaluate((mode) => document.body.classList.add(mode), mode); await waitClosed();
+    await page.evaluate((mode) => document.body.classList.remove(mode), mode); await waitClosed();
+  }
   await page.evaluate(() => OpenTabSearch.replaceSettings({ ...OpenTabSearch.getState(), searchEngine: 'google', customSearchEngines: [] }));
-  assert.equal(await navCount(), 0, 'all engine operations are selection only, never navigation');
-  console.log('Search-engine deck E2E passed: native keys, pointer/touch, caret, persisted custom engines, layers, narrow/short viewports and reduced motion.');
+  assert.equal(await navCount(), 0, 'all engine operations are selection only');
+  console.log('Inline search-engine deck E2E passed: original nodes, horizontal geometry, native keys/touch, caret, custom persistence, 360px overflow and reduced motion.');
 }

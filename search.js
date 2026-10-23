@@ -68,6 +68,7 @@
     resolve,
     listEngines,
     selectEngine,
+    closeEngineDeck: (options) => engineDeck?.close(options),
     // Read the full live workspace, never a separately persisted search index.
     // The palette receives validated saved records, not arbitrary navigation.
     commandPalette: {
@@ -621,7 +622,8 @@
   function renderCustomEngineButtons() {
     const host = $('search-custom-engines');
     if (!host) return;
-    engineDeck?.close({ restoreFocus: Boolean($('search-engine-panel')?.contains(document.activeElement)) });
+    const restoreEngineFocus = Boolean(engineDeck && $('search-engine-panel')?.contains(document.activeElement));
+    engineDeck?.close();
     host.innerHTML = '';
     searchState.customSearchEngines.forEach((engine) => {
       const btn = document.createElement('button');
@@ -636,6 +638,7 @@
       host.appendChild(btn);
     });
     renderEngineButtons();
+    if (restoreEngineFocus) $('search-engine-panel')?.querySelector('.engine-btn.active')?.focus({ preventScroll: true });
   }
 
   function renderDefaultEngineSelect() {
@@ -1006,18 +1009,12 @@
 
   function updateHint() {
     const hint = $('search-hint');
-    const input = inputEl();
-    if (!hint || !input) return;
-    const icon = findShortcut(input.value);
-    if (!icon) {
-      hint.textContent = '';
-      hint.classList.add('hidden');
-      hint.removeAttribute('data-match');
-      return;
-    }
-    hint.textContent = t('回车打开快捷方式「{name}」', { name: icon.name });
-    hint.dataset.match = 'shortcut';
-    hint.classList.remove('hidden');
+    if (!hint) return;
+    // Matching needs no instructional prose. Real errors still use this
+    // region; the next search interaction clears their stale status.
+    hint.textContent = '';
+    hint.classList.add('hidden');
+    hint.removeAttribute('data-match');
   }
 
   function submit(options) {
@@ -1172,7 +1169,7 @@
     input.addEventListener('mousedown', onSearchMouseDown);
 
     engineDeck = global.OpenTabEngineDeck?.create({
-      host: $('search-engine-switch'), trigger: $('search-engine-trigger'), panel: $('search-engine-panel'), input,
+      host: $('search-engine-switch'), panel: $('search-engine-panel'), input,
       getLabel: engineLabel, onSelect: (id) => selectEngine(id), onOpen: hideHistory
     }) || null;
     if (!engineDeck) {

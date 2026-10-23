@@ -383,7 +383,9 @@ for (const mutation of ['remove', 'name', 'id']) {
   const homeContext = vm.createContext({ state, sceneRuntime: null, getFolderById: (id) => state.folders.find((group) => group.id === id),
     saveState: () => save, refreshIconViews: () => { rendered++; } });
   vm.runInContext(extract(homeSource, 'selectFolder', 'addIcon'), homeContext);
-  const folderContext = vm.createContext({ state: () => state, closeOverlay() {}, host: { selectFolder: homeContext.selectFolder } });
+  const folderContext = vm.createContext({ state: () => state, closeOverlay() {}, host: { selectFolder: homeContext.selectFolder },
+    groupPopAnimations: new Set(), groupMotionQuery: null, groupPopRequest: null, sceneView: () => null });
+  vm.runInContext(extract(folderSource, 'cancelGroupPop', 'onGroupMotionChange'), folderContext);
   vm.runInContext(extract(folderSource, 'selectGroup', 'groupCount'), folderContext);
   assert.equal(folderContext.selectGroup('missing', true), false);
   assert.equal(folderContext.selectGroup('home', true), true);

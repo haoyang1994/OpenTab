@@ -135,46 +135,12 @@
     '10-1': '国庆节'
   };
 
-  const WELCOME_TIME_POOL = {
-    deepNight: ['深夜模式已开启。', '夜深了，先做最关键的一件事。', '这个时间段适合安静地推进重点。'],
-    morning: ['早安，今天从小胜开始。', '清晨效率高，先推进主线任务。', '新的一天，先完成最难的第一步。'],
-    forenoon: ['上午好，保持专注节奏。', '当前状态不错，继续稳步推进。', '把复杂任务拆小，今天会更顺。'],
-    noon: ['中午好，记得补水和休息。', '先短暂充电，再开始下半场。', '吃好休息好，效率会更稳。'],
-    afternoon: ['下午好，适合集中清理待办。', '保持当前节奏，今天进度会很漂亮。', '把分散任务收拢，效率更高。'],
-    evening: ['晚上好，适合收尾与复盘。', '把今天的成果整理一下。', '再推进一轮，就可以安心收工。'],
-    lateNight: ['夜深了，完成这轮就休息。', '晚间冲刺可以，但别透支。', '保持克制，质量优先于时长。']
-  };
-
-  const WELCOME_WEATHER_POOL = {
-    sunny: ['晴天在线，适合把计划拉满。', '阳光不错，行动力也拉起来。', '晴朗的一天，推进速度可以更快。'],
-    cloudy: ['多云天气，节奏稳一点更高效。', '云层厚一点，专注刚刚好。', '天气温和，适合持续输出。'],
-    rainy: ['下雨天也能稳步推进。', '雨声适合专注，慢一点更稳。', '雨天记得保暖，效率也别掉线。'],
-    snowy: ['有雪意，注意保暖再开工。', '天气偏冷，先热身再进入状态。', '雪天节奏放稳，质量优先。'],
-    storm: ['天气不太友好，任务更要有序。', '雷雨天气，先做可控的小目标。', '外面有风雨，内心要稳定。'],
-    fog: ['能见度一般，计划要更清晰。', '雾天慢一点，把步骤写清楚。', '视野一般，目标更要明确。'],
-    unknown: ['今天也要稳住节奏。', '先动手，再优化。', '保持连续的小进步。']
-  };
-
-  const WELCOME_MOTIVATION_POOL = [
-    '先完成，再完美。',
-    '你只需要比上一轮更好一点。',
-    '把注意力放在可控的下一步。',
-    '持续 25 分钟，会有惊喜。',
-    '最小可行进展，也是进展。',
-    '先把最难的开头做掉。',
-    '不要等状态，先动起来。',
-    '今天的专注，会变成明天的自由。',
-    '把复杂问题拆成三个小动作。',
-    '节奏稳，结果自然会好。'
-  ];
-
   const elements = {
     backgroundLayer: document.getElementById('background-layer'),
     backgroundVideo: document.getElementById('background-video'),
     time: document.getElementById('time'),
     ampm: document.getElementById('ampm'),
     date: document.getElementById('date'),
-    welcomeText: document.getElementById('welcome-text'),
     timezoneLabel: document.getElementById('timezone-label'),
     timezoneBtn: document.getElementById('timezone-btn'),
     timezoneSelector: document.getElementById('timezone-selector'),
@@ -190,7 +156,6 @@
     todoCount: document.getElementById('todo-count'),
     todoEmpty: document.getElementById('todo-empty'),
     todoProgressBar: document.getElementById('todo-progress-bar'),
-    todoToggleBtn: document.getElementById('todo-toggle-btn'),
     todoCollapseBtn: document.getElementById('todo-collapse-btn'),
     todoWidget: document.getElementById('todo-widget'),
     weatherPill: document.getElementById('weather-pill'),
@@ -482,46 +447,6 @@
     };
   }
 
-  function hashString(input) {
-    let hash = 2166136261;
-    for (let i = 0; i < input.length; i += 1) {
-      hash ^= input.charCodeAt(i);
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-    return Math.abs(hash >>> 0);
-  }
-
-  function pickBySeed(pool, seedKey) {
-    if (!Array.isArray(pool) || pool.length === 0) return '';
-    const idx = hashString(seedKey) % pool.length;
-    return pool[idx];
-  }
-
-  function getTimeSlot(totalMinutes) {
-    if (totalMinutes < 300) return 'deepNight';
-    if (totalMinutes < 540) return 'morning';
-    if (totalMinutes < 690) return 'forenoon';
-    if (totalMinutes < 840) return 'noon';
-    if (totalMinutes < 1080) return 'afternoon';
-    if (totalMinutes < 1320) return 'evening';
-    return 'lateNight';
-  }
-
-  function getWelcomeText(now, hour, minute) {
-    const totalMinutes = hour * 60 + minute;
-    const slot = getTimeSlot(totalMinutes);
-    const bucket = Math.floor(totalMinutes / 30);
-    const dateKey = now.toLocaleDateString('en-CA', { timeZone: state.timezone });
-    const weatherTag = state.weatherTag || 'unknown';
-    const baseKey = `${dateKey}-${slot}-${bucket}-${weatherTag}`;
-
-    const timeText = pickBySeed(WELCOME_TIME_POOL[slot] || WELCOME_TIME_POOL.forenoon, `${baseKey}-time`);
-    const weatherPool = WELCOME_WEATHER_POOL[weatherTag] || WELCOME_WEATHER_POOL.unknown;
-    const weatherText = pickBySeed(weatherPool, `${baseKey}-weather`);
-    const motivationText = pickBySeed(WELCOME_MOTIVATION_POOL, `${baseKey}-motivation`);
-    return `${t(timeText)} ${t(weatherText)} ${t(motivationText)}`.trim();
-  }
-
   function updateClock() {
     const now = new Date();
     const options = {
@@ -554,8 +479,6 @@
       weekday: 'long'
     });
 
-    const { hour, minute } = getTimePartsInTimezone(now, state.timezone);
-    elements.welcomeText.textContent = getWelcomeText(now, hour, minute);
   }
 
   function cleanupRuntimeResources() {
@@ -585,7 +508,7 @@
   function renderTodos() { OpenTabClockDeck.renderTodos(); }
 
   function setTodoPanelOpen(open) {
-    if (open) rememberFocus(elements.todoToggleBtn);
+    if (open) rememberFocus(document.activeElement);
     state.todoPanelOpen = open;
     renderTodoPanel();
     saveState();
@@ -594,7 +517,6 @@
   function renderTodoPanel() {
     const open = state.todoPanelOpen;
     elements.todoWidget.classList.toggle('hidden', !open);
-    elements.todoToggleBtn.classList.toggle('active', open);
     elements.todoCollapseBtn.textContent = '×';
     elements.todoCollapseBtn.title = t('关闭待办');
     elements.todoCollapseBtn.setAttribute('aria-label', t('关闭待办'));
@@ -667,7 +589,7 @@
 
   function applyParticles() {
     document.body.classList.toggle('particles-enabled', state.particlesEnabled);
-    if (state.particlesEnabled) initParticles();
+    if (state.particlesEnabled && !window.OpenTabZenMode?.isActive()) initParticles();
     else stopParticles();
   }
 
@@ -1087,6 +1009,7 @@
         container.appendChild(node);
       });
       container.appendChild(createAddShortcutTile());
+      window.OpenTabFolders?.animateGroupIcons?.(container);
       if (elements.iconsEmptyHint) elements.iconsEmptyHint.classList.toggle('hidden', nextIcons.length !== 0);
       if (!skipEnter) {
         requestAnimationFrame(() => {
@@ -1286,7 +1209,7 @@
     elements.iconUrl.value = '';
     elements.iconCustomUrl.value = '';
     elements.iconFile.value = '';
-    elements.iconUploadStatus.textContent = t('支持 PNG / JPG / SVG / WebP。');
+    elements.iconUploadStatus.textContent = '';
     elements.sshGatewayUrl.value = '';
     elements.sshGatewayToken.value = '';
     elements.sshHost.value = '';
@@ -1335,8 +1258,8 @@
     elements.sshSocksUsername.value = icon.sshSocksUsername || '';
     elements.sshSocksPassword.value = icon.sshSocksPassword || '';
     elements.iconUploadStatus.textContent = icon.uploadedIconDataUrl
-      ? t('已保存本地图标，可重新上传覆盖。')
-      : t('支持 PNG / JPG / SVG / WebP。');
+      ? t('已保存本地图标')
+      : '';
     elements.toolSubtype.value = icon.toolSubtype || '';
     elements.iconName.focus();
   }
@@ -1498,7 +1421,7 @@
   }
 
   function handleEscape(event) {
-    if (event.key !== 'Escape') return;
+    if (event.key !== 'Escape' || window.OpenTabZenMode?.isActive()) return;
     endDesktopDrag();
     if (window.OpenTabIcons && OpenTabIcons.handleEscape()) {
       event.preventDefault();
@@ -1635,6 +1558,7 @@
   }
 
   document.addEventListener('contextmenu', (event) => {
+    if (window.OpenTabZenMode?.isActive()) return;
     if (event.altKey || (window.getSelection && String(window.getSelection()))) return;
     if (event.target.closest('input, textarea, [contenteditable], #search-widget-wrap, #search-widget, #todo-widget, .icon-widget[data-id], .modal, .icon-context-menu, .settings-panel, .timezone-selector, .calendar-popover, #folder-overlay, #group-tabs-bar, #inline-dialog')) return;
     event.preventDefault();
@@ -1669,7 +1593,6 @@
     toggleCalendar();
   });
 
-  elements.todoToggleBtn.addEventListener('click', toggleTodoPanel);
   elements.todoCollapseBtn.addEventListener('click', closeTodoPanel);
 
   elements.editIconBtn.addEventListener('click', () => {
@@ -1735,6 +1658,17 @@
     openTodoList(opener) { setTodoPanelOpen(true); rememberFocus(opener); elements.todoInput.focus(); }
   };
   OpenTabClockDeck.init(clockHost);
+  window.OpenTabZenMode?.init({
+    focus: OpenTabClockDeck.getFocus(),
+    closePopovers() {
+      toggleTimezoneSelector(false); toggleCalendar(false); hideIconContextMenu();
+      window.OpenTabSearch?.closeEngineDeck({ restore: false });
+      window.OpenTabFolders?.closeOverlay();
+      window.OpenTabCommandPalette?.close();
+    },
+    onActiveChange(active) { if (active) stopParticles(); else applyParticles(); },
+    canRestoreHome: () => !sceneReadOnly && !sceneInteractionBusy
+  });
   window.OpenTabCommandPalette?.init({ openAddWebsite() { rememberFocus(); openAddIconModal(); } });
   OpenTabSearch.init({
     getState: () => state,
@@ -1822,10 +1756,10 @@
     state, workspace, applyLoadedState, renderVisible: renderCurrentWorkspace,
     showToast, writeBootMirror, bingHost, mount: document.getElementById('scene-switcher'),
     onLoadStatus(ready) {
-      sceneReadOnly = !ready; document.getElementById('homepage').inert = sceneReadOnly || sceneInteractionBusy;
+      sceneReadOnly = !ready; document.getElementById('homepage').inert = sceneReadOnly || sceneInteractionBusy || Boolean(window.OpenTabZenMode?.isActive());
     },
     onBusy(busy) {
-      sceneInteractionBusy = busy; document.getElementById('homepage').inert = sceneReadOnly || sceneInteractionBusy;
+      sceneInteractionBusy = busy; document.getElementById('homepage').inert = sceneReadOnly || sceneInteractionBusy || Boolean(window.OpenTabZenMode?.isActive());
     },
     onDiscardDraft: () => OpenTabSceneHome.discardDraft({
       canDiscard: () => OpenTabSceneHome.canDiscard({ isSaving: iconSaveGate.has(iconDraftIntent), todoAddPending }),

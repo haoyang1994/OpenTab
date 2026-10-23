@@ -61,18 +61,82 @@ try {
       url: location.href, runtimeId: globalThis.chrome?.runtime?.id, readyState: document.readyState
     })), target, id);
     if (file === 'home.html') {
+      // Grid nodes are mounted before the async scene loader releases its
+      // interaction gate. Visibility alone does not make them focusable.
+      const waitForHomeInteraction = async () => {
+        const ready = () => page.waitForFunction(() =>
+          performance.getEntriesByName('opentab:grid-ready').length > 0
+          && performance.getEntriesByName('opentab:initial-loader-end').length > 0
+          && document.querySelector('#icons-container[data-grid-bound="1"]')
+          && document.getElementById('homepage')?.inert === false, undefined, { timeout: 10000 });
+        await ready();
+        // Startup's TODO preference save is already queued before ready. Its
+        // acknowledgement can rebuild normalized legacy tiles; join the same
+        // workspace lock read-only before resolving and focusing current nodes.
+        await page.evaluate(() => OpenTabWorkspace.read(['icons']));
+        await ready();
+      };
+      await waitForHomeInteraction();
       await page.waitForFunction(() => performance.getEntriesByName('opentab:grid-ready').length > 0 && document.querySelector('#weather-pill')?.hasAttribute('data-stale'), undefined, { timeout: 10000 });
       await page.locator('#time').waitFor({ state: 'visible' });
       assert.match(await page.locator('#time').textContent(), /:/);
       assert.equal(await page.evaluate(() => typeof window.flatpickr), 'function');
       assert.ok(await page.evaluate(() => !!window.OpenTabI18n));
+
+      // Exercise native fullscreen and keyboard input from the shipped ZIP,
+      // without replacing browser APIs or widening the three-minute smoke.
+      await page.waitForFunction(() => globalThis.OpenTabZenMode && globalThis.OpenTabClockDeck?.getFocus() && !document.getElementById('homepage').inert);
+      const zenEntry = page.locator('#zen-toggle-btn');
+      assert.equal((await zenEntry.textContent()).trim(), '', 'packaged Zen entry is icon-only');
+      assert.equal(await zenEntry.locator('svg').count(), 1);
+      assert.ok(await zenEntry.getAttribute('aria-label'), 'icon-only entry has an accessible name');
+      const nativeFullscreen = await page.evaluate(() => document.fullscreenEnabled && typeof document.documentElement.requestFullscreen === 'function');
+      await zenEntry.click();
+      await page.locator('#zen-mode').waitFor({ state: 'visible' });
+      if (nativeFullscreen) {
+        await page.waitForFunction(() => document.fullscreenElement === document.documentElement, undefined, { timeout: 10000 });
+      } else {
+        assert.equal(await page.evaluate(() => document.fullscreenElement), null, 'unsupported fullscreen leaves usable windowed Zen');
+      }
+      assert.equal(await page.locator('#zen-time').textContent(), '25:00');
+      assert.equal(await page.locator('#zen-mode').getAttribute('data-phase'), 'idle');
+      assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase), 'idle');
+      assert.equal(await page.evaluate(() => sessionStorage.getItem(OpenTabClockDeck.FOCUS_KEY)), null, 'entry never starts or persists the shared focus timer');
+      assert.deepEqual((await page.locator('#zen-mode button').allTextContents()).map(text => text.trim()), ['', '', ''], 'Zen controls remain quiet and icon-only');
+      assert.equal(await page.locator('#homepage').isVisible(), false);
+      assert.equal(await page.locator('#homepage').evaluate(home => home.inert), true);
+      fs.mkdirSync(path.join(root, 'artifacts'), { recursive: true });
+      await page.screenshot({ path: path.join(root, 'artifacts/package-zen.png'), animations: 'disabled' });
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.fullscreenElement === null, undefined, { timeout: 10000 });
+      assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), true, 'native Escape leaves Zen open');
+      assert.equal(await page.locator('#zen-mode').isVisible(), true);
+      assert.equal(await page.locator('#zen-time').textContent(), '25:00');
+      await page.click('#zen-focus-toggle');
+      assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase), 'running', 'shipped Zen controls the existing clock-deck timer');
+      assert.equal(await page.locator('#clock-focus-toggle').textContent(), 'Pause');
+      await page.click('#zen-focus-reset');
+      assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase), 'idle');
+      assert.equal(await page.locator('#clock-focus-time').textContent(), '25:00');
+      assert.equal(await page.locator('#zen-time').textContent(), '25:00');
+      await page.click('#zen-exit');
+      await page.locator('#zen-mode').waitFor({ state: 'hidden' });
+      await page.locator('#homepage').waitFor({ state: 'visible' });
+      assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), false);
+      assert.equal(await page.locator('#homepage').evaluate(home => home.inert), false);
+      assert.equal(await zenEntry.getAttribute('aria-expanded'), 'false');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'zen-toggle-btn', 'quiet exit restores the actual entry control');
+      assert.equal(await page.evaluate(() => document.fullscreenElement), null);
+
       assert.equal(await page.locator('#tool-subtype option[value="fix-parser"]').count(), 0);
       const legacy = { id: 'removed-tool-fixture', name: 'Saved FIX shortcut', type: 'tool', toolSubtype: 'fix-parser', folderId: 'folder-home' };
       await page.evaluate(async icon => { await chrome.storage.local.set({ icons: [icon] }); }, legacy);
       await page.reload({ waitUntil: 'load' });
+      await waitForHomeInteraction();
       const tile = page.locator('.icon-widget[data-id="removed-tool-fixture"]');
       await tile.waitFor({ state: 'visible' });
       await tile.focus();
+      assert.equal(await tile.evaluate(node => document.activeElement === node), true, 'removed shortcut owns actual focus before native Enter');
       await page.keyboard.press('Enter');
       assert.equal(page.url(), target, 'removed shortcut does not navigate elsewhere');
       assert.equal(await page.locator('#toast').textContent(), 'This tool was removed. Your shortcut data is preserved.');
@@ -83,6 +147,7 @@ try {
         // This legacy tile is intentionally aria-disabled, so use a native
         // pointer action after proving its center is on-screen and reachable.
         // Visibility alone does not imply an absolute mouse coordinate is safe.
+        await waitForHomeInteraction();
         await tile.scrollIntoViewIfNeeded();
         await tile.hover();
         const point = await tile.evaluate(el => {
@@ -122,6 +187,7 @@ try {
         ] }));
       }, { url: launchUrl, pixel: PIXEL });
       await page.reload({ waitUntil: 'load' });
+      await waitForHomeInteraction();
       await page.waitForFunction(() => globalThis.OpenTabGroupLaunch && document.querySelector('.icon-widget[data-id="packaged-launch-site"]'));
       await page.waitForLoadState('networkidle');
       const launchBefore = await page.evaluate(() => chrome.storage.local.get(['icons', 'folders']));
@@ -162,6 +228,7 @@ try {
         await OpenTabWorkspace.transaction(({ write }) => write(fixture));
       }, moveFixture);
       await page.reload({ waitUntil: 'load' });
+      await waitForHomeInteraction();
       await page.waitForFunction(() => OpenTabSceneNavigation?.getView()?.sceneId === 'scene-default' && document.querySelector('.icon-widget[data-id="packaged-move-site"]'));
       await page.waitForLoadState('networkidle');
       const moveBefore = await page.evaluate(keys => chrome.storage.local.get(keys), moveKeys);
@@ -186,10 +253,12 @@ try {
       assert.equal(context.pages().length, pagesBefore, 'packaged move does not launch tabs');
       assert.equal(page.url(), target);
       await page.reload({ waitUntil: 'load' });
+      await waitForHomeInteraction();
       await page.waitForFunction(() => OpenTabSceneNavigation?.getView()?.sceneId === 'scene-default' && globalThis.OpenTabSiteSelection);
       assert.equal(await page.locator('.icon-widget[data-id="packaged-move-site"]').count(), 0, 'packaged source remains empty after reload');
       await page.evaluate(() => sessionStorage.setItem('opentab.scene.view', JSON.stringify({ sceneId: 'packaged-work', lastGroupIds: { 'packaged-work': 'packaged-work-home' } })));
       await page.reload({ waitUntil: 'load' });
+      await waitForHomeInteraction();
       await page.locator('.icon-widget[data-id="packaged-move-site"]').waitFor({ state: 'visible' });
       assert.equal(await page.evaluate(() => OpenTabSceneNavigation.getView().sceneId), 'packaged-work');
       assert.deepEqual(await page.evaluate(keys => chrome.storage.local.get(keys), moveKeys), moved, 'packaged destination reload retains the same original record');
@@ -240,8 +309,16 @@ try {
     console.error('Package smoke failure geometry', await failedPage.evaluate(() => {
       const tile = document.querySelector('[data-id="removed-tool-fixture"]');
       const rect = tile?.getBoundingClientRect();
+      const identity = node => node ? { tag: node.tagName, id: node.id, className: node.className, dataId: node.dataset.id } : null;
       return { viewport: [innerWidth, innerHeight], tile: rect?.toJSON(),
-        centerHit: rect ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.id : null,
+        centerHit: rect ? identity(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)) : null,
+        focused: identity(document.activeElement), tileFocused: !!tile && tile === document.activeElement,
+        tileInertAncestor: identity(tile?.closest('[inert]')), homepageInert: document.getElementById('homepage')?.inert,
+        gridBound: document.getElementById('icons-container')?.dataset.gridBound,
+        gridReady: performance.getEntriesByName('opentab:grid-ready').length,
+        loaderEnded: performance.getEntriesByName('opentab:initial-loader-end').length,
+        zenActive: globalThis.OpenTabZenMode?.isActive(), fullscreenElement: identity(document.fullscreenElement),
+        toast: document.getElementById('toast')?.textContent,
         menuClass: document.querySelector('#icon-context-menu')?.className };
     }).catch(() => null));
     fs.mkdirSync(path.join(root, 'artifacts'), { recursive: true });
