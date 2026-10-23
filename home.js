@@ -11,8 +11,6 @@
   const ICON_TYPE_SSH = 'ssh';
   const ICON_TYPE_TOOL = 'tool';
 
-  const COMMON_TIMEZONES = OpenTabTimezone.ZONES;
-
   const DEFAULT_FOLDERS = [
     { id: HOME_FOLDER_ID, name: t('主页') }
   ];
@@ -362,10 +360,9 @@
 
   let timezoneMenuStamp = '';
   function renderTimezoneList() {
-    // Opening rebuilds before focus; hidden loads need no menu DOM or Intl work.
     if (elements.timezoneSelector.classList.contains('hidden')) return;
     const current = OpenTabTimezone.preference(state);
-    const zones = COMMON_TIMEZONES.slice();
+    const zones = OpenTabTimezone.ZONES.slice();
     if (!zones.some(tz => OpenTabTimezone.sameZone(tz.id, current.timezone))) {
       zones.unshift({ id: current.timezone, name: current.timezone });
     }
@@ -406,7 +403,6 @@
     saveState();
     toggleTimezoneSelector(false);
     updateClock();
-    renderTimezoneList();
   }
 
   function toggleTimezoneSelector(forceOpen) {
@@ -1138,7 +1134,7 @@
   const saveState = (...args) => sceneRuntime ? sceneRuntime.saveState(...args) : workspace.save(...args);
 
   const applyLoadedState = OpenTabSceneHome.create({
-    state, HOME_FOLDER_ID, LEGACY_PRESET_FOLDER_IDS, activeHomeId, t, ensureFolders, normalizeIconType, migrateBackground, backgroundsEqual, getFolderById, updateClock, renderTimezoneList, initCalendar, renderWorkspaceSettings, workspace, refreshIconViews, renderTodos, setTodoPanelOpen, saveState, writeBootMirror
+    state, HOME_FOLDER_ID, LEGACY_PRESET_FOLDER_IDS, activeHomeId, t, ensureFolders, normalizeIconType, migrateBackground, backgroundsEqual, getFolderById, renderTimezoneList, initCalendar, renderWorkspaceSettings, workspace, refreshIconViews, renderTodos, setTodoPanelOpen, saveState, writeBootMirror
   });
   function loadState() { return sceneRuntime.load(); }
 

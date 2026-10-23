@@ -83,7 +83,7 @@ function pageHarness(preferences = {}, mirror = null) {
     applyParticles() {}, applyGradientFlow() {}, applyMinimalMode() {}, refreshIconViews() {}, renderTodos() {}, renderTodoPanel() {}, updateBackground() {}
   });
   c.window = c;
-  vm.runInContext('const COMMON_TIMEZONES = OpenTabTimezone.ZONES; let timezoneMenuStamp = \"\";\n' + home.slice(home.indexOf('  function renderTimezoneList()'), home.indexOf('  function cleanupRuntimeResources('))
+  vm.runInContext('let timezoneMenuStamp = \"\";\n' + home.slice(home.indexOf('  function renderTimezoneList()'), home.indexOf('  function cleanupRuntimeResources('))
     + home.slice(home.indexOf('  function writeBootMirror()'), home.indexOf('  function createIconWidget('))
     + home.slice(home.indexOf('  function renderWorkspaceSettings()'), home.indexOf('  const workspace =')), c);
   return { ...e, c, nodes, elements, work, sample: () => ({ time: elements.time.textContent, ampm: elements.ampm.textContent, date: elements.date.textContent, label: elements.timezoneLabel.textContent }) };
