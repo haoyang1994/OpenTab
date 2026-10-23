@@ -131,10 +131,10 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
       const hit = document.elementFromPoint(x, y), ancestors = [];
       for (let node = el; node && ancestors.length < 8; node = node.parentElement) ancestors.push(details(node));
       return { x, y, hit: el.contains(hit), target: identity(hit), requested: identity(el), targetRect: r,
-        activeElement: identity(document.activeElement), focused: document.activeElement === el,
+        activeElement: identity(document.activeElement), activeDetails: details(document.activeElement), focused: document.activeElement === el,
         hitClockCard: identity(hit?.closest('#clock-deck-nav [data-clock-card]')),
         elementsAtPoint: document.elementsFromPoint(x, y).slice(0, 10).map(identity), ancestors,
-        surfaces: Object.fromEntries(['content', 'clock-deck', 'clock-deck-stage', 'clock-deck-nav', 'timezone-selector', 'calendar-popover']
+        surfaces: Object.fromEntries(['content', 'clock-deck', 'clock-deck-stage', 'clock-deck-nav', 'timezone-selector', 'calendar-popover', 'search-widget-wrap', 'search-history']
           .map(id => [id, details(document.getElementById(id))])),
         inside: r.width > 0 && r.height > 0 && x >= 0 && x < innerWidth && y >= 0 && y < innerHeight };
     });
@@ -287,6 +287,18 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     const query = await lastResult.getAttribute('data-q'), remove = page.locator('.search-history-delete').last();
     await remove.focus(); await center(remove, `${label} last search delete`); await page.keyboard.press('Enter');
     await waitForAsync(worker, async query => !(await chrome.storage.local.get('searchHistory')).searchHistory.some(item => item.q === query), query);
+    // Storage visibility can precede the page's set callback, which replaces
+    // rows and restores focus. Escape must follow that real UI completion,
+    // otherwise the pending callback can legitimately render the list again.
+    await page.waitForFunction(query => {
+      const rows = [...document.querySelectorAll('#search-history .search-history-item')];
+      const deletes = [...document.querySelectorAll('#search-history .search-history-delete')];
+      const next = deletes.at(-1);
+      return !OpenTabSearch.getState().searchHistory.some(item => item.q === query)
+        && !rows.some(row => row.dataset.q === query)
+        && next?.isConnected && deletes.every(button => !button.disabled) && document.activeElement === next;
+    }, query);
+    await center(page.locator('.search-history-delete').last(), `${label} restored search-delete focus`);
     await page.keyboard.press('Escape'); await page.waitForSelector('#search-history.hidden', { state: 'attached' });
   }
   try {
@@ -385,6 +397,22 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     }
     assert.deepEqual(errors, [], 'responsive fixture has no page errors');
     console.log('Home controls: native old-layout hit-test counterexample; two themes, one/six groups, top/middle/bottom, 760/761 boundary, last popover actions, simulated inset and Settings/Zen/minimal restoration passed.');
+  } catch (error) {
+    // Include timeouts as well as hit-test failures, preserving the original
+    // error even if a page or screenshot is unavailable during diagnostics.
+    try {
+      const search = await page.evaluate(() => ({
+        query: document.getElementById('search-input')?.value,
+        expanded: document.getElementById('search-input')?.getAttribute('aria-expanded'),
+        hidden: document.getElementById('search-history')?.classList.contains('hidden'),
+        stateQueries: window.OpenTabSearch?.getState().searchHistory.map(item => item.q),
+        renderedQueries: [...document.querySelectorAll('.search-history-item')].map(row => row.dataset.q),
+        deleteDisabled: [...document.querySelectorAll('.search-history-delete')].map(button => button.disabled)
+      }));
+      reports.push({ failure: error.message, search, ...await inspectCenter(page.locator('body')) });
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-failure-state.png'), animations: 'disabled' });
+    } catch (diagnosticError) { reports.push({ diagnosticError: diagnosticError.message }); }
+    throw error;
   } finally {
     fs.writeFileSync(path.join(artifacts, 'home-controls-viewport.json'), JSON.stringify(reports, null, 2));
     await context.close();
