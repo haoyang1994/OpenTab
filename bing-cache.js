@@ -16,9 +16,18 @@
   let manualDisplayHold = null;
   let metaScene = '', metaBackground = '';
 
+  // Chrome's storage dictionaries need not preserve insertion order. Compare
+  // values, not serialization order, or our own durable acknowledgement can
+  // invalidate the decoded image just before its pixel commit. Array order is
+  // still meaningful (for example, an imported icon/group ordering).
+  function stateSignature(value) {
+    return JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+  }
+
   function scopeMetadata(background) {
     if (!sceneEnabled()) return;
-    const id = sceneView()?.sceneId || '', signature = JSON.stringify(background);
+    const id = sceneView()?.sceneId || '', signature = stateSignature(background);
     if (metaScene !== id || metaBackground !== signature) {
       lastMeta = { kind: 'image', css: '', lqip: '', color: '' };
       metaScene = id;
@@ -63,7 +72,7 @@
 
   function requestIsCurrent(generation, background, view = null) {
     return !suspended && generation === requestGeneration && viewIsCurrent(view)
-      && JSON.stringify(ctx.state.background || {}) === background;
+      && stateSignature(ctx.state.background || {}) === background;
   }
 
   // Network completions own wallpaper keys, never the rest of the workspace.
@@ -71,7 +80,7 @@
     if (sceneEnabled()) {
       if (!viewIsCurrent(view) || typeof ctx.persistBackground !== 'function') return Promise.resolve(false);
       const payload = JSON.parse(JSON.stringify({ background: ctx.state.background, bingIndex: ctx.state.bingIndex }));
-      const generation = requestGeneration, selected = JSON.stringify(payload.background);
+      const generation = requestGeneration, selected = stateSignature(payload.background);
       return Promise.resolve().then(() => requestIsCurrent(generation, selected, view)
         ? ctx.persistBackground(payload, { view, before: JSON.parse(before) }) : false)
         .then(saved => saved === true);
@@ -290,11 +299,11 @@
     // its save is pending, or reread the old cache during rollback. Neither is
     // allowed to replace the actual displayed image owned by this operation.
     if (manualDisplayHold && manualDisplayHold.generation === requestGeneration && viewIsCurrent(manualDisplayHold.view)
-      && [manualDisplayHold.before, manualDisplayHold.selected].includes(JSON.stringify(bg))) return;
+      && [manualDisplayHold.before, manualDisplayHold.selected].includes(stateSignature(bg))) return;
     const value = bg.value || '';
     const gen = ++paintGen;
     const view = sceneView(), request = requestGeneration;
-    const expected = JSON.stringify(ctx.state.background || {});
+    const expected = stateSignature(ctx.state.background || {});
     const sceneCurrent = () => (!view && !sceneEnabled()) || requestIsCurrent(request, expected, view);
     const canApply = () => sceneCurrent() && (opts && opts.canApply ? opts.canApply() : gen === paintGen);
     const writeMirror = () => { if (canApply() && !(opts && opts.deferMirror)) ctx.writeBootMirror(); };
@@ -425,7 +434,7 @@
     }
     const generation = ++requestGeneration;
     const view = sceneView();
-    const background = JSON.stringify(ctx.state.background || {});
+    const background = stateSignature(ctx.state.background || {});
     const previousIndex = ctx.state.bingIndex;
     let selectedBackground = '';
     let prepared = null;
@@ -478,7 +487,7 @@
       if (!prepared || !requestIsCurrent(generation, background, view)) return;
       ctx.state.background = candidate;
       ctx.state.bingIndex = nextIndex;
-      selectedBackground = JSON.stringify(candidate);
+      selectedBackground = stateSignature(candidate);
       hold.selected = selectedBackground;
       try {
         if (!await saveBackground(true, view, background)) throw new Error('Background storage failed');
@@ -511,7 +520,7 @@
     const generation = requestGeneration;
     const view = sceneView();
     if (sceneEnabled() && !view) return;
-    const background = JSON.stringify(bg);
+    const background = stateSignature(bg);
     if (!g.OpenTabBing.shouldCheck(bg.bing, new Date())) {
       await updateBackground({ fade: false });
       return;
@@ -537,7 +546,7 @@
         };
         ctx.state.background = candidate;
         ctx.state.bingIndex = 1;
-        const selected = JSON.stringify(candidate);
+        const selected = stateSignature(candidate);
         const pending = (async () => {
           try {
             if (!await saveBackground(true, view, background)) throw new Error('Background storage failed');
@@ -625,7 +634,7 @@
 
   function describeBackground() {
     if (manualDisplayHold && manualDisplayHold.generation === requestGeneration && viewIsCurrent(manualDisplayHold.view)
-      && [manualDisplayHold.before, manualDisplayHold.selected].includes(JSON.stringify(ctx.state.background || {}))) {
+      && [manualDisplayHold.before, manualDisplayHold.selected].includes(stateSignature(ctx.state.background || {}))) {
       return Object.assign({}, manualDisplayHold.description);
     }
     const bg = ctx.state.background || {};
@@ -670,21 +679,21 @@
           const id = view.sceneId;
           const profile = value => Array.isArray(value) ? value.find(item => item.id === id) : undefined;
           const old = profile(change.oldValue), next = profile(change.newValue);
-          if (JSON.stringify(old?.background) !== JSON.stringify(next?.background)
-            && JSON.stringify(next?.background) !== JSON.stringify(ctx.state.background)) invalidatePending();
+          if (stateSignature(old?.background) !== stateSignature(next?.background)
+            && stateSignature(next?.background) !== stateSignature(ctx.state.background)) invalidatePending();
           // The controller reloads the whole active profile. Never adopt legacy
           // aliases, or cancel this view because another scene changed.
           return;
         }
         if (['icons', 'folders'].some((key) => changes[key]
-          && JSON.stringify(changes[key].newValue) !== JSON.stringify(ctx.state[key]))) {
+          && stateSignature(changes[key].newValue) !== stateSignature(ctx.state[key]))) {
           invalidatePending();
         }
         if (!changes.background) return;
         const next = changes.background.newValue || { type: 'image', value: g.OpenTabBoot.DEFAULT_BG };
         // Our own scoped saves already match state. Other tabs' choices supersede
         // pending network work and must become the baseline for later refreshes.
-        if (JSON.stringify(next) !== JSON.stringify(ctx.state.background)) {
+        if (stateSignature(next) !== stateSignature(ctx.state.background)) {
           invalidatePending();
           ctx.state.background = next;
         }

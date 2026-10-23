@@ -357,3 +357,48 @@ for (const scene of [false, true]) for (const type of ['gradient', 'image']) {
   assert.equal(h.elements.backgroundLayer.style[type === 'gradient' ? 'background' : 'backgroundImage'], type === 'gradient' ? value : `url(${value})`);
 }
 console.log('Bing mirror supersession passed: newer same-tab gradient/preset wins in legacy and scene views');
+
+// Chrome storage can reconstruct dictionary keys in a different order. Model
+// its asynchronous onChanged delivery and the home's adoption/render boundary,
+// rather than JSON-cloning callbacks synchronously in insertion order.
+function chromeDictionary(value) {
+  if (Array.isArray(value)) return value.map(chromeDictionary);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, chromeDictionary(value[key])]));
+  return value;
+}
+for (const scene of [false, true]) for (const order of ['notification-first', 'callback-first', 'adoption-first']) {
+  const h = photoHarness(), before = await displayOld(h), original = clone(h.state.background);
+  h.entries.set(nextUrl, 'candidate');
+  let finishSave, notified = 0;
+  const save = (payload, resolve) => {
+    const saved = chromeDictionary(payload);
+    const changes = scene ? { sceneProfiles: { oldValue: [{ id: 'a', background: original }], newValue: [{ id: 'a', ...saved }] } }
+      : { background: { oldValue: original, newValue: saved.background }, bingIndex: { newValue: saved.bingIndex } };
+    const notify = () => { notified++; h.listeners.forEach(listener => listener(changes, 'local')); };
+    finishSave = async () => {
+      Object.assign(h.stored, saved);
+      if (order === 'callback-first') { resolve(true); queueMicrotask(notify); return; }
+      if (order === 'adoption-first') {
+        h.state.background = saved.background; h.state.bingIndex = saved.bingIndex;
+        await h.g.OpenTabBingCache.updateBackground({ fade: false });
+        assert.equal(h.elements.backgroundLayer.style.backgroundImage, before, 'reordered provisional adoption must not paint before save acknowledgement');
+      }
+      notify(); resolve(true);
+    };
+  };
+  if (scene) {
+    h.host.getSceneView = () => ({ sceneId: 'a', homeGroupId: 'a-home', generation: 1 });
+    h.host.persistBackground = payload => new Promise(resolve => save(payload, resolve));
+  } else h.g.chrome.storage.local.set = (payload, callback) => save(payload, () => callback());
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground(); h.respond(0, { url: nextUrl }); await flush();
+  assert.equal(typeof finishSave, 'function');
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, before);
+  await finishSave(); await pending; await flush();
+  assert.equal(notified, 1);
+  assert.equal(h.stored.background.value, nextUrl);
+  assert.match(h.elements.backgroundLayer.style.backgroundImage, /candidate/, `${scene ? 'scene' : 'legacy'} ${order}: own durable acknowledgement cannot cancel the decoded pixel commit`);
+  assert.equal(h.revoked.includes(h.created[0]), true, 'old object URL retires after successful pixel commit');
+  assert.equal(h.revoked.includes(h.created[1]), false, 'committed candidate remains alive');
+  assert.equal(h.toasts.length, 0); assert.equal(h.elements.refreshBgBtn.disabled, false);
+}
+console.log('Bing native storage ordering passed: reordered nested dictionaries, async own-write notifications and adoption before/after acknowledgement');

@@ -745,6 +745,33 @@ for (const active of [false, true]) {
   assert.equal(h.store.sceneProfiles[0].background.value, 'Remote'); assert.equal(a.state.background.value, 'Remote');
 }
 
+// Storage may reorder dictionary keys, including nested Bing metadata. The
+// appearance guard must accept equivalent before-values, but still reject any
+// actual missing/extra key, type/value difference or reordered array.
+{
+  const base = { value: 'https://www.bing.com/th?id=before.jpg', type: 'bing', source: 'bing',
+    bing: { title: 'Before', startdate: '20261023', tags: ['a', 'b'], extra: { count: 1, enabled: false } } };
+  const reordered = { bing: { extra: { enabled: false, count: 1 }, tags: ['a', 'b'], startdate: '20261023', title: 'Before' },
+    source: 'bing', type: 'bing', value: base.value };
+  const variants = [
+    value => value,
+    value => { delete value.source; return value; },
+    value => ({ ...value, unrelated: false }),
+    value => { value.bing.extra.count = '1'; return value; },
+    value => { value.bing.extra.enabled = true; return value; },
+    value => { value.bing.tags.reverse(); return value; },
+    value => { value.bing.extra = [1, false]; return value; }
+  ];
+  for (const [index, change] of variants.entries()) {
+    const initial = seed(); initial.sceneProfiles[0].background = copy(base);
+    const h = harness(initial), a = h.tab(); await a.runtime.load();
+    const candidate = { background: { type: 'bing', value: 'https://www.bing.com/th?id=after.jpg' }, bingIndex: 2 };
+    const saved = await a.bingHost.persistBackground(candidate, { view: a.runtime.getView(), before: change(copy(reordered)) });
+    assert.equal(saved, index === 0, `reordered-before variant ${index}: only equal content may save`);
+    assert.equal(h.store.sceneProfiles[0].background.value, index === 0 ? candidate.background.value : base.value);
+  }
+}
+
 // Mirrors use the committed profile while a layout edit is optimistic/in flight.
 {
   const h = harness(), a = h.tab(); await a.runtime.load();

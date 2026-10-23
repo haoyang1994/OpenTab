@@ -405,6 +405,17 @@ try {
     }
     await assertIsolatedKeys(); await assertPlainScreen();
     await page.screenshot({ path: path.join(artifacts, `zen-${themeMode}-idle.png`), animations: 'disabled' });
+    if (themeMode === 'dark') {
+      // Keep both active states available for independent theme/pixel review.
+      await page.click('#zen-focus-toggle'); assert.equal(await phase(), 'running');
+      await page.waitForFunction(() => document.getElementById('zen-time').textContent !== '25:00');
+      await assertPlainScreen();
+      await page.screenshot({ path: path.join(artifacts, 'zen-dark-running.png'), animations: 'disabled' });
+      await page.click('#zen-focus-toggle'); assert.equal(await phase(), 'paused');
+      await assertPlainScreen();
+      await page.screenshot({ path: path.join(artifacts, 'zen-dark-paused.png'), animations: 'disabled' });
+      await page.click('#zen-focus-reset'); assert.equal(await phase(), 'idle');
+    }
     await exit();
     assert.equal(await page.locator('#search-input').inputValue(), 'keep this query');
     assert.deepEqual(await page.locator('#search-input').evaluate(input => [input.selectionStart, input.selectionEnd, input.selectionDirection]), [5, 9, 'backward']);
