@@ -14,7 +14,7 @@ function harness(options = {}) {
     ...Settings.DEFAULT_APPEARANCE,
     icons: [], folders: [{ id: 'folder-home', name: 'Home' }], todos: [], currentFolderId: 'folder-home',
     background: { type: 'image', value: 'before.jpg', source: 'custom' }, bingIndex: 4,
-    iconFrameEnabled: true, openInNewTab: true,
+    iconFrameEnabled: true, openInNewTab: true, windowFullscreenShortcutEnabled: true,
     ...options.state
   };
   const store = clone(state), writes = [], toasts = [], moduleWrites = [], saves = [];
@@ -83,12 +83,14 @@ function harness(options = {}) {
 }
 {
   const h = harness(); await h.reset('shortcuts'); await h.flush();
+  assert.equal(h.store.windowFullscreenShortcutEnabled, false, 'reset durably disables the optional command');
   await h.adopt({ clockFormat: '24h', themeMode: 'light', background: { type: 'image', value: 'later.jpg', source: 'custom' } });
   h.setLayout({ layoutColumns: 8 });
   const calls = h.moduleWrites.length;
   assert.equal(h.undo(), true); await h.flush();
   assert.equal(h.store.clockFormat, '24h'); assert.equal(h.store.themeMode, 'light'); assert.equal(h.store.background.value, 'later.jpg');
   assert.equal(h.store.iconFrameEnabled, true); assert.equal(h.store.openInNewTab, true);
+  assert.equal(h.store.windowFullscreenShortcutEnabled, true, 'undo durably restores the prior explicit opt-in');
   assert.equal(h.layout().layoutIconSize, 80); assert.equal(h.layout().layoutColumns, 8, 'undo restores only layout fields actually changed by reset');
   assert.deepEqual(h.moduleWrites.slice(calls), ['layout'], 'section undo must not replay unrelated search, weather, sync or developer settings');
 }

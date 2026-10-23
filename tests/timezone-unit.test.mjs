@@ -224,7 +224,7 @@ for (const scene of [false, true]) {
 }
 for (const old of [{}, { timezone: 'America/New_York' }]) {
   const h = environment(); let installed, pending, written;
-  Object.assign(h.context, { importScripts() {}, chrome: { runtime: { onInstalled: { addListener(fn) { installed = fn; } }, onMessage: { addListener() {} } } },
+  Object.assign(h.context, { importScripts() {}, OpenTabWindowFullscreen: require('../lib/window-fullscreen.js'), chrome: { runtime: { onInstalled: { addListener(fn) { installed = fn; } }, onMessage: { addListener() {} } } },
     OpenTabWorkspace: { transaction(fn) { pending = fn({ read: async () => old, write: async value => { written = copy(value); } }); return pending; } } });
   vm.runInContext(read('background.js'), h.context); installed({ reason: 'install' }); await pending;
   assert.equal(written.timezoneMode, old.timezone ? 'fixed' : 'system');

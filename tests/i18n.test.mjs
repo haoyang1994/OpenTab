@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { waitForAsync } from './wait-for-async.mjs';
+import { verifyPopupAppearance } from './popup-appearance.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = path.join(root, 'artifacts');
@@ -143,13 +144,7 @@ try {
   assert.match(await page.getAttribute('#weather-pill', 'title'), /Sunny/, 'cached condition switches back to English');
   assert.equal(main.weatherRequests(), 1);
 
-  const popup = await context.newPage();
-  await popup.addInitScript(() => { chrome.tabs.query = async () => [{ id: 123, title: '设置 User page', url: 'https://example.com/page' }]; });
-  await popup.goto(`${base}/popup.html`);
-  await popup.waitForFunction(() => document.querySelector('#site-name').value === '设置 User page');
-  assert.equal(await popup.getAttribute('html', 'lang'), 'en');
-  assert.equal(await popup.inputValue('#site-name'), '设置 User page', 'popup preserves page title');
-  assert.ok(!cjk.test(await popup.locator('#save-btn').textContent())); await popup.close();
+  await verifyPopupAppearance({ context, worker, base, artifacts });
   await language(page, 'auto', 'en');
   for (const choice of [undefined, 'dark', 'light', 'auto']) {
     await page.emulateMedia({ colorScheme: 'light' });

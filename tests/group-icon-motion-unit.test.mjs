@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import './group-shortcuts-unit.test.mjs';
 
 const source = fs.readFileSync(new URL('../folders.js', import.meta.url), 'utf8');
 const clone = value => JSON.parse(JSON.stringify(value));

@@ -79,6 +79,7 @@
   "lib/group-launch.js",
   "lib/search-engine-deck.js",
   "lib/timezone.js",
+  "lib/window-fullscreen.js",
   "locales/core-en.js",
   "locales/scenes-en.js",
   "locales/services-en.js",

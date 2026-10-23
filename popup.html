@@ -18,15 +18,15 @@
     <p id="current-url" class="url"></p>
 
     <label for="site-name" data-i18n="名称">名称</label>
-    <input id="site-name" type="text" placeholder="请输入图标名称" data-i18n-placeholder="请输入图标名称">
+    <input id="site-name" type="text" placeholder="请输入图标名称" data-i18n-placeholder="请输入图标名称" aria-describedby="status">
 
     <label for="folder-select" data-i18n="分组">分组</label>
-    <select id="folder-select"></select>
+    <select id="folder-select" aria-describedby="status"></select>
 
     <div class="actions">
       <button id="save-btn" class="primary" type="button" data-i18n="保存">保存</button>
     </div>
-    <p id="status" class="status" aria-live="polite"></p>
+    <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>
   </main>
   <script src="scene-schema.js"></script>
   <script src="workspace-persistence.js"></script>

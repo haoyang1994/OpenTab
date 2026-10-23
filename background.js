@@ -1,4 +1,10 @@
-importScripts('lib/bing-daily.js', 'scene-schema.js', 'workspace-persistence.js');
+importScripts('lib/bing-daily.js', 'scene-schema.js', 'workspace-persistence.js', 'lib/window-fullscreen.js');
+
+const windowFullscreen = OpenTabWindowFullscreen.create(chrome);
+chrome.commands?.onCommand.addListener((command, tab) => {
+  if (command === OpenTabWindowFullscreen.COMMAND) return windowFullscreen.toggle(tab);
+});
+chrome.windows?.onRemoved.addListener(id => windowFullscreen.removed(id));
 
 const BING_CACHE = 'opentab-bing-v1';
 const DEFAULT_LOCAL_BG = 'assets/default_background/default.webp';

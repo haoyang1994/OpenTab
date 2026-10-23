@@ -1465,9 +1465,12 @@ async function runExtensionE2E() {
     await page.mouse.wheel(0, -120);
     await page.waitForTimeout(400);
     assert.deepEqual(await desktopOrder(page), ['a'], 'AC4: wheel switches group');
+    const macGroupKeys = await page.evaluate(() => /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || ''));
+    assert.equal(await page.locator(groupSelector('folder-x')).getAttribute('title'), macGroupKeys ? null : 'Alt+2', 'AC4: group tooltip advertises only the active platform binding');
     await page.keyboard.press('Alt+Digit2');
     await page.waitForTimeout(400);
-    assert.deepEqual(await desktopOrder(page), ['x1'], 'AC4: Alt+2 jumps to second group');
+    if (macGroupKeys) assert.deepEqual(await desktopOrder(page), ['a'], 'AC4: macOS Option+2 leaves the current group unchanged');
+    else assert.deepEqual(await desktopOrder(page), ['x1'], 'AC4: Windows/Linux Alt+2 jumps to second group');
     await page.screenshot({ path: path.join(ARTIFACTS, 'ac4-group-tabs.png') });
 
     await page.click('#add-group-btn');

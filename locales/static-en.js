@@ -1,5 +1,11 @@
 /* Static shell strings. Keys are the original UI phrases, never user content. */
 OpenTabI18n.register({
+  "全屏快捷键": "Fullscreen shortcut",
+  "当前快捷键": "Current shortcut",
+  "管理快捷键": "Manage shortcut",
+  "未设置": "Not set",
+  "不可用": "Unavailable",
+  "未能打开快捷键设置。": "Could not open shortcut settings.",
   "上一张卡片": "Previous card",
   "下一件小事": "Next small step",
   "下一张卡片": "Next card",

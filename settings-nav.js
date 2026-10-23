@@ -18,7 +18,7 @@
   const SECTIONS = [
     { id: 'appearance', label: '外观', keywords: 'appearance theme clock opacity blur particle minimal 外观 主题 时钟 界面 粒子 极简 不透明 虚化' },
     { id: 'wallpaper', label: '壁纸', keywords: 'wallpaper background bing gradient image 壁纸 背景 图片 渐变' },
-    { id: 'shortcuts', label: '快捷方式与布局', keywords: 'shortcut layout icon size columns grid name 快捷方式 布局 图标 大小 每行 名称 网格 更换图标 图标库 占位' },
+    { id: 'shortcuts', label: '快捷方式与布局', keywords: 'shortcut layout icon size columns grid name keyboard fullscreen 快捷方式 布局 图标 大小 每行 名称 网格 更换图标 图标库 占位 快捷键 全屏' },
     { id: 'search', label: '搜索', keywords: 'search engine history custom 搜索 引擎 历史 自定义' },
     { id: 'weather', label: '天气', keywords: 'weather city location temperature unit 天气 城市 定位 温度' },
     { id: 'sync', label: '导入与同步', keywords: 'import sync backup bookmark snapshot 导入 同步 备份 书签 快照' },
@@ -276,6 +276,7 @@
     const uiBlurValue = $('ui-blur-value');
     const iconFrame = $('icon-frame-enabled');
     const openNew = $('open-in-new-tab');
+    const fullscreenShortcut = $('window-fullscreen-shortcut-enabled');
     if (timeFormat) timeFormat.value = state.clockFormat;
     if (showSeconds) showSeconds.checked = state.showSeconds;
     if (uiOpacity) uiOpacity.value = String(state.uiOpacity);
@@ -284,6 +285,7 @@
     if (uiBlurValue) uiBlurValue.textContent = state.uiBlur + 'px';
     if (iconFrame) iconFrame.checked = state.iconFrameEnabled;
     if (openNew) openNew.checked = state.openInNewTab;
+    if (fullscreenShortcut) fullscreenShortcut.checked = state.windowFullscreenShortcutEnabled === true;
     document.querySelectorAll('.theme-mode-tab').forEach((tab) => {
       tab.classList.toggle('active', tab.dataset.theme === state.themeMode);
     });
@@ -313,6 +315,26 @@
     const checkbox = $('developer-tools-enabled');
     if (checkbox) checkbox.checked = developerToolsEnabled;
     return developerToolsEnabled;
+  }
+
+  let shortcutRead = 0;
+  async function refreshWindowFullscreenShortcut() {
+    const output = $('window-fullscreen-shortcut-binding'), ticket = ++shortcutRead;
+    if (!output) return;
+    try {
+      const commands = await chrome.commands.getAll();
+      if (ticket !== shortcutRead) return;
+      const shortcut = commands.find(command => command.name === 'toggle-window-fullscreen')?.shortcut;
+      // Chrome owns the binding, including bindings retained while disabled.
+      if (shortcut) output.removeAttribute('data-i18n');
+      else output.setAttribute('data-i18n', '未设置');
+      output.textContent = shortcut || t('未设置');
+    } catch (_) {
+      if (ticket === shortcutRead) {
+        output.setAttribute('data-i18n', '不可用');
+        output.textContent = t('不可用');
+      }
+    }
   }
 
   function persistDeveloperTools(enabled) {
@@ -399,7 +421,8 @@
       bingIndex: state.bingIndex,
       shortcuts: {
         iconFrameEnabled: state.iconFrameEnabled,
-        openInNewTab: state.openInNewTab
+        openInNewTab: state.openInNewTab,
+        windowFullscreenShortcutEnabled: state.windowFullscreenShortcutEnabled === true
       },
       layout: layout,
       search: search,
@@ -481,6 +504,7 @@
     if (!host || !host.state || !values) return;
     host.state.iconFrameEnabled = !!values.iconFrameEnabled;
     host.state.openInNewTab = !!values.openInNewTab;
+    host.state.windowFullscreenShortcutEnabled = values.windowFullscreenShortcutEnabled === true;
     if (host.applyIconFrameSetting) host.applyIconFrameSetting();
     if (host.renderIconsForCurrentFolder) host.renderIconsForCurrentFolder();
   }
@@ -526,7 +550,7 @@
     if (id === 'appearance') applyAppearance(DEFAULT_APPEARANCE);
     else if (id === 'wallpaper') applyWallpaper(host && host.DEFAULT_BACKGROUND);
     else if (id === 'shortcuts') {
-      applyShortcuts({ iconFrameEnabled: false, openInNewTab: false });
+      applyShortcuts({ iconFrameEnabled: false, openInNewTab: false, windowFullscreenShortcutEnabled: false });
       if (typeof OpenTabLayout !== 'undefined') OpenTabLayout.reset();
     } else if (id === 'search') {
       if (typeof OpenTabSearch !== 'undefined' && OpenTabSearch.resetToDefaults) {
@@ -603,6 +627,7 @@
     fillAbout();
     syncFromState();
     const search = $('settings-search');
+    void refreshWindowFullscreenShortcut();
     if (search) {
       if (!preserveDraftsOnOpen) search.value = '';
       applyFilter(search.value);
@@ -739,6 +764,22 @@
   function bindHostedControls() {
     if (!host || hostedBound) return;
     hostedBound = true;
+    const fullscreenShortcut = $('window-fullscreen-shortcut-enabled');
+    if (fullscreenShortcut) fullscreenShortcut.addEventListener('change', async () => {
+      fullscreenShortcut.disabled = true;
+      host.state.windowFullscreenShortcutEnabled = fullscreenShortcut.checked === true;
+      try { await host.saveState(); }
+      catch (_) { host.showToast?.(t('保存失败，请重试。')); }
+      finally { fullscreenShortcut.disabled = false; syncFromState(); }
+    });
+    const manageShortcut = $('manage-window-fullscreen-shortcut');
+    if (manageShortcut) manageShortcut.addEventListener('click', async () => {
+      try { await chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }); }
+      catch (_) { host.showToast?.(t('未能打开快捷键设置。')); }
+    });
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('focus', () => {
+      if (panel() && !panel().classList.contains('hidden')) void refreshWindowFullscreenShortcut();
+    });
     const timeFormat = $('time-format');
     if (timeFormat) {
       timeFormat.addEventListener('change', () => {
@@ -981,6 +1022,7 @@
     loadDeveloperTools();
     syncFromState();
     if (host && host.state) noteIcons(host.state.icons);
+    void refreshWindowFullscreenShortcut();
   }
 
   if (typeof document !== 'undefined') {

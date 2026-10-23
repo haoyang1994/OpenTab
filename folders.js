@@ -22,6 +22,9 @@
     return `#group-tabs [data-group-id="${CSS.escape(String(id))}"]`;
   }
 
+  // Option+digits are text-producing keys on macOS, not group shortcuts.
+  const hasGroupDigitShortcuts = () => !/Mac/i.test(global.navigator?.userAgentData?.platform || global.navigator?.platform || '');
+
   function ensureGroups(folders) {
     const normalized = Array.isArray(folders)
       ? folders
@@ -1002,7 +1005,7 @@
       count.className = 'group-tab-count';
       count.textContent = String(groupCount(folder.id));
       tab.appendChild(count);
-      if (index < 9) tab.title = `Alt+${index + 1}`;
+      if (index < 9 && hasGroupDigitShortcuts()) tab.title = `Alt+${index + 1}`;
       tab.addEventListener('click', () => selectGroup(folder.id, true));
       tab.addEventListener('dblclick', (event) => {
         event.preventDefault();
@@ -1214,9 +1217,10 @@
       });
     }
     document.addEventListener('keydown', (event) => {
-      if (document.body?.classList.contains('zen-mode')) return;
+      if (!hasGroupDigitShortcuts() || document.body?.classList.contains('zen-mode')) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.which === 229 || event.key === 'Process' || event.key === 'Dead') return;
       if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      if (event.target.closest('input, textarea, [contenteditable]')) return;
+      if (event.target?.closest?.('input, textarea, select, [contenteditable], [role="textbox"]')) return;
       const match = event.code && event.code.match(/^Digit([1-9])$/);
       if (!match) return;
       const folder = visibleGroups()[Number(match[1]) - 1];

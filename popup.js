@@ -24,8 +24,27 @@
     scenes: [],
     targets: new Map(),
     ready: false,
-    saving: false
+    saving: false,
+    themeMode: 'dark'
   };
+
+  const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+  function applyTheme() {
+    document.body.classList.toggle('theme-light', state.themeMode === 'light'
+      || (state.themeMode === 'auto' && !systemTheme.matches));
+  }
+  function applyAppearance(graph) {
+    // Match the homepage's fresh/legacy defaults without writing preferences.
+    state.themeMode = ['light', 'dark', 'auto'].includes(graph.themeMode)
+      ? graph.themeMode : Object.keys(graph).length ? 'dark' : 'light';
+    const hue = Number(graph.accentHue);
+    document.documentElement.style.setProperty('--accent-hue', String(
+      Number.isFinite(hue) && hue >= 0 && hue <= 360 ? hue : 200));
+    applyTheme();
+  }
+  systemTheme.addEventListener('change', () => {
+    if (state.themeMode === 'auto') applyTheme();
+  });
 
   function failure(code) { return Object.assign(new Error(code), { code }); }
 
@@ -51,6 +70,7 @@
     elements.saveBtn.disabled = state.saving || !state.ready || !state.tab || !state.targets.has(elements.folderSelect.value);
     elements.folderSelect.disabled = state.saving || !state.ready;
     elements.siteName.disabled = state.saving;
+    elements.saveBtn.setAttribute('aria-busy', String(state.saving));
   }
 
   function ensureFolders(folders) {
@@ -157,6 +177,7 @@
     state.ready = false;
     updateControls();
     const result = await OpenTabWorkspace.transaction(({ read }) => read(null));
+    applyAppearance(result);
     const mode = graphMode(result);
     state.folders = mode === 2 ? result.folders : ensureFolders(result.folders);
     state.scenes = mode === 2 ? result.scenes : [];
@@ -170,10 +191,12 @@
 
     const name = elements.siteName.value.trim();
     if (!name) {
+      elements.siteName.setAttribute('aria-invalid', 'true');
       elements.siteName.focus();
       setStatus(t('请输入名称。'), true);
       return;
     }
+    elements.siteName.removeAttribute('aria-invalid');
 
     // Bind the displayed destination before waiting for the shared lock. A
     // deleted, moved, renamed or replaced target must never redirect a draft.
@@ -240,13 +263,14 @@
   }
 
   elements.saveBtn.addEventListener('click', saveCurrentTab);
+  elements.siteName.addEventListener('input', () => elements.siteName.removeAttribute('aria-invalid'));
   elements.siteName.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') saveCurrentTab();
   });
   elements.folderSelect.addEventListener('change', () => {
     if (state.saving) return;
     updateControls();
-    if (state.targets.has(elements.folderSelect.value)) setStatus('');
+    if (state.tab && state.ready && state.targets.has(elements.folderSelect.value)) setStatus('');
   });
 
   updateControls();

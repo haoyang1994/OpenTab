@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import { contrastRatio } from './popup-appearance.mjs';
 
 const require = createRequire(import.meta.url);
 const Schema = require('../scene-schema.js');
@@ -40,6 +41,7 @@ class Element {
   constructor(tag) {
     this.tag = tag; this.children = []; this.listeners = new Map(); this.classes = new Set();
     this._value = ''; this.textContent = ''; this.disabled = false;
+    this.attributes = new Map();
     this.classList = { toggle: (name, enabled) => enabled ? this.classes.add(name) : this.classes.delete(name) };
   }
   set innerHTML(value) { assert.equal(value, ''); this.children = []; this._value = ''; }
@@ -48,12 +50,14 @@ class Element {
   get value() { return this._value; }
   appendChild(child) { this.children.push(child); if (this.children.length === 1 && this.tag === 'select') this._value = child.value; }
   addEventListener(name, listener) { this.listeners.set(name, listener); }
+  setAttribute(name, value) { this.attributes.set(name, value); }
+  removeAttribute(name) { this.attributes.delete(name); }
   focus() { this.focused = true; }
   select() {}
   dispatch(name, event = {}) { return this.listeners.get(name)?.(event); }
 }
 
-function harness(initial = seed(), { schema = Schema, tab = { url: 'https://example.com/article', title: 'Example article' }, tabWait, storageWait, math, date } = {}) {
+function harness(initial = seed(), { schema = Schema, tab = { url: 'https://example.com/article', title: 'Example article' }, tabWait, storageWait, math, date, systemDark = false } = {}) {
   const store = copy(initial), writes = [], reads = [], timers = [], queries = [];
   let fail = false, closed = 0, attemptedWrites = 0;
   const chrome = { runtime: {}, tabs: { async query(options) { queries.push(options); if (tabWait) await tabWait; return tab ? [tab] : []; } }, storage: { local: {
@@ -68,13 +72,16 @@ function harness(initial = seed(), { schema = Schema, tab = { url: 'https://exam
   const api = Workspace.forChrome(chrome);
   const elements = Object.fromEntries(['current-url', 'site-name', 'folder-select', 'save-btn', 'status']
     .map(id => [id, new Element(id === 'folder-select' ? 'select' : id === 'site-name' ? 'input' : 'div')]));
+  const body = new Element('body'), styles = new Map();
+  const media = { matches: systemDark, addEventListener(event, listener) { assert.equal(event, 'change'); this.listener = listener; } };
   const context = {
     chrome, OpenTabWorkspace: api, OpenTabSceneSchema: schema, URL,
     OpenTabIcons: {
       faviconCandidates: () => ['https://example.com/favicon.ico'],
       prepareRecord(record) { record.type = 'shortcut'; record.prepared = true; }
     },
-    document: { getElementById: id => elements[id], createElement: tag => new Element(tag) },
+    document: { body, documentElement: { style: { setProperty: (key, value) => styles.set(key, value) } }, getElementById: id => elements[id], createElement: tag => new Element(tag) },
+    matchMedia(query) { assert.equal(query, '(prefers-color-scheme: dark)'); return media; },
     setTimeout(callback, delay) { timers.push({ callback, delay }); }, close() { closed++; }
   };
   if (math) context.Math = math;
@@ -82,7 +89,8 @@ function harness(initial = seed(), { schema = Schema, tab = { url: 'https://exam
   context.window = context;
   vm.runInNewContext(source, context, { filename: 'popup.js' });
   return {
-    store, writes, reads, timers, queries, api, elements,
+    store, writes, reads, timers, queries, api, elements, body, styles,
+    systemTheme(dark) { media.matches = dark; media.listener(); },
     input: elements['site-name'], select: elements['folder-select'], button: elements['save-btn'], status: elements.status,
     get closed() { return closed; }, get attemptedWrites() { return attemptedWrites; },
     failNext() { fail = true; },
@@ -269,10 +277,18 @@ for (const initial of invalidGraphs) {
   assert.equal(h.writes.length, 0); assert.equal(h.button.disabled, true);
   release(); await h.ready(); assert.equal(h.button.disabled, false);
   h.input.value = '   '; await h.click(); assert.equal(h.writes.length, 0); assert.match(h.status.textContent, /请输入名称/);
+  assert.equal(h.input.attributes.get('aria-invalid'), 'true');
+  h.input.value = 'Corrected'; h.input.dispatch('input'); assert.equal(h.input.attributes.has('aria-invalid'), false);
 }
 for (const tab of [null, { url: 'chrome://newtab/', title: 'New tab' }]) {
   const h = harness(seed(), { tab }); await h.ready(); h.input.value = 'Cannot save'; h.enter(); await h.click(); await tick();
   assert.equal(h.writes.length, 0); assert.equal(h.button.disabled, true); assert.equal(h.timers.length, 0);
+  const reason = h.status.textContent;
+  assert.match(reason, /普通网页/);
+  h.choose('personal-projects');
+  assert.equal(h.status.textContent, reason, 'choosing a destination cannot erase unsupported-page feedback');
+  assert.equal(h.status.classes.has('error'), true); assert.equal(h.button.disabled, true);
+  assert.equal(h.button.attributes.get('aria-busy'), 'false');
 }
 {
   const graph = seed(); graph.icons.push({ id: '1i', name: 'Collision', folderId: 'folder-home' });
@@ -281,4 +297,59 @@ for (const tab of [null, { url: 'chrome://newtab/', title: 'New tab' }]) {
   assert.equal(new Set(h.store.icons.map(icon => icon.id)).size, h.store.icons.length);
 }
 
-console.log('scene popup: actual handlers, locked destination guards, full-graph append, failure recovery and legacy behavior passed');
+// Appearance follows the existing global settings but never persists defaults,
+// migrates storage, or enables an unsupported page. System changes affect auto only.
+for (const themeMode of ['dark', 'light', 'auto']) for (const systemDark of [false, true]) {
+  const initial = { ...seed(), themeMode, accentHue: 284 };
+  const h = harness(initial, { systemDark }); await h.ready();
+  assert.equal(h.body.classes.has('theme-light'), themeMode === 'light' || (themeMode === 'auto' && !systemDark));
+  assert.equal(h.styles.get('--accent-hue'), '284');
+  h.systemTheme(!systemDark);
+  assert.equal(h.body.classes.has('theme-light'), themeMode === 'light' || (themeMode === 'auto' && systemDark));
+  assert.deepEqual(h.store, initial); assert.equal(h.writes.length, 0);
+}
+for (const [initial, light] of [[{}, true], [seed(), false], [{ ...seed(), themeMode: 'unknown', accentHue: 'broken' }, false]]) {
+  const h = harness(initial); await h.ready();
+  assert.equal(h.body.classes.has('theme-light'), light); assert.equal(h.styles.get('--accent-hue'), '200');
+  assert.deepEqual(h.store, initial); assert.equal(h.writes.length, 0);
+}
+{
+  const h = harness({ ...seed(), themeMode: 'light' }, { tab: null }); await h.ready();
+  assert.equal(h.body.classes.has('theme-light'), true); assert.equal(h.button.disabled, true);
+  assert.match(h.status.textContent, /普通网页/);
+}
+
+// Keep the deliberately small standalone CSS aligned with the canonical form
+// palette without adding homepage CSS, scripts, or requests to the popup.
+const css = fs.readFileSync(new URL('../popup.css', import.meta.url), 'utf8');
+const homeCss = fs.readFileSync(new URL('../home.css', import.meta.url), 'utf8');
+for (const selector of [':root', 'body.theme-light']) {
+  const block = text => text.slice(text.lastIndexOf(`${selector} {`)).split('}')[0];
+  for (const token of ['surface', 'field', 'border', 'text', 'muted']) {
+    const pattern = new RegExp(`--form-${token}: ([^;]+);`);
+    assert.equal(block(css).match(pattern)?.[1], block(homeCss).match(pattern)?.[1], `${selector} form ${token} matches homepage`);
+  }
+  const color = token => block(css).match(new RegExp(`--${token}: (#[\\da-f]{6});`, 'i'))?.[1];
+  assert.ok(color('focus-ring'), 'the focus outline must not depend on arbitrary accent hue');
+  for (const surface of ['form-surface', 'form-field']) {
+    assert.ok(contrastRatio(color('focus-ring'), color(surface)) >= 3, `${selector} outline contrasts with ${surface}`);
+  }
+}
+assert.equal(contrastRatio('#000000', '#ffffff'), 21);
+assert.equal(contrastRatio('rgb(0, 0, 0)', 'rgb(255, 255, 255)'), 21);
+for (const themeMode of ['light', 'dark']) for (const accentHue of [0, 60, 146, 200, 240, 284, 360]) {
+  const initial = { ...seed(), themeMode, accentHue }, h = harness(initial); await h.ready();
+  assert.equal(h.styles.get('--accent-hue'), String(accentHue), 'preserve user accent for the decorative halo');
+  assert.equal(h.styles.has('--focus-ring'), false, 'runtime accent must not override the contrast-safe outline');
+  assert.deepEqual(h.store, initial); assert.equal(h.writes.length, 0);
+}
+assert.match(css, /\.primary:hover:not\(:disabled\)/);
+assert.match(css, /\.primary:disabled\s*\{[^}]*background: var\(--disabled-bg\)/);
+assert.match(css, /\.primary:focus-visible\s*\{[^}]*outline:/);
+assert.match(css, /input:focus-visible,\s*select:focus-visible,\s*\.primary:focus-visible\s*\{[^}]*outline: 2px solid var\(--focus-ring\)/);
+assert.match(css, /prefers-reduced-motion: reduce/);
+const html = fs.readFileSync(new URL('../popup.html', import.meta.url), 'utf8');
+assert.match(html, /id="status"[^>]*role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
+assert.doesNotMatch(html, /(?:home\.css|boot\.js)/);
+
+console.log('scene popup: actual handlers, destination guards, appearance, accessible state, failure recovery and legacy behavior passed');
