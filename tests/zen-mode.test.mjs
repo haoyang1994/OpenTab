@@ -49,7 +49,8 @@ await page.addInitScript(() => {
     const style = getComputedStyle(node), box = node.getBoundingClientRect();
     return { ...identity(node), connected: node.isConnected, inert: Boolean(node.inert), inertAncestor: identity(node.closest('[inert]')),
       hidden: Boolean(node.hidden), hiddenAncestor: identity(node.closest('[hidden], .hidden')), disabled: Boolean(node.disabled), tabIndex: node.tabIndex,
-      display: style.display, visibility: style.visibility, rect: { x: box.x, y: box.y, width: box.width, height: box.height } };
+      display: style.display, visibility: style.visibility, transitionProperty: style.transitionProperty,
+      transitionDuration: style.transitionDuration, transitionDelay: style.transitionDelay, rect: { x: box.x, y: box.y, width: box.width, height: box.height } };
   };
   let focusSequence = 0;
   const recordFocus = (label, event, checkpoint = false) => {
@@ -176,6 +177,12 @@ async function exit() {
     assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), false);
     assert.equal(await page.locator('#zen-toggle-btn').getAttribute('aria-expanded'), 'false');
     assert.equal(await focusId(), 'zen-toggle-btn', 'quiet exit restores the actual entry button');
+    const restored = await page.evaluate(() => {
+      const home = getComputedStyle(document.getElementById('homepage')), entry = getComputedStyle(document.getElementById('zen-toggle-btn'));
+      return { transition: home.transitionProperty, duration: home.transitionDuration, homeVisibility: home.visibility, entryVisibility: entry.visibility };
+    });
+    assert.deepEqual(restored, { transition: 'none', duration: '0s', homeVisibility: 'visible', entryVisibility: 'visible' },
+      'the nonanimated isolation wrapper restores immediate visibility even under reduced motion');
   } catch (error) { await reportFocusFailure('exit'); throw error; }
 }
 async function nativeEscapeDiagnostics() {
@@ -240,6 +247,7 @@ async function assertPlainScreen() {
   assert.ok(appearance.fontSize >= 70, 'large, legible countdown'); assert.equal(appearance.within, true);
   assert.deepEqual(appearance.visible, [await page.locator('#zen-time').innerText()], 'countdown is the only visible text');
   assert.equal(appearance.isolated, true, 'underlying wallpaper, controls and content are hidden and inert');
+  assert.equal(await page.locator('#homepage').evaluate(home => getComputedStyle(home).transitionProperty), 'none', 'Zen isolation never animates wrapper visibility');
 }
 async function assertIsolatedKeys() {
   const before = await view(), query = await page.locator('#search-input').inputValue();
@@ -261,6 +269,7 @@ try {
   // Exercise real native entry and real native Escape, separately in both themes.
   for (const themeMode of ['light', 'dark']) {
     await reset({ themeMode }); await fullscreen();
+    assert.equal(await page.locator('#homepage').evaluate(home => getComputedStyle(home).transitionProperty), 'none', 'the isolation-wrapper transition guard exists before entering Zen');
     assert.equal(await page.locator('#todo-toggle-btn').count(), 0, 'the old floating TODO entry is removed');
     const entry = await page.locator('#zen-toggle-btn').boundingBox(); assert.ok(entry.x < 40 && entry.y < 40, 'Zen is the upper-left entry');
     const before = await read(protectedKeys), scene = await view();

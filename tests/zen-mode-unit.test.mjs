@@ -4,6 +4,12 @@ import vm from 'node:vm';
 
 const source = name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 const zenSource = source('zen-mode.js'), clockSource = source('clock-deck.js');
+// A universal reduced-motion duration must never create a visibility
+// transition on the isolation wrapper. This rule must apply outside Zen too,
+// or clearing the class still leaves its opener temporarily unfocusable.
+const zenCss = source('zen-mode.css').replace(/\/\*[\s\S]*?\*\//g, '');
+assert.match(zenCss, /(?:^|})\s*#homepage\s*\{[^}]*\btransition\s*:\s*none\s*!important\s*;/,
+  'the homepage permanently disables transitions, including after the Zen class is removed');
 
 // Load both real modules, including getFocus(), subscription/ticking and the
 // entry click handler. Only browser primitives, storage and wall time are fake.

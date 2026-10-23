@@ -1,4 +1,7 @@
 #zen-mode[hidden] { display: none !important; }
+/* The global reduced-motion duration must not animate this isolation wrapper's
+   visibility. Keep restoration immediately focusable, including after Zen exits. */
+#homepage { transition: none !important; }
 #zen-mode {
   position: fixed; inset: 0; z-index: 10000;
   display: grid; place-items: center;
