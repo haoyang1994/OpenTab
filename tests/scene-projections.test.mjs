@@ -124,7 +124,11 @@ function harness({ data = fixture(), scenes = true, identity = false } = {}) {
   assert.deepEqual(h.$('group-tabs').children.map(tab => tab.children[0].textContent), ['2', '1']);
   assert.deepEqual(clone(h.folders.visibleIcons('a-work')), []);
   assert.deepEqual(clone(h.folders.bulkMoveContext().sites.map(site => site.id)), ['b-first', 'b-second']);
-  assert.deepEqual(clone(h.folders.bulkMoveContext().destinations.map(item => item.id)), ['b-home', 'b-work', 'b-folder']);
+  assert.deepEqual(clone(h.folders.bulkMoveContext().destinations.map(item => item.id)).sort(), ['folder-home', 'a-work', 'b-home', 'b-work', 'a-folder', 'b-folder'].sort(), 'only the explicit bulk chooser offers all active-scene destinations');
+  const crossGroup = h.folders.bulkMoveContext().destinations.find(item => item.id === 'a-work');
+  const crossFolder = h.folders.bulkMoveContext().destinations.find(item => item.id === 'a-folder');
+  assert.ok(h.folders.captureBulkDestination(crossGroup), 'the displayed explicit cross-scene group option is capturable');
+  assert.ok(h.folders.captureBulkDestination(crossFolder), 'the displayed explicit cross-scene folder option is capturable');
   assert.equal(h.folders.selectGroup('a-work'), false);
   assert.equal(h.folders.captureBulkDestination({ kind: 'group', id: 'a-work' }), null);
   assert.equal(h.folders.captureBulkDestination({ kind: 'folder', id: 'a-folder' }), null);

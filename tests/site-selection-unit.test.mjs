@@ -15,6 +15,8 @@ assert.equal(original.size, 5, 'revalidation never mutates the captured selectio
 assert.equal(api.scopeKey({ groupId: 'a', parentId: '' }), api.scopeKey({ groupId: 'a' }));
 assert.notEqual(api.scopeKey({ groupId: 'a', parentId: 'b' }), api.scopeKey({ groupId: 'b', parentId: 'a' }));
 assert.notEqual(api.scopeKey({ groupId: 'a|b', parentId: 'c' }), api.scopeKey({ groupId: 'a', parentId: 'b|c' }));
+assert.notEqual(api.scopeKey({ groupId: 'a', view: { sceneId: 's', homeGroupId: 'a', generation: 1 } }), api.scopeKey({ groupId: 'a', view: { sceneId: 's', homeGroupId: 'a', generation: 2 } }), 'returning to the same group after navigation invalidates the old selection view');
+assert.notEqual(api.scopeKey({ groupId: 'a', view: { sceneId: 's', homeGroupId: 'a', generation: 1 } }), api.scopeKey({ groupId: 'a', view: { sceneId: 'other', homeGroupId: 'a', generation: 1 } }));
 const destinations = [
   { kind: 'group', id: 'g1', name: 'Duplicate', groupId: 'g1' },
   { kind: 'group', id: 'g2', name: 'Duplicate', groupId: 'g2' },
@@ -24,6 +26,9 @@ const destinations = [
 const labels = destinations.map(item => api.destinationLabel(item, { destinations }));
 assert.equal(new Set(labels).size, 4);
 assert.match(labels[0], /分组/); assert.match(labels[2], /文件夹/);
+const across = { kind: 'folder', id: 'f3', name: 'Research', groupId: 'g3', sceneId: 'work-scene', path: ['Work', 'Projects', 'Read later', 'Research'] };
+assert.equal(api.destinationLabel(across, { destinations }), '文件夹 · Work / Projects / Read later / Research (f3)', 'scene destinations expose their complete hierarchy and stable identity');
+assert.equal(api.destinationLabel({ ...across, path: ['<Work>', 'Research'] }, { destinations }), '文件夹 · <Work> / Research (f3)', 'user names remain literal text');
 console.log('Site selection eligibility, current-view revalidation, scope identity and destination labeling passed');
 
 // Execute the complete UI against a small DOM, including capture listeners and
@@ -71,7 +76,7 @@ function harness() {
   document = { body, activeElement: body, createElement: tag => new Element(tag), getElementById: id => elements.get(id), querySelectorAll: selector => body.querySelectorAll(selector), addEventListener(type, fn) { const list = handlers.get(type) || []; list.push(fn); handlers.set(type, list); } };
   for (const id of ['icons-container', 'folder-icons-container', 'folder-overlay', 'site-selection-toolbar', 'site-selection-dialog']) body.appendChild(new Element('div', id));
   const dialog = elements.get('site-selection-dialog');
-  for (const [tag, id] of [['select', 'site-selection-destination'], ['button', 'site-selection-dialog-cancel'], ['button', 'site-selection-confirm'], ['p', 'site-selection-error']]) dialog.appendChild(new Element(tag, id));
+  for (const [tag, id] of [['select', 'site-selection-destination'], ['button', 'site-selection-dialog-cancel'], ['button', 'site-selection-confirm'], ['p', 'site-selection-error'], ['p', 'site-selection-preview']]) dialog.appendChild(new Element(tag, id));
   const entry = new Element('button', 'select-sites'); entry.entry = true; body.appendChild(entry);
   const root = elements.get('icons-container');
   for (const id of ['a', 'b']) { const tile = new Element('a'); tile.className = 'icon-widget'; tile.dataset.id = id; tile.setAttribute('href', `https://${id}.example/`); root.appendChild(tile); }
@@ -153,5 +158,42 @@ console.log('Site selection real-module UI pending, duplicate-submit, failure, s
   assert.equal(h.selection.isActive(), true); assert.equal(el('site-selection-dialog').open, true);
 }
 console.log('Changed destination capture disables confirmation and preserves selection');
+
+{
+  const h = harness(), el = id => h.elements.get(id);
+  h.context.scope.view = { sceneId: 'default', homeGroupId: 'home', generation: 4 };
+  h.context.destinations = [across];
+  h.dispatch(h.entry); h.dispatch(h.root.children[0]); h.dispatch(el('site-selection-move'));
+  const option = el('site-selection-destination').children[0];
+  assert.equal(option.dataset.kind, 'folder');
+  assert.equal(option.dataset.destinationId, 'f3');
+  assert.equal(option.dataset.sceneId, 'work-scene');
+  assert.equal(option.dataset.groupId, 'g3');
+  assert.match(el('site-selection-preview').textContent, /1 个网站/);
+  assert.match(el('site-selection-preview').textContent, /Work \/ Projects \/ Read later \/ Research \(f3\)/);
+  assert.match(el('site-selection-preview').textContent, /仍停留在当前场景/);
+  h.invalidateDestination(); h.dispatch(el('site-selection-destination'), 'change');
+  assert.equal(el('site-selection-preview').textContent, '', 'stale destinations do not retain a confirmable preview');
+  assert.equal(h.counts().moves, 0);
+}
+{
+  const h = harness(), el = id => h.elements.get(id);
+  h.context.scope.view = { sceneId: 'default', homeGroupId: 'home', generation: 4 };
+  h.context.destinations = [across, { kind: 'group', id: 'home', groupId: 'home', name: 'Home', sceneId: 'default', path: ['Default', 'Home'] }];
+  h.dispatch(h.entry); h.dispatch(h.root.children[0]); h.dispatch(el('site-selection-move'));
+  assert.equal(el('site-selection-destination').value, '1', 'opening the broader list keeps the source location, not an arbitrary other scene');
+  assert.match(el('site-selection-preview').textContent, /Default \/ Home/);
+  assert.equal(h.counts().moves, 0);
+}
+{
+  const h = harness(), el = id => h.elements.get(id);
+  h.context.scope.view = { sceneId: 'default', homeGroupId: 'home', generation: 4 };
+  h.dispatch(h.entry); h.dispatch(h.root.children[0]);
+  h.context.scope.view.generation++;
+  h.dispatch(el('site-selection-move'));
+  assert.equal(h.selection.isActive(), false, 'a changed scene view invalidates selection even if group IDs match');
+  assert.equal(el('site-selection-dialog').open, false);
+  assert.equal(h.counts().moves, 0);
+}
 
 assert.match(fs.readFileSync(new URL('../home.css', import.meta.url), 'utf8'), /\.site-selection-dialog\s*\{\s*margin:\s*auto;/, 'modal explicitly overrides the global margin reset');

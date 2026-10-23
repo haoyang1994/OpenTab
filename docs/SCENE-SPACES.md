@@ -49,6 +49,13 @@ retry**; only choose it when you no longer need the draft.
 
 ### Organize, find, and save
 
+- To move individual websites, enter **Select sites** in the current group or
+  open folder, select one or several sites, then choose **Move to…**. Destinations
+  include groups and folders in all active scenes. Review the full path and count
+  before confirming. The sites keep their IDs, URLs and artwork, with no copies
+  or deduplication. You remain in the source view and can use the success notice's
+  **Undo**. Changed source/destination identities or archived scenes reject a stale
+  move or Undo; unrelated later edits are preserved.
 - Open the scene manager to switch, rename, archive, or restore scenes. Archiving
   keeps all content; expand **Archived scenes** to restore it. The last active
   scene cannot be archived. There is no scene-delete action.
@@ -153,6 +160,11 @@ copies differ. No new permission, account, or external service is added.
 
 ### 整理、查找与收藏
 
+- 移动单个或多个网站：在当前分组或打开的文件夹中进入「选择网站」，勾选后
+  点击「移动到…」。可选择所有可用场景中的分组与文件夹，确认前会显示完整路径
+  和网站数量。保留原 ID、网址和图标，不复制、不去重。移动后仍停留在原视图，
+  可通过成功提示「撤销」。来源、目标身份变化或场景归档时，旧移动与撤销操作
+  会被拒绝；其他无关的新修改会保留。
 - 在场景管理面板切换、改名、归档或恢复。归档保留全部内容，展开「已归档场景」
   即可恢复。最后一个可用场景不能归档，目前没有删除场景的操作。
 - 整体移动分组时，先选中非「主页」分组，打开管理面板，点击「移动当前分组」，

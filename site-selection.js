@@ -5,7 +5,8 @@
   const saved = new Map();
   const byId = id => document.getElementById(id);
   const api = () => global.OpenTabFolders;
-  const scopeKey = scope => JSON.stringify([scope.groupId, scope.parentId || '']);
+  const scopeKey = scope => JSON.stringify([scope.groupId, scope.parentId || '',
+    scope.view ? [scope.view.sceneId, scope.view.homeGroupId, scope.view.generation] : null]);
   function eligible(site) {
     if (!site || (site.type && site.type !== 'shortcut')) return false;
     try { return ['http:', 'https:'].includes(new URL(site.url).protocol); } catch (_) { return false; }
@@ -105,6 +106,9 @@
   function destinationLabel(destination, context) {
     const group = context.destinations.find(item => item.kind === 'group' && item.id === destination.groupId);
     const prefix = destination.kind === 'group' ? t('分组') : t('文件夹');
+    if (Array.isArray(destination.path) && destination.path.length) {
+      return `${prefix} · ${destination.path.join(' / ')} (${destination.id})`;
+    }
     // Every label includes stable identity, so even identical names within a
     // group remain unambiguous without depending on their current order.
     return `${prefix} · ${destination.name}${destination.kind === 'folder' && group ? ` · ${group.name}` : ''} (${destination.id})`;
@@ -121,9 +125,17 @@
     select.replaceChildren(); mode.destinations = context.destinations;
     context.destinations.forEach((destination, index) => {
       const option = document.createElement('option'); option.value = String(index);
+      option.dataset.kind = destination.kind; option.dataset.destinationId = destination.id;
+      option.dataset.groupId = destination.groupId;
+      if (destination.sceneId) option.dataset.sceneId = destination.sceneId;
       option.textContent = destinationLabel(destination, context); select.appendChild(option);
     });
-    select.value = context.destinations.length ? '0' : '';
+    // Expanding the list must not make an earlier, unrelated scene the default.
+    // Keep the source location selected until the user chooses a destination.
+    const sourceIndex = context.scope.view ? context.destinations.findIndex(destination => context.scope.parentId
+      ? destination.kind === 'folder' && destination.id === context.scope.parentId
+      : destination.kind === 'group' && destination.id === context.scope.groupId) : 0;
+    select.value = context.destinations.length ? String(Math.max(0, sourceIndex)) : '';
     byId('site-selection-error').textContent = '';
     captureDestination();
     byId('site-selection-confirm').disabled = !mode.destination;
@@ -133,6 +145,10 @@
     const destination = mode?.destinations?.[Number(byId('site-selection-destination').value)];
     if (mode) {
       mode.destination = destination ? api().captureBulkDestination(destination) : null;
+      const label = destination ? destinationLabel(destination, { destinations: mode.destinations }) : '';
+      byId('site-selection-preview').textContent = mode.destination
+        ? t('将 {count} 个网站移到「{path}」。', { count: mode.ids.size, path: label })
+          + (destination.sceneId ? ' ' + t('移动后仍停留在当前场景，可撤销。') : '') : '';
       byId('site-selection-confirm').disabled = !mode.destination || !mode.ids.size;
       byId('site-selection-error').textContent = mode.destination ? '' : t('网站或目标已变化。请取消并重新选择。');
     }

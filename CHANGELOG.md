@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preview websites in the current group and its folders before explicitly opening up to 20 selected background tabs. Preserve distinct URL paths, queries and fragments; reject unsafe schemes and credential URLs; revalidate local and durable sources, prevent duplicate submissions, and retry only failed tabs. No new permissions or background launch.
 
 ### Changed
+- Move selected websites directly between active scenes through the existing destination chooser, including from Home. Show full destination paths and selected counts, keep the source view, preserve records and ordering, and offer guarded Undo without weakening unrelated scene isolation.
 - Present the clock, a tab-local focus timer, and the next existing to-do as a navigable card stack, with reduced-motion and inactive-panel focus isolation.
 - Collapse search engines into a selected-on-top picker while preserving queries, custom engines, and keyboard switching.
 - Refine group controls, the shortcut form, and the quick-launch badge with slate/indigo surfaces; use labeled icon buttons for site selection and batch-add entry points.
