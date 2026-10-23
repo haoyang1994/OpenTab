@@ -81,6 +81,8 @@ jobs:
             artifacts/accessibility-chooser.json
             artifacts/wallpaper-readability.json
             artifacts/interface-glass.json
+            artifacts/clock-stack-pixels.json
+            artifacts/startup-diagnostics.json
             artifacts/group-launch-*.json
           if-no-files-found: ignore
           retention-days: 7

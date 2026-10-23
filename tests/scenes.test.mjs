@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { waitForAsync } from './wait-for-async.mjs';
 import { formatConsoleError } from './console-allow.mjs';
 import { verifySceneControlFixture } from './scenes-controls-fixture.mjs';
-import { createSceneDiagnostics, diagnosticProfile, diagnosticStorage, sceneDiagnosticGlobals } from './scenes-diagnostics.mjs';
+import { boundedDiagnostic, createSceneDiagnostics, diagnosticProfile, diagnosticStorage, sceneDiagnosticGlobals } from './scenes-diagnostics.mjs';
 import { legacyFixture, expectedLegacyFirstLoad, matchesProfileExpectation, SCHEMA_KEY, BACKUP_KEY, EPOCH_KEY, DEFAULT_SCENE, PIXEL, SECOND_GRADIENT, graphKeys } from './scenes-fixtures.mjs';
 
 // Real unpacked MV3 pages, native inputs and the actual storage coordinator.
@@ -59,7 +59,42 @@ async function launchIsolated() {
 }
 const context = await launchIsolated();
 let legacyContext;
-const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+let worker;
+try {
+  worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+} catch (error) {
+  // Setup precedes the phase recorder. Observe only after the original wait
+  // fails; never wake a worker, retry acquisition, or change its timeout.
+  try {
+    const safeUrl = value => {
+      try {
+        const url = new URL(value);
+        if (!['about:', 'chrome:', 'chrome-extension:'].includes(url.protocol)) return '[non-local URL omitted]';
+        url.search = ''; url.hash = ''; url.username = ''; url.password = '';
+        return url.href.slice(0, 300);
+      } catch (_) { return '[invalid URL]'; }
+    };
+    const pages = context.pages().slice(0, 20).map(p => ({ url: safeUrl(p.url()), closed: p.isClosed() }));
+    const workers = context.serviceWorkers().slice(0, 20).map(w => safeUrl(w.url()));
+    const setupErrors = errors.slice(-20).map(message => message.slice(0, 500));
+    let observationEnded = false;
+    const targets = await boundedDiagnostic(async () => {
+      const observer = context.pages().find(p => !p.isClosed() && p.url() === 'about:blank');
+      if (!observer) return { unavailable: 'no open about:blank page' };
+      const cdp = await context.newCDPSession(observer);
+      try {
+        if (observationEnded) return { unavailable: 'diagnostic deadline' };
+        const { targetInfos } = await cdp.send('Target.getTargets');
+        return targetInfos.slice(0, 20).map(target => ({ type: String(target.type).slice(0, 80), url: safeUrl(target.url), attached: target.attached === true }));
+      } finally { void cdp.detach().catch(() => {}); }
+    }).finally(() => { observationEnded = true; });
+    console.error(`Scenes: initial worker setup failure ${JSON.stringify({ errors: setupErrors, pages, workers, targets })}`);
+  } catch (diagnosticError) {
+    try { console.error(`Scenes: initial worker setup diagnostics unavailable: ${String(diagnosticError?.name || 'Error').slice(0, 80)}`); }
+    catch (_) { /* Diagnostics cannot replace the original setup error. */ }
+  }
+  throw error;
+}
 const base = `chrome-extension://${worker.url().split('/')[2]}`;
 const home = `${base}/home.html`;
 const page = await context.newPage();

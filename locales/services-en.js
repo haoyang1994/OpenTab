@@ -37,6 +37,8 @@
   "切换到批量添加将丢弃当前未保存的快捷方式，继续？": "Switching to batch add will discard this unsaved shortcut. Continue?",
   "继续批量添加": "Continue to batch add",
   "壁纸更新失败，已保留原背景，请稍后重试": "Could not update the wallpaper. Your previous background is kept. Please try again later.",
+  "扩展连接已失效，已保留原背景，请刷新此标签页后重试": "The extension connection expired. Your background is unchanged. Refresh this tab and try again.",
+  "扩展后台不可用，已保留原背景，请重新加载扩展后重试": "The extension background is unavailable. Your background is unchanged. Reload the extension and try again.",
   "Bing 壁纸信息获取失败，已保留原背景，请稍后重试": "Couldn't get Bing wallpaper information. Your previous background is unchanged. Please try again.",
   "壁纸更新超时，已保留原背景，请稍后重试": "Wallpaper update timed out. Your previous background is unchanged. Please try again.",
   "壁纸图片无法加载，已保留原背景，请稍后重试": "Couldn't load the wallpaper image. Your previous background is unchanged. Please try again.",

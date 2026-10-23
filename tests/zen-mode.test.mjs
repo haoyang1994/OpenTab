@@ -237,6 +237,14 @@ async function verifyReducedMotionFocusFlows() {
     assert.ok(surface.duration.split(',').some(value => parseFloat(value) > 0), `normal motion remains enabled: ${JSON.stringify(surface)}`);
   }
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Child controls are lazy. Open their real surface before measuring its
+  // closed-child transitions, retaining both entry and dismissal coverage.
+  assert.equal(await page.locator('#timezone-list .timezone-item').count(), 0, 'hidden timezone controls are not constructed at startup');
+  await page.click('#timezone-btn');
+  assert.equal(await page.locator('#timezone-list .timezone-item[aria-pressed="true"]').evaluate(element => element === document.activeElement), true, 'first opening immediately focuses the selected timezone');
+  assert.equal(await page.locator('#timezone-list .timezone-item').evaluateAll(items => items.length >= 24 && items.every(item => /^UTC[+-]/.test(item.querySelector('.timezone-item-offset').textContent))), true, 'first opening renders every supported choice with its real current offset');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#timezone-btn').evaluate(element => element === document.activeElement), true, 'first dismissal restores the timezone opener');
   await assertReducedTransitions('all closed');
   const timezone = await page.evaluate(() => {
     const list = document.getElementById('timezone-list'); return (list.querySelector('.active') || list.firstElementChild).dataset.tz;

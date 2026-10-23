@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { waitForAsync } from './wait-for-async.mjs';
+import { verifyClockStackPixels } from './clock-stack.mjs';
 
 // Native MV3 fixture, not a file:// mock. Run only where Chromium is supported.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -299,5 +300,8 @@ try {
     await select(0); await page.click('#date');
     assert.equal(await page.locator('#calendar-popover').evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }), true, 'calendar remains within narrow viewport');
   }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await reset({ languagePreference: 'zh-CN' });
+  await verifyClockStackPixels(page, artifacts, select);
   assert.deepEqual(errors, []); console.log('clock deck native MV3 checks passed');
 } finally { await context.close(); }

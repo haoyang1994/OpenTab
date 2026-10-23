@@ -53,12 +53,14 @@ assert.equal(tz.preference({ timezone: 'Asia/Shanghai' }).timezone, 'Asia/Shangh
 
 function pageHarness(preferences = {}, mirror = null) {
   const e = environment(), c = e.context, nodes = new Map();
+  const work = { elements: 0, listeners: 0 };
   const document = { activeElement: null, querySelectorAll: () => [], getElementById: id => nodes.get(id), createElement: make };
   function make(tag = 'div') {
+    work.elements += 1;
     const classes = new Set();
     return { tagName: tag, children: [], dataset: {}, textContent: '', style: { setProperty() {} }, attributes: {},
       classList: { add: (...v) => v.forEach(x => classes.add(x)), remove: (...v) => v.forEach(x => classes.delete(x)), contains: v => classes.has(v), toggle(v, force) { if (force ?? !classes.has(v)) classes.add(v); else classes.delete(v); } },
-      setAttribute(key, value) { this.attributes[key] = String(value); }, addEventListener() {}, append(...els) { els.forEach(el => this.appendChild(el)); },
+      setAttribute(key, value) { this.attributes[key] = String(value); }, addEventListener() { work.listeners += 1; }, append(...els) { els.forEach(el => this.appendChild(el)); },
       appendChild(el) { el.parentElement = this; this.children.push(el); },
       set innerHTML(_) { this.children = []; },
       querySelector(selector) { return selector === '.active' ? this.children.find(el => el.className?.includes(' active')) : null; },
@@ -76,12 +78,15 @@ function pageHarness(preferences = {}, mirror = null) {
     localStorage: { getItem: () => mirror && JSON.stringify({ v: 1, ...mirror }), setItem() {}, removeItem() {} },
     performance: { mark() {}, measure() {} }, requestAnimationFrame: fn => fn(), getComputedStyle: () => ({ getPropertyValue: () => '' }), matchMedia: () => ({ matches: true }),
     saveState() { c.saved = copy(c.state); }, sceneRuntime: null, OpenTabBingCache: { describeBackground: () => ({}) },
-    OpenTabBoot: { readMirror: () => mirror, writeMirror: value => { c.writtenMirror = copy(value); } }
+    OpenTabBoot: { readMirror: () => mirror, writeMirror: value => { c.writtenMirror = copy(value); } },
+    applyUiOpacitySetting() {}, applyUiBlurSetting() {}, applyIconFrameSetting() {}, applyThemeMode() {}, applyAccentColor() {},
+    applyParticles() {}, applyGradientFlow() {}, applyMinimalMode() {}, refreshIconViews() {}, renderTodos() {}, renderTodoPanel() {}, updateBackground() {}
   });
   c.window = c;
-  vm.runInContext('const COMMON_TIMEZONES = OpenTabTimezone.ZONES; let timezoneMenuStamp = \"\";\n' + home.slice(home.indexOf('  function renderTimezoneList()'), home.indexOf('  function cleanupRuntimeResources('))
-    + home.slice(home.indexOf('  function writeBootMirror()'), home.indexOf('  function createIconWidget(')), c);
-  return { ...e, c, nodes, elements, sample: () => ({ time: elements.time.textContent, ampm: elements.ampm.textContent, date: elements.date.textContent, label: elements.timezoneLabel.textContent }) };
+  vm.runInContext('let timezoneMenuStamp = \"\";\n' + home.slice(home.indexOf('  function renderTimezoneList()'), home.indexOf('  function cleanupRuntimeResources('))
+    + home.slice(home.indexOf('  function writeBootMirror()'), home.indexOf('  function createIconWidget('))
+    + home.slice(home.indexOf('  function renderWorkspaceSettings()'), home.indexOf('  const workspace =')), c);
+  return { ...e, c, nodes, elements, work, sample: () => ({ time: elements.time.textContent, ampm: elements.ampm.textContent, date: elements.date.textContent, label: elements.timezoneLabel.textContent }) };
 }
 for (const [preference, mirror] of [
   [{}, { tz: 'Invalid/Zone', tzMode: 'fixed', tzLabel: 'wrong' }],
@@ -116,26 +121,56 @@ for (const zone of ['US/Eastern', 'Etc/UTC', 'Asia/Calcutta', 'Europe/Warsaw']) 
   h.c.selectTimezone('UTC'); assert.equal(h.c.document.activeElement, h.elements.timezoneBtn, 'selection restores the opener before rebuilding menu buttons');
 }
 {
-  const h = pageHarness(); h.formatterCalls.length = 0; h.c.renderTimezoneList();
-  assert.equal(h.elements.timezoneList.children.length, 24, 'existing menu button construction remains eager');
+  const h = pageHarness(), before = { ...h.work }; h.formatterCalls.length = 0; h.c.renderTimezoneList();
+  assert.equal(h.elements.timezoneList.children.length, 0, 'hidden menu controls are not constructed before first opening');
+  assert.deepEqual(h.work, before, 'hidden menu adds no elements or listeners');
+  assert.equal(h.formatterCalls.length, 0, 'hidden menu does no timezone resolution work');
   assert.equal(h.formatterCalls.filter(call => call.options?.timeZoneName).length, 0, 'hidden menu does no offset formatting before the grid');
   h.c.updateClock(); h.formatterCalls.length = 0; h.c.updateClock();
   assert.equal(h.formatterCalls.filter(call => call.options?.timeZoneName).length, 0, 'visible offset formatter is reused, never 23 new formatters per tick');
-  h.c.toggleTimezoneSelector(true); assert.ok(h.elements.timezoneList.children.every(item => item.children[1].textContent.startsWith('UTC')));
+  h.c.toggleTimezoneSelector(true); assert.equal(h.elements.timezoneList.children.length, 24, 'first opening builds every supported choice and the system option');
+  assert.ok(h.elements.timezoneList.children.every(item => item.children[1].textContent.startsWith('UTC')));
+  assert.equal(h.c.document.activeElement.dataset.mode, 'system', 'first opening focuses the actual selected system choice');
   h.formatterCalls.length = 0; h.setTime('2026-10-23T07:31:00Z'); h.c.updateClock();
   assert.equal(h.formatterCalls.filter(call => call.options?.timeZoneName).length, 0, 'open-menu minute refresh also reuses offset formatters');
+  h.c.selectTimezone('America/New_York');
+  const closed = { ...h.work }; h.c.renderTimezoneList(); assert.deepEqual(h.work, closed, 'hidden refresh does not rebuild the closed menu');
+  assert.equal(h.c.document.activeElement, h.elements.timezoneBtn);
+  h.c.toggleTimezoneSelector(true);
+  assert.equal(h.c.document.activeElement.dataset.tz, 'America/New_York', 'reopening rebuilds and focuses the latest preference');
+  assert.equal(h.c.document.activeElement.children[1].textContent, 'UTC-4');
 }
 {
   const h = pageHarness({}, { tz: 'America/New_York', tzMode: 'fixed' }); h.c.applyBootMirror();
+  const renderEvents = [], updateClock = h.c.updateClock;
+  h.c.updateClock = () => { renderEvents.push('clock'); updateClock(); };
+  h.c.refreshIconViews = () => renderEvents.push('grid');
   Object.assign(h.c, { OpenTabSceneSchema: { SCHEMA_KEY: 'schema' }, OpenTabWorkspace: { migrationOverrides: () => ({}) }, OpenTabBingCache: { afterStateLoaded() {} } });
   vm.runInContext(read('scene-home.js'), h.c);
   let seeded;
   const host = { state: h.c.state, HOME_FOLDER_ID: 'home', LEGACY_PRESET_FOLDER_IDS: new Set(), activeHomeId: () => 'home', t: value => value,
     ensureFolders: value => value || [], normalizeIconType: value => value, migrateBackground: value => value, backgroundsEqual: () => true,
-    getFolderById: () => true, updateClock: h.c.updateClock, renderTimezoneList: h.c.renderTimezoneList, initCalendar() {}, renderWorkspaceSettings() {},
-    workspace: { seed(raw, overrides) { seeded = { raw, overrides }; } }, refreshIconViews() {}, renderTodos() {}, setTodoPanelOpen() {}, saveState() {}, writeBootMirror() {} };
-  const load = h.c.OpenTabSceneHome.create(host);
+    getFolderById: () => true, updateClock: h.c.updateClock, renderTimezoneList: h.c.renderTimezoneList, initCalendar() {}, renderWorkspaceSettings: h.c.renderWorkspaceSettings,
+    workspace: { seed(raw, overrides) { seeded = { raw, overrides }; } }, refreshIconViews: h.c.refreshIconViews, renderTodos() {}, setTodoPanelOpen() {}, saveState() {}, writeBootMirror() {} };
+  const loadState = h.c.OpenTabSceneHome.create(host);
+  const load = value => {
+    renderEvents.length = 0; loadState(value);
+    assert.deepEqual(renderEvents, ['clock', 'grid'], 'actual loader and settings renderer update the clock exactly once, before the grid');
+  };
+  const initialWork = { ...h.work };
   load({}); assert.equal(h.api.preference(h.c.state).timezoneMode, 'system'); assert.equal(h.c.state.timezone, undefined); assert.equal(h.sample().ampm, 'PM');
+  assert.equal(h.elements.timezoneList.children.length, 0); assert.deepEqual(h.work, initialWork, 'real state loading does not build the hidden timezone menu');
+  const beforeRefresh = h.sample(); renderEvents.length = 0; h.c.renderCurrentWorkspace();
+  assert.deepEqual(renderEvents, ['grid', 'clock'], 'workspace refresh also renders the clock only once through settings');
+  assert.deepEqual(h.sample(), beforeRefresh, 'removing redundant renders preserves clock, date and timezone label');
+  h.c.toggleTimezoneSelector(true);
+  assert.equal(h.c.document.activeElement.dataset.mode, 'system');
+  load({ timezone: 'Europe/Warsaw', timezoneMode: 'fixed' });
+  const selected = h.elements.timezoneList.children.filter(item => item.attributes['aria-pressed'] === 'true');
+  assert.equal(selected.length, 1); assert.equal(selected[0].dataset.tz, 'Europe/Warsaw', 'state reload still refreshes a visible menu and adds unlisted zones');
+  assert.equal(selected[0].children[1].textContent, 'UTC+2', 'visible reloaded choice keeps its current seasonal offset');
+  assert.equal(h.sample().label, 'Europe/Warsaw (UTC+2)');
+  h.c.toggleTimezoneSelector(false); load({});
   const stored = {}, chrome = { runtime: {}, storage: { local: { async get() { return copy(stored); }, async set(patch) { Object.assign(stored, copy(patch)); } } } };
   const bridge = require('../workspace-persistence.js').forChrome(chrome).connect({ state: h.c.state });
   bridge.seed(seeded.raw, seeded.overrides);
