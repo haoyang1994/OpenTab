@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import path from 'node:path';
+import { installTimezoneWallClock } from './timezone.mjs';
 const require = createRequire(import.meta.url);
 const read = name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -197,4 +199,61 @@ for (const old of [{}, { timezone: 'America/New_York' }]) {
 const html = read('home.html');
 assert.ok(html.indexOf('src="lib/timezone.js"') < html.indexOf('src="boot.js"'));
 assert.ok(Buffer.byteLength(read('boot.js')) <= 4096, 'boot budget stays intact');
+
+// Execute the installed Playwright implementation as a negative control: its
+// setFixedTime setup replaces native Performance entries, making our genuine
+// production readiness barrier impossible. Do not mask that barrier in tests.
+{
+  const source = require(path.join(path.dirname(require.resolve('playwright-core/package.json')), 'lib/generated/clockSource.js')).source;
+  const fixture = read('tests/timezone.mjs');
+  const readySource = fixture.match(/const ready = \(\) => page.waitForFunction\((\(\) => [^\n]+)\);/)[1];
+  const gridMark = home.match(/performance\.mark\('opentab:grid-ready'\);/)[0];
+  function browserContext(saved = new Map()) {
+    const entries = [], timerCalls = [], native = vm.createContext({ module: { exports: {} }, console, Intl,
+      Event: class Event {}, document: { getElementById: () => ({ textContent: '15:30' }) },
+      sessionStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) },
+      setTimeout: (...args) => { timerCalls.push(['timeout', ...args]); return timerCalls.length; }, clearTimeout() {},
+      setInterval: (...args) => { timerCalls.push(['interval', ...args]); return timerCalls.length; }, clearInterval() {},
+      requestAnimationFrame: (...args) => { timerCalls.push(['raf', ...args]); return timerCalls.length; }, cancelAnimationFrame() {},
+      performance: Object.create({ now: () => 123, mark(name) { entries.push({ name, entryType: 'mark', startTime: 123 }); },
+        getEntries: () => entries.slice(), getEntriesByName: name => entries.filter(entry => entry.name === name), getEntriesByType: type => entries.filter(entry => entry.entryType === type) })
+    });
+    return { native, entries, timerCalls, ready: () => Boolean(vm.runInContext(`(${readySource})()`, native)) };
+  }
+  const broken = browserContext();
+  vm.runInContext(source + '\nglobalThis.__pwClock = module.exports.inject()(globalThis); __pwClock.controller.setFixedTime(1784100600000);', broken.native);
+  vm.runInContext(gridMark, broken.native);
+  assert.equal(broken.ready(), false, 'installed Playwright full-clock fixture erases the real production grid mark');
+  assert.equal(broken.entries.length, 0);
+
+  const saved = new Map(), fixed = browserContext(saved), browser = fixed.native;
+  const original = Object.fromEntries(['performance', 'Intl', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame'].map(key => [key, browser[key]]));
+  const summer = Date.parse('2026-07-15T07:30:00Z'), winter = Date.parse('2026-01-15T07:30:00Z');
+  vm.runInContext(`(${installTimezoneWallClock.toString()})(${summer})`, browser);
+  assert.equal(fixed.ready(), false, 'clock text alone is not readiness');
+  vm.runInContext(gridMark, browser);
+  assert.equal(fixed.ready(), true, 'the unchanged barrier sees only the actual production mark');
+  for (const [key, value] of Object.entries(original)) assert.equal(browser[key], value, `${key} remains native, not restored from Playwright internals`);
+  assert.equal(vm.runInContext('Date.now()', browser), summer);
+  assert.equal(vm.runInContext('new Date().getTime()', browser), summer);
+  assert.equal(vm.runInContext('new Date(0).getTime()', browser), 0, 'explicit Date construction stays native');
+  assert.equal(vm.runInContext('Date()', browser), new Date(summer).toString(), 'callable Date retains its native string contract');
+  assert.equal(vm.runInContext('Date.parse("2026-01-15T07:30:00Z")', browser), winter);
+  assert.equal(vm.runInContext('Date.UTC(2026, 0, 15, 7, 30)', browser), winter);
+  assert.equal(vm.runInContext('class DateSubclass extends Date {}; new DateSubclass().getTime()', browser), summer);
+  browser.__opentabTimezoneTestClock.setTime(winter);
+  assert.equal(vm.runInContext('Date.now()', browser), winter);
+  vm.runInContext(read('lib/timezone.js'), browser);
+  assert.equal(vm.runInContext("OpenTabTimezone.clock(new Date(), { timezone: 'America/New_York', clockFormat: '24h' }).time", browser), '02:30', 'production clock consumes the fixed Date through untouched Intl');
+  vm.runInContext('globalThis.timerFired = false; setTimeout(() => { globalThis.timerFired = true; }, 10);', browser);
+  assert.equal(fixed.timerCalls[0][0], 'timeout'); fixed.timerCalls[0][1](); assert.equal(browser.timerFired, true, 'the native timer path remains live while wall time is fixed');
+  const reloaded = browserContext(saved);
+  vm.runInContext(`(${installTimezoneWallClock.toString()})(${summer})`, reloaded.native);
+  assert.equal(vm.runInContext('new Date().getTime()', reloaded.native), winter, 'fixed date persists across actual fresh-script reloads');
+  assert.equal(reloaded.ready(), false, 'reload cannot inherit a previous document readiness mark');
+  assert.throws(() => browser.__opentabTimezoneTestClock.setTime(NaN), /Invalid timezone fixture time/);
+  assert.equal(vm.runInContext('Date.now()', browser), winter, 'invalid test input cannot silently change the chosen date');
+  assert.doesNotMatch(fixture, /page\.clock\./, 'timezone fixture must not replace native performance/timers through the full clock API');
+  assert.doesNotMatch(fixture, /performance\.(?:mark|measure)\(/, 'native fixture cannot fabricate production readiness or timing entries');
+}
 console.log('Timezone passed: system/manual compatibility, DST/date/locale, boot recovery, authoritative hydration, alias focus and preference transport.');
