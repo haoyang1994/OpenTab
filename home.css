@@ -2991,8 +2991,21 @@ body.minimal-mode #settings-btn:hover {
    ========================================================================== */
 
 @media (max-width: 760px) {
+  #homepage {
+    --home-controls-safe-area: env(safe-area-inset-bottom, 0px);
+  }
+
   #content {
     padding: 18px 16px 96px;
+  }
+
+  /* Keep scrolling targets above the fixed 46px controls, their 18px bottom
+     offset, and a 12px gap. End padding alone cannot protect mid-scroll rows. */
+  body:not(.minimal-mode) #content {
+    height: calc(100vh - 76px - var(--home-controls-safe-area));
+    height: calc(100dvh - 76px - var(--home-controls-safe-area));
+    padding-bottom: 18px;
+    scroll-padding-block: 8px;
   }
 
   #clock-widget {
@@ -3066,12 +3079,12 @@ body.minimal-mode #settings-btn:hover {
 
   #refresh-bg-btn {
     right: 82px;
-    bottom: 18px;
+    bottom: calc(18px + var(--home-controls-safe-area));
   }
 
   #settings-btn {
     right: 18px;
-    bottom: 18px;
+    bottom: calc(18px + var(--home-controls-safe-area));
   }
 
   .floating-btn {

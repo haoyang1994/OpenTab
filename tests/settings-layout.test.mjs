@@ -1,3 +1,4 @@
+import { verifyHomeControlsViewport } from './home-controls-viewport.mjs';
 import { runUiRefinement } from './ui-refinement.mjs';
 import { verifyInterfaceGlass } from './interface-glass.mjs';
 import { verifySettingsDismissal } from './settings-dismiss.mjs';
@@ -178,6 +179,8 @@ async function runSettingsLayoutE2E() {
     assert.ok(navTiming.gridReady != null, 'AC7 grid-ready missing');
     assert.ok(navTiming.gridReady <= GRID_READY_BUDGET_MS, `AC7 grid-ready ${navTiming.gridReady}ms`);
     assert.ok(navTiming.dcl <= GRID_READY_BUDGET_MS, `AC7 DCL ${navTiming.dcl}ms`);
+
+    await verifyHomeControlsViewport({ extensionPath: EXTENSION_PATH, artifacts: ARTIFACTS, headless });
 
     await storageSet(serviceWorker, {
       folders: [{ id: HOME, name: '主页' }],
