@@ -181,28 +181,56 @@ const settings = read('settings-nav.js');
   const output = nodes.get('window-fullscreen-shortcut-binding'), checkbox = nodes.get('window-fullscreen-shortcut-enabled');
   const local = {}, h = harness({ local }), state = { [KEY]: false };
   const bridge = Workspace.forChrome(h.chrome).connect({ state }); bridge.seed(local);
-  let shortcut = '', error = false; const opened = [], toasts = [], focus = [];
+  let shortcut = '', error = false, panelHidden = true, reads = 0, readHook;
+  const opened = [], toasts = [], focus = [], visibility = [];
+  const document = { visibilityState: 'visible', addEventListener(type, fn) {
+    assert.equal(type, 'visibilitychange'); visibility.push(fn);
+  } };
   const context = vm.createContext({
-    $: id => nodes.get(id), hostedBound: false, panel: () => ({ classList: { contains: () => false } }),
-    window: { addEventListener: (type, fn) => focus.push(fn) },
-    chrome: { commands: { async getAll() { if (error) throw new Error('unavailable'); return [{ name: COMMAND, shortcut }]; } },
+    $: id => nodes.get(id), hostedBound: false, panel: () => ({ classList: {
+      contains: () => panelHidden, remove: () => { panelHidden = false; }
+    } }), document,
+    window: { addEventListener: (type, fn) => { assert.equal(type, 'focus'); focus.push(fn); } },
+    chrome: { commands: { async getAll() {
+      reads++; if (readHook) return readHook();
+      if (error) throw new Error('unavailable'); return [{ name: COMMAND, shortcut }];
+    } },
       tabs: { async create(options) { opened.push(clone(options)); } } },
     host: { state, saveState: () => bridge.save(), showToast: value => toasts.push(value) },
-    syncFromState: () => { checkbox.checked = state[KEY] === true; }, t: value => value
+    syncFromState: () => { checkbox.checked = state[KEY] === true; }, t: value => value,
+    bindFocusTrap() {}, bindPanel() {}, buildNav() {}, ensureResetButtons() {}, fillAbout() {}, loadDeveloperTools() {}, noteIcons() {},
+    preserveDraftsOnOpen: false, activeId: 'shortcuts', setActive() {}
   });
   vm.runInContext(settings.slice(settings.indexOf('  let shortcutRead = 0;'), settings.indexOf('  function persistDeveloperTools(')), context);
   const controls = settings.slice(settings.indexOf('  function bindHostedControls()'), settings.indexOf("    const timeFormat = $('time-format');", settings.indexOf('  function bindHostedControls()')));
-  vm.runInContext(controls + '\n}\nbindHostedControls();', context);
-  await context.refreshWindowFullscreenShortcut(); assert.equal(output.textContent, '未设置');
-  shortcut = 'Ctrl+Shift+Y'; await context.refreshWindowFullscreenShortcut(); assert.equal(output.textContent, shortcut);
+  vm.runInContext(controls + '\n}', context);
+  vm.runInContext(settings.slice(settings.indexOf('  function init(nextHost)'), settings.indexOf("\n  if (typeof document !== 'undefined') {", settings.indexOf('  function init(nextHost)'))), context);
+  vm.runInContext(settings.slice(settings.indexOf('  function open(options = {})'), settings.indexOf('  function openSection(')), context);
+  context.init(); context.init(); await settle();
+  assert.equal(reads, 0, 'closed settings initialization sends no command-discovery IPC');
+  assert.equal(focus.length, 1); assert.equal(visibility.length, 1, 'reinitialization does not duplicate lifecycle listeners');
+  focus[0](); visibility[0](); await settle();
+  assert.equal(reads, 0, 'closed settings ignore focus and visibility events');
+  context.open(); await settle(); assert.equal(output.textContent, '未设置'); assert.equal(reads, 1, 'opening settings discovers the real binding');
+  document.visibilityState = 'hidden'; visibility[0](); focus[0](); await settle();
+  assert.equal(reads, 1, 'background tabs do not refresh on hide or an unrelated focus notification');
+  shortcut = 'Ctrl+Shift+Y'; document.visibilityState = 'visible'; visibility[0](); await settle();
+  assert.equal(reads, 2); assert.equal(output.textContent, shortcut, 'returning to a visible tab refreshes without any window-focus event');
   assert.equal(output.attributes['data-i18n'], undefined, 'the real assigned key is never replaced by translated fallback text');
+  shortcut = 'Ctrl+Shift+U'; focus[0](); await settle();
+  assert.equal(output.textContent, shortcut, 'focus return still refreshes a continuously visible tab');
+  const stale = deferred(); readHook = () => stale.promise; visibility[0]();
+  readHook = undefined; shortcut = 'Ctrl+Shift+Y'; focus[0](); await settle();
+  stale.resolve([{ name: COMMAND, shortcut: '' }]); await settle();
+  assert.equal(output.textContent, shortcut, 'a slow visibility read cannot overwrite a newer focus read');
   checkbox.checked = true; await checkbox.handlers.change(); assert.equal(local[KEY], true); assert.equal(checkbox.disabled, false);
   checkbox.checked = false; await checkbox.handlers.change(); assert.equal(local[KEY], false);
   await context.refreshWindowFullscreenShortcut(); assert.equal(output.textContent, shortcut, 'disable does not claim to clear Chrome binding');
   await nodes.get('manage-window-fullscreen-shortcut').handlers.click();
   assert.deepEqual(opened, [{ url: 'chrome://extensions/shortcuts' }]); assert.deepEqual(toasts, []);
-  error = true; await context.refreshWindowFullscreenShortcut(); assert.equal(output.textContent, '不可用', 'API failure is not mislabeled as unassigned');
-  assert.equal(focus.length, 1, 'returning from Chrome shortcut settings refreshes the actual binding');
+  error = true; visibility[0](); await settle(); assert.equal(output.textContent, '不可用', 'API failure is not mislabeled as unassigned');
+  error = false; shortcut = ''; focus[0](); await settle();
+  assert.equal(output.textContent, '未设置'); assert.equal(output.attributes['data-i18n'], '未设置', 'clearing the Chrome binding restores the localized fallback');
 }
 console.log('Browser-window fullscreen units passed: actual command listener, strict opt-in, native window targeting, serialization, restart restore, failures and settings durability.');
 // Failure diagnostics run without a browser and never log URLs, page titles,
@@ -213,17 +241,35 @@ console.log('Browser-window fullscreen units passed: actual command listener, st
   try {
     const worker = { evaluate(fn, id) {
       return vm.runInNewContext(`(${fn.toString()})(id)`, { id,
-        chrome: { windows: { get: async () => ({ id, type: 'normal', state: 'maximized', title: 'private title' }) } },
+        chrome: { windows: { get: async () => ({ id, type: 'normal', state: 'maximized', focused: false, title: 'private title' }) },
+          commands: { getAll: async () => [{ name: COMMAND, shortcut: 'Ctrl+Shift+Y', description: 'private description' }] } },
         __windowFullscreenNative: {
           events: Array.from({ length: 20 }, () => ({ name: COMMAND, windowId: 7, url: 'private URL' })),
           results: Array.from({ length: 20 }, () => ({ success: true, windowId: 7, state: 'fullscreen', extra: 'private data' }))
         } });
     } };
-    const report = await reportWindowFullscreenFailure({ worker, page: { async screenshot(options) { screenshots.push(options); } },
-      windowId: 7, expectedCommands: 21, artifacts: '/tmp/disposable-native-artifacts' });
+    const page = {
+      async screenshot(options) { screenshots.push(options); },
+      evaluate(fn) { return vm.runInNewContext(`(${fn.toString()})()`, {
+        document: { visibilityState: 'visible', hasFocus: () => false,
+          getElementById: id => id === 'settings-panel' ? { classList: { contains: () => false } } : { textContent: 'Not set' } },
+        __windowFullscreenLifecycle: { counts: { focus: 0, blur: 1, visibilitychange: 20, extra: 'private counter' },
+          events: Array.from({ length: 20 }, () => ({ type: 'visibilitychange', visible: true, focused: false, trusted: true, extra: 'private event' })) }
+      }); }
+    };
+    const report = await reportWindowFullscreenFailure({ worker, page,
+      windowId: 7, expectedCommands: 21, artifacts: '/tmp/disposable-native-artifacts', phase: 'return-binding-label' });
     assert.equal(report.observation.eventCount, 20); assert.equal(report.observation.resultCount, 20);
     assert.equal(report.observation.events.length, 8); assert.equal(report.observation.results.length, 8);
-    assert.deepEqual(clone(report.observation.windowState), { id: 7, type: 'normal', state: 'maximized' });
+    assert.deepEqual(clone(report.observation.windowState), { id: 7, type: 'normal', state: 'maximized', focused: false });
+    assert.deepEqual(clone(report.observation.binding), { registered: true, shortcut: 'Ctrl+Shift+Y' });
+    assert.equal(report.phase, 'return-binding-label');
+    assert.equal(report.pageState.visible, true); assert.equal(report.pageState.focused, false);
+    assert.equal(report.pageState.settingsOpen, true); assert.equal(report.pageState.bindingPresent, true);
+    assert.equal(report.pageState.bindingText, 'Not set');
+    assert.deepEqual(clone(report.pageState.lifecycle.counts), { focus: 0, blur: 1, visibilitychange: 20 });
+    assert.equal(report.pageState.lifecycle.events.length, 8);
+    assert.deepEqual(clone(report.pageState.lifecycle.events[0]), { type: 'visibilitychange', visible: true, focused: false, trusted: true });
     assert.equal(report.screenshot.captured, true); assert.equal(screenshots[0].timeout, 2000);
     assert.equal(screenshots[0].path, '/tmp/disposable-native-artifacts/window-fullscreen-failure.png');
     const unavailable = await reportWindowFullscreenFailure({
@@ -231,6 +277,7 @@ console.log('Browser-window fullscreen units passed: actual command listener, st
       page: { async screenshot() { throw new Error('private screenshot failure'); } },
       windowId: 7, expectedCommands: 1, artifacts: '/tmp/disposable-native-artifacts' });
     assert.deepEqual(unavailable.observation, { unavailable: true });
+    assert.deepEqual(unavailable.pageState, { unavailable: true });
     assert.deepEqual(unavailable.screenshot, { unavailable: true });
     assert.doesNotMatch(errors.join('\n'), /private/);
   } finally { console.error = originalError; }

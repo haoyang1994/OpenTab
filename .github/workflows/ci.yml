@@ -51,6 +51,15 @@ jobs:
         timeout-minutes: 18
         run: npx playwright install --with-deps chromium
 
+      - name: Install isolated native desktop fixture
+        if: matrix.e2e_group == 'core'
+        timeout-minutes: 3
+        run: |
+          if ! command -v openbox >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y openbox
+          fi
+
       # Fail fast on the explicit tab-creation boundary before the broad suite.
       # The canonical npm test still reruns every suite, including this one.
       - name: Check explicit group launch in native Chromium
@@ -83,7 +92,7 @@ jobs:
             artifacts/interface-glass.json
             artifacts/home-controls-viewport.json
             artifacts/clock-stack-pixels.json
-            artifacts/startup-diagnostics.json
+            artifacts/startup-diagnostics*.json
             artifacts/group-launch-*.json
           if-no-files-found: ignore
           retention-days: 7

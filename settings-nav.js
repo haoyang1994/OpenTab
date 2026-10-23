@@ -777,9 +777,12 @@
       try { await chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }); }
       catch (_) { host.showToast?.(t('未能打开快捷键设置。')); }
     });
-    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('focus', () => {
-      if (panel() && !panel().classList.contains('hidden')) void refreshWindowFullscreenShortcut();
-    });
+    const refreshShortcutOnReturn = () => {
+      if (document.visibilityState === 'visible' && panel() && !panel().classList.contains('hidden')) void refreshWindowFullscreenShortcut();
+    };
+    // A tab can become visible without the browser window gaining input focus.
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('focus', refreshShortcutOnReturn);
+    if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', refreshShortcutOnReturn);
     const timeFormat = $('time-format');
     if (timeFormat) {
       timeFormat.addEventListener('change', () => {
@@ -1022,7 +1025,6 @@
     loadDeveloperTools();
     syncFromState();
     if (host && host.state) noteIcons(host.state.icons);
-    void refreshWindowFullscreenShortcut();
   }
 
   if (typeof document !== 'undefined') {

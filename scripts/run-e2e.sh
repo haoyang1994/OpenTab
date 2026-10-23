@@ -66,7 +66,13 @@ run_headed() {
   local failures=() suite status
   for suite in "${suites[@]}"; do
     echo "E2E: running $suite"
-    if run_command env HEADLESS=false node "$suite"; then status=0; else status=$?; fi
+    if [[ "$suite" == tests/zen-mode.test.mjs && "${OPENTAB_E2E_OWNED_DISPLAY:-}" == 1 ]]; then
+      # Only this suite exercises real browser-window geometry/accelerators.
+      # Scope its WM lifetime so unrelated performance fixtures stay unchanged.
+      if run_command bash "${BASH_SOURCE[0]%/*}/run-native-desktop.sh" env HEADLESS=false node "$suite"; then status=0; else status=$?; fi
+    else
+      if run_command env HEADLESS=false node "$suite"; then status=0; else status=$?; fi
+    fi
     echo "E2E: $suite exited $status"
     if (( status >= 128 )); then
       echo "E2E: interrupted; stopping remaining suites ($suite exited $status)" >&2
@@ -94,7 +100,7 @@ run_with_xvfb() {
   echo "$reason"
   # xvfb-run uses /bin/sh, which may strip exported Bash functions. Re-enter
   # this script instead, keeping the suite list and signal handling shared.
-  run_command xvfb-run -a bash "${BASH_SOURCE[0]}" --internal-headed
+  run_command xvfb-run -a env OPENTAB_E2E_OWNED_DISPLAY=1 bash "${BASH_SOURCE[0]}" --internal-headed
 }
 
 if [[ "${1:-}" == "--internal-headed" ]]; then

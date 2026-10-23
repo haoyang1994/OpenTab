@@ -54,6 +54,8 @@ assert.match(nativeJob, /core: \$\{\{ steps\.complete\.outputs\.core \}\}/);
 assert.ok(nativeJob.indexOf('- name: Record completed native group') > nativeJob.indexOf('run: npm test'));
 assert.match(nativeJob, /run: echo "\$E2E_GROUP=success" >> "\$GITHUB_OUTPUT"/);
 assert.match(nativeJob, /name: browser-verification-\$\{\{ matrix\.e2e_group \}\}/);
+assert.match(nativeJob, /- name: Install isolated native desktop fixture\n        if: matrix\.e2e_group == 'core'\n        timeout-minutes: 3/);
+assert.match(nativeJob, /sudo apt-get install --no-install-recommends -y openbox/);
 assert.doesNotMatch(nativeJob, /test:package:smoke|unsigned-extension-candidate/);
 assert.match(aggregateJob, /name: Test\n    if: always\(\)\n    needs: \[test-suites\]/);
 assert.match(aggregateJob, /timeout-minutes: 35/);
@@ -84,6 +86,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'opentab-e2e-runner-'));
 const bin = path.join(temp, 'bin');
 const log = path.join(temp, 'suites.log');
 const xvfbLog = path.join(temp, 'xvfb.log');
+const wmLog = path.join(temp, 'wm.log');
 fs.mkdirSync(bin);
 
 function executable(name, contents, interpreter = bash) {
@@ -92,7 +95,7 @@ function executable(name, contents, interpreter = bash) {
 
 // A closed PATH guarantees these checks can never launch real Node/Chromium or
 // xvfb. Only the shell, env, and a short cancellation-test sleep are real.
-for (const name of ['bash', 'env', 'sleep']) {
+for (const name of ['bash', 'sh', 'python3', 'env', 'sleep', 'mktemp', 'touch', 'rm']) {
   const actual = execFileSync(bash, ['-c', `command -v ${name}`], { encoding: 'utf8' }).trim();
   fs.symlinkSync(actual, path.join(bin, name));
 }
@@ -103,12 +106,30 @@ executable('xvfb-run', `
 [ "$1" = "-a" ] || exit 90
 printf 'xvfb\\n' >> "$E2E_XVFB_LOG"
 shift
+DISPLAY=:owned
+export DISPLAY
 "$@"
 status=$?
 exit "\${FAKE_XVFB_EXIT:-$status}"
 `, '/bin/sh');
+executable('openbox', `
+[[ "$1" == --sm-disable && "$2" == --startup ]] || exit 91
+[[ "$OPENTAB_E2E_OWNED_DISPLAY" == 1 && "$DISPLAY" == :owned ]] || exit 92
+printf 'start\\n' >> "$E2E_WM_LOG"
+trap 'printf "stop\\n" >> "$E2E_WM_LOG"; exit 0' HUP INT TERM
+if [[ "\${FAKE_WM_EXIT:-}" == 1 ]]; then exit 44; fi
+# Openbox uses g_shell_parse_argv + g_spawn_async, not implicit shell eval.
+if [[ "\${FAKE_WM_NOT_READY:-}" != 1 ]]; then
+  python3 -c 'import shlex, subprocess, sys; subprocess.run(shlex.split(sys.argv[1]), check=True)' "$3"
+fi
+while true; do sleep 0.05; done
+`);
 executable('node', `
 suite=$1
+if [[ "$suite" == tests/zen-mode.test.mjs && "\${OPENTAB_E2E_OWNED_DISPLAY:-}" == 1 ]]; then
+  [[ -f "$OPENTAB_WM_READY_FILE" ]] || exit 93
+  printf 'suite\\n' >> "$E2E_WM_LOG"
+fi
 printf '%s|%s|%s\\n' "$suite" "\${HEADLESS:-}" "\${PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS:-}" >> "$E2E_LOG"
 printf 'stdout: %s\\n' "$suite"
 printf 'stderr: %s\\n' "$suite" >&2
@@ -140,6 +161,7 @@ const modes = [
 function prepare(mode, extra = {}) {
   fs.writeFileSync(log, '');
   fs.writeFileSync(xvfbLog, '');
+  fs.writeFileSync(wmLog, '');
   const env = {
     ...process.env,
     PATH: bin,
@@ -149,10 +171,12 @@ function prepare(mode, extra = {}) {
     PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS: '0',
     E2E_LOG: log,
     E2E_XVFB_LOG: xvfbLog,
+    E2E_WM_LOG: wmLog,
   };
   // CI deliberately sets this variable. Default-run coverage must remain full
   // even when the runner unit tests execute inside either CI partition.
   delete env.OPENTAB_E2E_GROUP;
+  delete env.OPENTAB_E2E_OWNED_DISPLAY;
   return { ...env, ...extra };
 }
 
@@ -179,7 +203,7 @@ function run(mode, extra = {}, { xvfb = mode.xvfb } = {}) {
 }
 
 async function cancel(mode, signal, expectedStatus, selected = suites, extra = {}) {
-  const blockedIndex = Math.min(1, selected.length - 1);
+  const blockedIndex = extra.FAKE_BLOCK_SUITE ? selected.indexOf(extra.FAKE_BLOCK_SUITE) : Math.min(1, selected.length - 1);
   const child = spawn(bash, [runner], {
     cwd: root,
     env: prepare(mode, { ...extra, FAKE_BLOCK_SUITE: selected[blockedIndex] }),
@@ -212,6 +236,8 @@ try {
     const success = run(mode);
     assert.equal(success.status, 0, mode.name);
     assertCalls(suites);
+    assert.equal(fs.readFileSync(wmLog, 'utf8'), mode.xvfb ? 'start\nsuite\nstop\n' : '',
+      'only the Zen suite on a runner-owned display gets a scoped, cleaned-up WM');
     assert.match(success.stdout, new RegExp(`E2E: all ${suites.length} suites passed`));
     for (const suite of suites) {
       assert.ok(success.stdout.includes(`stdout: ${suite}\n`), 'suite stdout must remain visible');
@@ -241,6 +267,14 @@ try {
     }
     await cancel(mode, 'SIGINT', 130);
     await cancel(mode, 'SIGTERM', 143);
+    if (mode.xvfb) {
+      await cancel(mode, 'SIGTERM', 143, suites, { FAKE_BLOCK_SUITE: 'tests/zen-mode.test.mjs' });
+      assert.equal(fs.readFileSync(wmLog, 'utf8'), 'start\nsuite\nstop\n', 'cancelling the WM-backed suite cleans up its manager');
+      const wmFailure = run(mode, { FAKE_WM_EXIT: '1' });
+      assert.equal(wmFailure.status, 1);
+      assertCalls(suites.filter(suite => suite !== 'tests/zen-mode.test.mjs'));
+      assert.match(wmFailure.stderr, /window manager exited before readiness/);
+    }
 
     const explicitAll = run(mode, { OPENTAB_E2E_GROUP: 'all' });
     assert.equal(explicitAll.status, 0);
@@ -283,6 +317,28 @@ try {
 
   const xvfbFailure = run(modes[2], { FAKE_XVFB_EXIT: '42' });
   assert.equal(xvfbFailure.status, 42, 'xvfb failure must not be hidden by successful suites');
+
+  const desktop = path.join(root, 'scripts/run-native-desktop.sh');
+  const desktopEnv = extra => prepare(modes[2], { DISPLAY: ':owned', OPENTAB_E2E_OWNED_DISPLAY: '1', ...extra });
+  for (const extra of [{ OPENTAB_E2E_OWNED_DISPLAY: '' }, { DISPLAY: '' }]) {
+    const rejected = spawnSync(bash, [desktop, 'node', suites[2]], { env: desktopEnv(extra), encoding: 'utf8' });
+    assert.equal(rejected.status, 2, 'never start a window manager on an unowned/absent display');
+    assertCalls([]);
+    assert.equal(fs.readFileSync(wmLog, 'utf8'), '');
+  }
+  const notReady = spawnSync(bash, [desktop, 'node', suites[2]], {
+    env: desktopEnv({ FAKE_WM_NOT_READY: '1' }), encoding: 'utf8', timeout: 10000,
+  });
+  assert.ifError(notReady.error);
+  assert.equal(notReady.status, 1);
+  assert.match(notReady.stderr, /did not become ready within 5 seconds/);
+  assertCalls([]);
+  assert.equal(fs.readFileSync(wmLog, 'utf8'), 'start\nstop\n');
+  fs.unlinkSync(path.join(bin, 'openbox'));
+  const noManager = spawnSync(bash, [desktop, 'node', suites[2]], { env: desktopEnv({}), encoding: 'utf8' });
+  assert.equal(noManager.status, 1);
+  assert.match(noManager.stderr, /needs Openbox/);
+  assertCalls([]);
 
   fs.unlinkSync(path.join(bin, 'xvfb-run'));
   for (const mode of modes.filter((candidate) => candidate.xvfb)) {
