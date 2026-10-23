@@ -10,6 +10,18 @@ const zenSource = source('zen-mode.js'), clockSource = source('clock-deck.js');
 const zenCss = source('zen-mode.css').replace(/\/\*[\s\S]*?\*\//g, '');
 assert.match(zenCss, /(?:^|})\s*#homepage\s*\{[^}]*\btransition\s*:\s*none\s*!important\s*;/,
   'the homepage permanently disables transitions, including after the Zen class is removed');
+const homeCss = source('home.css').replace(/\/\*[\s\S]*?\*\//g, '');
+const reducedMotionCss = [...homeCss.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/g)]
+  .map(match => match[1]).find(block => /\*\s*,\s*\*::before\s*,\s*\*::after/.test(block));
+assert.ok(reducedMotionCss, 'the global reduced-motion preference remains explicitly scoped');
+assert.match(reducedMotionCss, /\*\s*,\s*\*::before\s*,\s*\*::after\s*\{/,
+  'the zero-transition guard includes structural wrappers and pseudo-elements, not one patched focus target');
+assert.match(reducedMotionCss, /\btransition-duration\s*:\s*0s\s*!important\s*;/,
+  'reduced motion uses zero transition duration so inherited visibility cannot delay focus');
+assert.match(reducedMotionCss, /\btransition-delay\s*:\s*0s\s*!important\s*;/,
+  'reduced motion also removes transition delay');
+assert.match(reducedMotionCss, /\banimation-duration\s*:\s*0\.01ms\s*!important\s*;/,
+  'the transition fix does not change the existing animation-duration behavior');
 
 // Load both real modules, including getFocus(), subscription/ticking and the
 // entry click handler. Only browser primitives, storage and wall time are fake.

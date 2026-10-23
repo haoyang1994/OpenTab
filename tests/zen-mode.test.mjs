@@ -185,6 +185,88 @@ async function exit() {
       'the nonanimated isolation wrapper restores immediate visibility even under reduced motion');
   } catch (error) { await reportFocusFailure('exit'); throw error; }
 }
+async function todoRowDiagnostics() {
+  return page.evaluate(() => {
+    const row = document.querySelector('.todo-input-row'), input = document.getElementById('todo-input');
+    const rowStyle = getComputedStyle(row), inputStyle = getComputedStyle(input), rect = row.getBoundingClientRect();
+    return { active: { tag: document.activeElement?.tagName, id: document.activeElement?.id || '' },
+      row: { transition: rowStyle.transitionProperty, duration: rowStyle.transitionDuration, visibility: rowStyle.visibility,
+        inert: Boolean(row.closest('[inert]')), width: rect.width, height: rect.height },
+      input: { transition: inputStyle.transitionProperty, visibility: inputStyle.visibility, disabled: input.disabled },
+      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  });
+}
+const transitionSurfaces = [
+  '#homepage', '#content', '#clock-deck', '#clock-deck-stage', '#clock-widget', '#clock-focus-card', '#clock-todo-card', '#clock-deck-nav',
+  '#clock-focus-card .clock-card-actions', '#clock-todo-card .clock-card-actions', '#clock-focus-time', '#clock-focus-toggle', '.clock-deck-dots', '[data-clock-card="1"]',
+  '#search-widget-wrap', '#search-widget', '#search-engine-switch', '#search-engine-panel', '.engine-deck-rail',
+  '#zen-mode', '.zen-center', '.zen-controls', '#zen-focus-toggle', '#zen-exit',
+  '#todo-widget', '.todo-input-row', '#todo-input', '#clock-todo-open',
+  '#command-palette', '.command-palette-panel', '#command-palette-input',
+  '#settings-panel', '.settings-header', '.settings-header-tools', '.settings-search-label', '.settings-shell', '.settings-main', '#settings-search',
+  '#add-icon-modal', '#add-icon-modal .modal-content', '#add-icon-modal .form-group', '#icon-name',
+  '#change-icon-modal', '#change-icon-modal .modal-content', '#change-icon-modal .form-group', '.change-icon-placeholder-row', '#change-icon-letter',
+  '#timezone-selector', '#timezone-list', '#timezone-list .timezone-item', '#calendar-popover'
+];
+async function transitionSnapshot(selectors) {
+  return page.evaluate(selectors => selectors.map(selector => {
+    const element = document.querySelector(selector);
+    if (!element) return { selector, missing: true };
+    const style = getComputedStyle(element);
+    return { selector, property: style.transitionProperty, duration: style.transitionDuration, delay: style.transitionDelay,
+      visibility: style.visibility, display: style.display, inert: Boolean(element.closest('[inert]')), focused: element === document.activeElement };
+  }), selectors);
+}
+async function assertReducedTransitions(label) {
+  for (const surface of await transitionSnapshot(transitionSurfaces)) {
+    assert.equal(surface.missing, undefined, `${label}: ${surface.selector} exists in the real page`);
+    assert.ok(surface.duration.split(',').every(value => parseFloat(value) === 0), `${label}: no reduced-motion transition duration: ${JSON.stringify(surface)}`);
+    assert.ok(surface.delay.split(',').every(value => parseFloat(value) === 0), `${label}: no reduced-motion transition delay: ${JSON.stringify(surface)}`);
+  }
+}
+async function verifyReducedMotionFocusFlows() {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  for (const surface of await transitionSnapshot(['#clock-focus-card', '#search-engine-switch', '#todo-widget'])) {
+    assert.equal(surface.missing, undefined);
+    assert.ok(surface.duration.split(',').some(value => parseFloat(value) > 0), `normal motion remains enabled: ${JSON.stringify(surface)}`);
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await assertReducedTransitions('all closed');
+  const timezone = await page.evaluate(() => {
+    const list = document.getElementById('timezone-list'); return (list.querySelector('.active') || list.firstElementChild).dataset.tz;
+  });
+  const flows = [
+    { name: 'Zen', open: () => enter(), focused: '#zen-focus-toggle', close: () => exit(), opener: '#zen-toggle-btn' },
+    { name: 'TODO', open: async () => { await page.click('[data-clock-card="2"]'); await page.click('#clock-todo-open'); }, focused: '#todo-input',
+      close: () => page.keyboard.press('Escape'), opener: '#clock-todo-open', finish: () => page.click('[data-clock-card="0"]') },
+    { name: 'settings', open: () => page.click('#settings-btn'), focused: '#settings-search', close: () => page.click('#close-settings'), opener: '#settings-btn' },
+    { name: 'command palette', open: async () => { await page.locator('#zen-toggle-btn').focus(); await page.keyboard.press('Control+k'); },
+      focused: '#command-palette-input', close: () => page.keyboard.press('Escape'), opener: '#zen-toggle-btn' },
+    { name: 'add-site dialog', open: () => page.click('#add-shortcut-tile'), focused: '#icon-name', close: () => page.click('#cancel-btn'), opener: '#add-shortcut-tile' },
+    { name: 'change-icon dialog', open: async () => { await page.click('.icon-widget[data-id="study-docs"]', { button: 'right' }); await page.click('#change-icon-btn'); },
+      focused: '#change-icon-letter', close: () => page.click('#change-icon-close'), opener: '.icon-widget[data-id="study-docs"]' },
+    { name: 'timezone', open: () => page.click('#timezone-btn'), focused: `#timezone-list [data-tz=${JSON.stringify(timezone)}]`,
+      close: () => page.keyboard.press('Escape'), opener: '#timezone-btn' }
+  ];
+  for (const flow of flows) {
+    try {
+      await flow.open();
+      assert.equal(await page.locator(flow.focused).evaluate(element => element === document.activeElement), true, `${flow.name} immediately focuses its exact intended control`);
+      const focused = await transitionSnapshot([flow.focused]);
+      assert.equal(focused[0].visibility, 'visible', `${flow.name} focus is visible immediately`);
+      assert.equal(focused[0].inert, false, `${flow.name} focus is not inside an inert subtree`);
+      await assertReducedTransitions(`${flow.name} open`);
+      await flow.close();
+      assert.equal(await page.locator(flow.opener).evaluate(element => element === document.activeElement), true, `${flow.name} immediately restores its exact opener`);
+      await assertReducedTransitions(`${flow.name} closed`);
+      await flow.finish?.();
+    } catch (error) {
+      console.error(`Zen: reduced-motion focus flow ${flow.name}: ${JSON.stringify({ active: await page.evaluate(() => ({ tag: document.activeElement?.tagName, id: document.activeElement?.id || '' })), surfaces: await transitionSnapshot(transitionSurfaces) })}`);
+      throw error;
+    }
+  }
+  console.log(`Zen: reduced-motion wrapper transitions and ${flows.length} exact native focus flows passed`);
+}
 async function nativeEscapeDiagnostics() {
   return page.evaluate(() => ({ mode: __zenFullscreen.mode, supported: __zenFullscreen.available,
     requestStatus: __zenFullscreen.status, requestCalls: __zenFullscreen.calls, exitCalls: __zenFullscreen.exits,
@@ -298,6 +380,8 @@ try {
     assert.equal(await page.locator('#homepage').evaluate(home => home.inert), false);
   }
 
+  await reset(); await fullscreen('unsupported'); await verifyReducedMotionFocusFlows();
+
   // The real deck and Zen use one timer, in both directions, without restarting.
   await reset(); await fullscreen('unsupported'); await page.click('[data-clock-card="1"]'); await page.click('#clock-focus-toggle');
   await page.waitForFunction(() => document.getElementById('clock-focus-time').textContent !== '25:00');
@@ -371,13 +455,22 @@ try {
 
   // Legacy minimal mode is separate, and TODO remains accessible from card 2.
   await reset(); await fullscreen('unsupported'); await page.click('[data-clock-card="2"]');
+  assert.equal((await todoRowDiagnostics()).row.duration, '0s', 'the collapsed TODO input row already respects reduced motion');
   await page.click('#clock-todo-open'); await page.waitForSelector('#todo-widget:not(.hidden)');
-  assert.equal(await focusId(), 'todo-input'); assert.equal((await page.locator('#todo-list').innerText()).includes('Read one chapter'), true);
+  try { assert.equal(await focusId(), 'todo-input'); }
+  catch (error) { console.error(`Zen: TODO focus diagnostics ${JSON.stringify(await todoRowDiagnostics())}`); throw error; }
+  const todoRow = await todoRowDiagnostics();
+  assert.deepEqual(todoRow.row, { transition: todoRow.row.transition, duration: '0s', visibility: 'visible', inert: false, width: todoRow.row.width, height: todoRow.row.height },
+    'the TODO input wrapper becomes immediately visible without a reduced-motion visibility transition');
+  assert.ok(todoRow.row.width > 0 && todoRow.row.height > 0); assert.equal(todoRow.input.visibility, 'visible');
+  assert.equal(todoRow.input.disabled, false); assert.equal(todoRow.reducedMotion, true, 'exercise the reduced-motion regression rather than the easier default-motion path');
+  assert.equal((await page.locator('#todo-list').innerText()).includes('Read one chapter'), true);
   const openTodoState = await read(protectedKeys);
   await enter(); assert.equal(await page.locator('#todo-widget').isVisible(), false); await exit();
   assert.equal(await page.locator('#todo-widget').isVisible(), true, 'an open TODO panel returns exactly as it was after Zen');
   assert.deepEqual(await read(protectedKeys), openTodoState, 'Zen never rewrites the panel-open preference or task data');
   await page.click('#todo-collapse-btn');
+  assert.equal((await todoRowDiagnostics()).row.duration, '0s', 'closing the TODO panel retains the reduced-motion guard');
   for (const minimalMode of [false, true]) for (const todoButtonVisible of [false, true]) {
     await reset({ minimalMode, todoButtonVisible }); await fullscreen('unsupported');
     const before = await read(protectedKeys), scene = await view();
