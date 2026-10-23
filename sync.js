@@ -43,7 +43,7 @@
     'uiBlur',
     'iconFrameEnabled',
     'openInNewTab',
-    'timezone',
+    'timezone', 'timezoneMode',
     'themeMode',
     'accentHue',
     'particlesEnabled',
@@ -852,11 +852,15 @@
           icons: mergeRemoteIcons(payload.icons, local.icons),
           folders: groupsToFolders(foldersToGroups(payload.folders))
         };
-        if (scenePlan) { sceneUndo = local; scenePatch = { ...toSet }; recoveredSceneIds = scenePlan.recoveredSceneIds; }
-        const settings = payload.settings || {};
+        const settings = { ...(payload.settings || {}) };
+        // Preserve a legacy sender's explicit zone instead of inheriting local automatic mode.
+        if (settings.timezone !== undefined && settings.timezoneMode === undefined) {
+          settings.timezoneMode = 'fixed'; toSet.timezoneMode = 'fixed';
+        }
         (version === 2 ? [] : SYNC_SETTING_KEYS).forEach((key) => {
           if (settings[key] !== undefined) toSet[key] = settings[key];
         });
+        if (scenePlan) { sceneUndo = local; scenePatch = { ...toSet }; recoveredSceneIds = scenePlan.recoveredSceneIds; }
         if (options && options.snapshotReason && typeof OpenTabImport !== 'undefined' && OpenTabImport.prepareSnapshotRecord) {
           const prepared = OpenTabImport.prepareSnapshotRecord(options.snapshotReason, local, version === 2 ? { completeness: 'full' } : undefined);
           if (version === 2 && (!prepared.record || prepared.record.completeness !== 'full')) throw syncError('SCENE_RECOVERY_UNAVAILABLE');

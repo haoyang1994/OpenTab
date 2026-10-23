@@ -21,11 +21,25 @@
     const panel = $('zen-mode');
     panel.dataset.phase = value.phase;
     $('zen-time').textContent = root.OpenTabClockDeck.formatRemaining(value.remaining);
-    const label = value.phase === 'running' ? '暂停' : value.phase === 'paused' ? '继续专注' : value.phase === 'done' ? '再专注一次' : '开始专注';
-    $('zen-focus-toggle').setAttribute('aria-label', t(label));
-    $('zen-focus-reset').disabled = value.phase === 'idle';
+    const label = value.phase === 'running' ? '暂停' : value.phase === 'paused' ? '继续专注' : value.phase === 'done' ? '再次专注' : '开始专注';
+    const toggle = $('zen-focus-toggle'), reset = $('zen-focus-reset'), presets = $('zen-presets');
+    const editable = value.phase === 'idle' || value.phase === 'done';
+    const restoreFocus = active && ((!editable && presets.contains(document.activeElement))
+      || (value.phase === 'idle' && document.activeElement === reset));
+    toggle.textContent = t(label);
+    toggle.setAttribute('aria-label', t(label));
+    reset.hidden = reset.disabled = value.phase === 'idle';
+    presets.hidden = !editable;
+    presets.querySelectorAll('button').forEach(button => {
+      button.disabled = !editable;
+      button.setAttribute('aria-pressed', String(Number(button.dataset.duration) === value.duration));
+    });
+    // The ring and the original clock card express elapsed time from the same
+    // selected duration. It is decorative; the timer supplies the accessible time.
+    $('zen-progress').style.strokeDashoffset = String(100 * value.remaining / value.duration);
     const status = value.phase === 'running' ? '专注中' : value.phase === 'paused' ? '已暂停' : value.phase === 'done' ? '已完成' : '';
     if ($('zen-status').textContent !== t(status)) $('zen-status').textContent = t(status);
+    if (restoreFocus) toggle.focus({ preventScroll: true });
   }
   function enter(opener = document.activeElement) {
     if (active || !host?.focus) return false;
@@ -94,7 +108,7 @@
       return;
     }
     if (event.isComposing || event.keyCode === 229) return;
-    const controls = [...$('zen-mode').querySelectorAll('button')].filter(button => !button.disabled);
+    const controls = [...$('zen-mode').querySelectorAll('button')].filter(button => !button.disabled && !button.hidden && !button.closest('[hidden], [inert]'));
     if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       const index = controls.indexOf(document.activeElement);
@@ -114,6 +128,9 @@
     $('zen-exit').addEventListener('click', exit);
     $('zen-focus-toggle').addEventListener('click', () => host.focus.toggle());
     $('zen-focus-reset').addEventListener('click', () => host.focus.reset());
+    $('zen-presets').querySelectorAll('button').forEach(button => {
+      button.addEventListener('click', () => host.focus.setDuration(Number(button.dataset.duration)));
+    });
     document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) fullscreenOwner = false; });
     root.addEventListener('keydown', keydown, true);
     root.addEventListener('keyup', event => { if (active) event.stopImmediatePropagation(); }, true);

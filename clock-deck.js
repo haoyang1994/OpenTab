@@ -1,6 +1,7 @@
 (function(root) {
   'use strict';
   const DURATION = 25 * 60 * 1000;
+  const DURATIONS = Object.freeze([15, 25, 50].map(minutes => minutes * 60 * 1000));
   const FOCUS_KEY = 'opentab.focus.v1';
   const SWIPE_EXCLUDE = 'button, a, input, textarea, select, [contenteditable], [role="button"], .timezone-selector, .calendar-popover, #weather-pill, [data-deck-no-swipe]';
   const t = (s, p) => root.OpenTabI18n ? root.OpenTabI18n.t(s, p) : s.replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
@@ -8,17 +9,22 @@
   // A deadline, not tick counts: sleeping/background tabs catch up immediately.
   // Only this tab's session storage is used; there is no sync or notification.
   function createFocusTimer({ storage, now = Date.now } = {}) {
-    let state = { phase: 'idle', remaining: DURATION, deadline: null };
+    let state = { phase: 'idle', duration: DURATION, remaining: DURATION, deadline: null };
     let persistent = Boolean(storage), raw = null, lastNow = now();
     try { raw = storage?.getItem(FOCUS_KEY); } catch (_) { persistent = false; }
     try {
       const saved = JSON.parse(raw || 'null');
-      if (saved?.version === 1 && ['running', 'paused', 'done', 'idle'].includes(saved.phase)
-        && Number.isFinite(saved.remaining) && saved.remaining >= 0 && saved.remaining <= DURATION
-        && (saved.phase !== 'running' || (Number.isFinite(saved.deadline) && saved.deadline > 0 && saved.deadline <= now() + DURATION))) {
-        state = { phase: saved.phase, remaining: saved.remaining, deadline: saved.phase === 'running' ? saved.deadline : null };
-        if (state.phase === 'idle') state.remaining = DURATION;
-        if (state.phase === 'done') state.remaining = 0;
+      // Existing v1 records have no duration: migrate those to 25 minutes.
+      // An explicit invalid duration is not a legacy record and must be rejected.
+      const duration = saved && Object.prototype.hasOwnProperty.call(saved, 'duration') ? saved.duration : DURATION;
+      if (saved?.version === 1 && DURATIONS.includes(duration)
+        && ['running', 'paused', 'done', 'idle'].includes(saved.phase)
+        && Number.isFinite(saved.remaining) && saved.remaining >= 0 && saved.remaining <= duration
+        && (saved.phase !== 'idle' || saved.remaining === duration)
+        && (saved.phase !== 'done' || saved.remaining === 0)
+        && (!['running', 'paused'].includes(saved.phase) || saved.remaining > 0)
+        && (saved.phase !== 'running' || (Number.isFinite(saved.deadline) && saved.deadline > 0 && saved.deadline <= now() + duration))) {
+        state = { phase: saved.phase, duration, remaining: saved.remaining, deadline: saved.phase === 'running' ? saved.deadline : null };
       }
     } catch (_) { /* Invalid/blocked session storage starts a fresh local timer. */ }
     function persist() {
@@ -31,8 +37,8 @@
       const currentNow = now();
       if (state.phase === 'running') {
         if (currentNow < lastNow) { state.deadline += currentNow - lastNow; persist(); }
-        state.remaining = Math.max(0, Math.min(DURATION, state.deadline - currentNow));
-        if (!state.remaining) { state = { phase: 'done', remaining: 0, deadline: null }; persist(); }
+        state.remaining = Math.max(0, Math.min(state.duration, state.deadline - currentNow));
+        if (!state.remaining) { state = { ...state, phase: 'done', remaining: 0, deadline: null }; persist(); }
       }
       lastNow = currentNow;
       return { ...state, persistent };
@@ -41,14 +47,22 @@
       snapshot,
       toggle() {
         snapshot();
-        if (state.phase === 'running') state = { phase: 'paused', remaining: state.remaining, deadline: null };
+        if (state.phase === 'running') state = { ...state, phase: 'paused', deadline: null };
         else {
-          const remaining = state.remaining || DURATION;
-          state = { phase: 'running', remaining, deadline: now() + remaining };
+          const remaining = state.remaining || state.duration;
+          state = { ...state, phase: 'running', remaining, deadline: now() + remaining };
         }
         persist(); return snapshot();
       },
-      reset() { state = { phase: 'idle', remaining: DURATION, deadline: null }; persist(); return snapshot(); }
+      reset() { state = { ...state, phase: 'idle', remaining: state.duration, deadline: null }; persist(); return snapshot(); },
+      setDuration(duration) {
+        snapshot();
+        // Presets configure the next session only; they never start a timer or
+        // discard a running/paused session, including programmatic activation.
+        if (!DURATIONS.includes(duration) || !['idle', 'done'].includes(state.phase) || duration === state.duration) return snapshot();
+        state = { phase: 'idle', duration, remaining: duration, deadline: null };
+        persist(); return snapshot();
+      }
     };
   }
   function formatRemaining(milliseconds) {
@@ -252,9 +266,10 @@
     function renderFocus() {
       const value = timer.snapshot();
       $('clock-focus-time').textContent = formatRemaining(value.remaining);
-      $('clock-focus-toggle').textContent = t(value.phase === 'running' ? '暂停' : value.phase === 'paused' ? '继续专注' : value.phase === 'done' ? '再专注一次' : '开始专注');
+      $('clock-focus-toggle').textContent = t(value.phase === 'running' ? '暂停' : value.phase === 'paused' ? '继续专注' : value.phase === 'done' ? '再次专注' : '开始专注');
       $('clock-focus-reset').disabled = value.phase === 'idle';
-      $('clock-focus-progress').value = DURATION - value.remaining;
+      $('clock-focus-progress').max = value.duration;
+      $('clock-focus-progress').value = value.duration - value.remaining;
       $('clock-focus-note').textContent = value.persistent ? '' : t('暂存不可用；刷新将重置计时。');
       focusListeners.forEach(listener => listener(value));
       if (lastPhase !== value.phase) {
@@ -322,6 +337,7 @@
       snapshot: () => timer.snapshot(),
       toggle() { timer.toggle(); tick(); },
       reset() { timer.reset(); tick(); },
+      setDuration(duration) { timer.setDuration(duration); tick(); },
       subscribe(listener) { focusListeners.add(listener); listener(timer.snapshot()); return () => focusListeners.delete(listener); }
     } };
   }
@@ -331,5 +347,5 @@
     // Optional card enhancement must never prevent the existing list loading.
     try { deck = createDeck(adapter); } catch (error) { root.console?.warn('Clock cards unavailable', error); }
   }
-  root.OpenTabClockDeck = { getFocus: () => deck?.focus, init, renderTodos, createFocusTimer, formatRemaining, swipeDirection, createTodoAction, createTodoRecord, visibleTodos, renderTodoList, DURATION, FOCUS_KEY };
+  root.OpenTabClockDeck = { getFocus: () => deck?.focus, init, renderTodos, createFocusTimer, formatRemaining, swipeDirection, createTodoAction, createTodoRecord, visibleTodos, renderTodoList, DURATION, DURATIONS, FOCUS_KEY };
 })(globalThis);

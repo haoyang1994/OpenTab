@@ -11,13 +11,14 @@ export async function verifyWallpaperReadability(page, artifacts) {
   const reports = [];
   const originalBackdrop = await page.getAttribute('#background-layer', 'style');
   const originalBodyStyle = await page.getAttribute('body', 'style');
+  const originalRootStyle = await page.getAttribute('html', 'style');
   await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' }).then(node => node.evaluate(el => { el.id = 'readability-no-motion'; }));
   try {
     for (const theme of ['light', 'dark']) for (const width of [1280, 360, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await page.evaluate(theme => {
         document.body.classList.toggle('theme-light', theme === 'light');
-        document.body.style.setProperty('--ui-frame-opacity', '0');
+        OpenTabBoot.applyUiOpacity(12);
         document.querySelector('#background-layer').style.background = 'repeating-conic-gradient(#fff 0% 25%, #051326 0% 50%) 0 0 / 24px 24px';
       }, theme);
       await page.locator('#calendar-popover').evaluate(el => el.classList.add('hidden'));
@@ -102,13 +103,14 @@ export async function verifyWallpaperReadability(page, artifacts) {
     }
     fs.writeFileSync(path.join(artifacts, 'wallpaper-readability.json'), JSON.stringify(reports, null, 2));
   } finally {
-    await page.evaluate(({ original, originalBackdrop, originalBodyStyle }) => {
+    await page.evaluate(({ original, originalBackdrop, originalBodyStyle, originalRootStyle }) => {
       document.body.className = original || '';
+      if (originalRootStyle === null) document.documentElement.removeAttribute('style'); else document.documentElement.setAttribute('style', originalRootStyle);
       if (originalBodyStyle === null) document.body.removeAttribute('style'); else document.body.setAttribute('style', originalBodyStyle);
       const backdrop = document.querySelector('#background-layer');
       if (originalBackdrop === null) backdrop.removeAttribute('style'); else backdrop.setAttribute('style', originalBackdrop);
       document.querySelector('#readability-no-motion')?.remove();
-    }, { original: originalClass, originalBackdrop, originalBodyStyle });
+    }, { original: originalClass, originalBackdrop, originalBodyStyle, originalRootStyle });
     await page.setViewportSize(originalViewport);
   }
 }

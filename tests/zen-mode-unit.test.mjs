@@ -4,12 +4,38 @@ import vm from 'node:vm';
 
 const source = name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 const zenSource = source('zen-mode.js'), clockSource = source('clock-deck.js');
+const entryMarkup = source('home.html').match(/<button\b[^>]*\bid="zen-toggle-btn"[^>]*>([\s\S]*?)<\/button>/)?.[0];
+assert.ok(entryMarkup, 'the existing Zen entry remains a button');
+assert.equal(entryMarkup.replace(/<[^>]*>/g, '').trim(), '', 'the Zen entry remains icon-only, without visible text');
+for (const attribute of ['title', 'aria-label', 'data-i18n-title', 'data-i18n-aria-label']) {
+  assert.match(entryMarkup, new RegExp(`\\s${attribute}="禅模式"`), 'the icon-only entry retains its accessible, translated Zen name');
+}
+assert.match(entryMarkup, /\baria-controls="zen-mode"/, 'the entry still identifies its Zen dialog');
+const entrySvg = entryMarkup.match(/<svg\b[^>]*>/g);
+assert.equal(entrySvg?.length, 1, 'the entry uses one inline vector icon');
+for (const attribute of ['width="20"', 'height="20"', 'viewBox="0 0 24 24"', 'fill="none"', 'stroke="currentColor"', 'aria-hidden="true"']) {
+  assert.ok(entrySvg[0].includes(attribute), `the decorative outline keeps ${attribute}`);
+}
+const zenMarkup = source('home.html').match(/<section\b[^>]*\bid="zen-mode"[^>]*>([\s\S]*?)<\/section>/)?.[1];
+assert.ok(zenMarkup);
+assert.equal((zenMarkup.match(/<button\b/g) || []).length, 6, 'only exit, three presets, primary action and secondary reset');
+assert.equal((zenMarkup.match(/<circle\b/g) || []).length, 2, 'only a thin track and elapsed arc, without ticks or additional decoration');
+assert.doesNotMatch(zenMarkup, /<(?:h[1-6]|p|img|canvas|progress)\b/, 'no title, explanatory paragraph, wallpaper, dashboard or extra progress widget');
+assert.match(zenMarkup, /class="zen-ring"[^>]*aria-hidden="true"/);
+assert.match(zenMarkup, /id="zen-focus-toggle"[^>]*>开始专注<\/button>/, 'the timer is explained by its explicit functional action');
+assert.match(zenMarkup, /id="zen-focus-reset"[^>]*disabled hidden/);
 // A universal reduced-motion duration must never create a visibility
 // transition on the isolation wrapper. This rule must apply outside Zen too,
 // or clearing the class still leaves its opener temporarily unfocusable.
 const zenCss = source('zen-mode.css').replace(/\/\*[\s\S]*?\*\//g, '');
 assert.match(zenCss, /(?:^|})\s*#homepage\s*\{[^}]*\btransition\s*:\s*none\s*!important\s*;/,
   'the homepage permanently disables transitions, including after the Zen class is removed');
+assert.match(zenCss, /\.zen-ring\s*\{[^}]*stroke-width:\s*2\s*;/, 'restrained 2px ring, not a heavy dashboard dial');
+assert.match(zenCss, /#zen-mode #zen-exit\s*\{[^}]*right:\s*20px/, 'quiet exit stays in the top-right corner');
+assert.match(zenCss, /#zen-time\s*\{[^}]*font-variant-numeric:\s*tabular-nums/, 'countdown width stays steady as digits change');
+assert.doesNotMatch(zenCss, /(?:backdrop-filter|box-shadow|text-shadow)\s*:/, 'no blur or glow decorates the plain Zen canvas');
+assert.match(zenCss, /@media \(max-height: 640px\)\s*\{\s*#zen-mode\s*\{\s*align-items: start;/, 'short narrow windows scroll from the actual top, never a clipped negative origin');
+assert.match(zenCss, /@media \(max-height: 640px\) and \(min-width: 600px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/, 'short landscape keeps time and primary action together in two columns');
 const homeCss = source('home.css').replace(/\/\*[\s\S]*?\*\//g, '');
 const reducedMotionCss = [...homeCss.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/g)]
   .map(match => match[1]).find(block => /\*\s*,\s*\*::before\s*,\s*\*::after/.test(block));
@@ -35,6 +61,7 @@ function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal =
     if (part.startsWith('#')) return node.id === part.slice(1);
     if (part.startsWith('.')) return node.classList.contains(part.slice(1));
     if (part === '[inert]') return node.inert;
+    if (part === '[hidden]') return node.hidden;
     if (part.startsWith('[')) {
       const [key, value] = part.slice(1, -1).split('=');
       return node.getAttribute(key) !== null && (!value || node.getAttribute(key) === value.replaceAll('"', ''));
@@ -115,7 +142,10 @@ function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal =
   const existingInert = add('already-inert'); existingInert.inert = true;
   const script = add('script', body, 'script');
   const panel = add('zen-mode'); panel.hidden = true;
-  add('zen-exit', panel, 'button'); add('zen-time', panel); add('zen-focus-toggle', panel, 'button'); add('zen-focus-reset', panel, 'button'); add('zen-status', panel);
+  add('zen-exit', panel, 'button'); add('zen-time', panel); add('zen-progress', panel);
+  const presets = add('zen-presets', panel);
+  for (const minutes of [15, 25, 50]) add(`zen-preset-${minutes}`, presets, 'button').dataset.duration = String(minutes * 60000);
+  add('zen-focus-toggle', panel, 'button'); add('zen-focus-reset', panel, 'button'); add('zen-status', panel);
   const deck = add('clock-deck', home), stage = add('clock-deck-stage', deck);
   const clock = add('clock-widget', stage), focusCard = add('clock-focus-card', stage), todoCard = add('clock-todo-card', stage);
   for (const id of ['clock-focus-time', 'clock-focus-status', 'clock-focus-progress', 'clock-focus-note']) add(id, focusCard);
@@ -201,8 +231,49 @@ function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal =
   assert.equal(h.$('zen-time').textContent, '24:30'); h.api.exit(); h.advance(30_000); h.clickEntry();
   assert.equal(h.$('zen-time').textContent, '24:00'); h.advance(24 * 60_000);
   assert.equal(h.panel.dataset.phase, 'done'); assert.equal(h.$('zen-time').textContent, '00:00');
-  assert.equal(h.$('zen-status').textContent, '已完成'); assert.equal(h.$('zen-focus-toggle').getAttribute('aria-label'), '再专注一次');
+  assert.equal(h.$('zen-status').textContent, '已完成'); assert.equal(h.$('zen-focus-toggle').getAttribute('aria-label'), '再次专注');
   h.$('zen-focus-toggle').click(); assert.equal(h.$('clock-focus-time').textContent, '25:00'); assert.equal(h.focus.snapshot().phase, 'running');
+}
+
+for (const minutes of [15, 25, 50]) {
+  const h = harness(), duration = minutes * 60000; h.clickEntry();
+  h.$(`zen-preset-${minutes}`).focus(); h.key('Enter');
+  assert.equal(h.focus.snapshot().duration, duration); assert.equal(h.focus.snapshot().phase, 'idle');
+  assert.equal(h.$('zen-time').textContent, `${minutes}:00`); assert.equal(h.$('clock-focus-time').textContent, `${minutes}:00`);
+  assert.equal(h.$('clock-focus-progress').max, duration); assert.equal(h.$('clock-focus-progress').value, 0);
+  assert.equal(h.$('zen-progress').style.strokeDashoffset, '100');
+  assert.equal(h.$('zen-focus-toggle').textContent, '开始专注'); assert.equal(h.$('zen-focus-reset').hidden, true);
+  for (const preset of [15, 25, 50]) assert.equal(h.$(`zen-preset-${preset}`).getAttribute('aria-pressed'), String(preset === minutes));
+  h.focus.toggle();
+  assert.equal(h.document.activeElement, h.$('zen-focus-toggle'), 'starting from another surface moves focus off the newly hidden preset');
+  assert.equal(h.$('zen-presets').hidden, true); assert.equal(h.$('zen-focus-reset').hidden, false);
+  for (const preset of [15, 25, 50]) assert.equal(h.$(`zen-preset-${preset}`).disabled, true);
+  h.advance(duration / 2);
+  assert.equal(h.$('clock-focus-progress').max, duration); assert.equal(h.$('clock-focus-progress').value, duration / 2);
+  assert.equal(h.$('zen-progress').style.strokeDashoffset, '50', 'Zen ring and clock progress share the same duration');
+  h.$('zen-focus-toggle').click(); assert.equal(h.$('zen-focus-toggle').textContent, '继续专注');
+  assert.equal(h.$('zen-presets').hidden, true, 'paused sessions cannot edit duration');
+  h.focus.setDuration(duration === 900000 ? 3000000 : 900000);
+  assert.equal(h.focus.snapshot().duration, duration); assert.equal(h.focus.snapshot().remaining, duration / 2);
+  for (const key of ['Tab', 'Tab', 'Tab', 'Tab']) { h.key(key); assert.ok(['zen-focus-toggle', 'zen-focus-reset', 'zen-exit'].includes(h.document.activeElement.id), 'hidden disabled presets never enter the keyboard trap'); }
+  h.$('zen-focus-toggle').click(); h.advance(duration / 2);
+  assert.equal(h.$('zen-progress').style.strokeDashoffset, '0'); assert.equal(h.$('clock-focus-progress').value, duration);
+  assert.equal(h.$('zen-focus-toggle').textContent, '再次专注'); assert.equal(h.$('zen-status').textContent, '已完成');
+  assert.equal(h.$('zen-presets').hidden, false); assert.equal(h.$(`zen-preset-${minutes}`).disabled, false);
+  h.$('zen-focus-reset').focus(); h.key('Enter');
+  assert.equal(h.focus.snapshot().phase, 'idle'); assert.equal(h.focus.snapshot().duration, duration);
+  assert.equal(h.$('zen-progress').style.strokeDashoffset, '100'); assert.equal(h.$('clock-focus-progress').value, 0);
+  assert.equal(h.$('zen-focus-reset').hidden, true); assert.equal(h.document.activeElement, h.$('zen-focus-toggle'), 'reset never leaves focus on its hidden button');
+  h.api.exit(); h.focus.toggle(); h.advance(1000); h.clickEntry();
+  assert.equal(h.$('zen-time').textContent, h.$('clock-focus-time').textContent); assert.equal(h.focus.snapshot().duration, duration);
+  assert.deepEqual(h.state, h.pristine, 'presets never expand durable settings or change scene/task state');
+  assert.ok(h.writes.every(write => write.key === 'opentab.focus.v1'), 'presets use only the existing tab-local session key');
+}
+// A hidden control is excluded even independently of its disabled state.
+{
+  const h = harness(); h.clickEntry(); h.$('zen-presets').hidden = true;
+  h.key('Tab'); assert.equal(h.document.activeElement, h.$('zen-exit'));
+  h.key('Tab'); assert.equal(h.document.activeElement, h.$('zen-focus-toggle'));
 }
 
 for (const fullscreen of ['reject', 'throw', 'unsupported']) {
@@ -420,6 +491,8 @@ for (const minimal of [false, true]) for (const hiddenTodo of [false, true]) {
   assert.equal(h.input.value, 'keep this search'); assert.equal(h.focus.snapshot().phase, 'idle');
   h.key('Tab'); assert.equal(h.document.activeElement, h.$('zen-exit'), 'disabled reset is excluded from focus wrapping');
   h.key('Tab', { shiftKey: true }); assert.equal(h.document.activeElement, h.$('zen-focus-toggle'));
+  h.key('Tab', { shiftKey: true }); assert.equal(h.document.activeElement, h.$('zen-preset-50'), 'idle presets participate in keyboard navigation');
+  h.key('Tab'); assert.equal(h.document.activeElement, h.$('zen-focus-toggle'));
   h.key('Enter'); assert.equal(h.focus.snapshot().phase, 'running');
   assert.equal(h.key('Enter', { repeat: true }).defaultPrevented, true, 'repeated Enter suppresses the native default click too');
   assert.equal(h.key(' ', { repeat: true }).defaultPrevented, true, 'repeated Space suppresses native activation');

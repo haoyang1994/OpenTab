@@ -50,7 +50,7 @@ const html = fs.readFileSync(new URL('home.html', root), 'utf8');
 assert.ok(html.indexOf('src="lib/core-accessibility.js"') < html.indexOf('src="home.js"'));
 assert.match(html, /<button id="change-icon-upload"[^>]*type="button"/);
 const home = fs.readFileSync(new URL('home.js', root), 'utf8');
-const timezone = home.slice(home.indexOf('  function renderTimezoneList()'), home.indexOf('  function getTimePartsInTimezone('));
+const timezone = home.slice(home.indexOf('  function renderTimezoneList()'), home.indexOf('  function updateClock('));
 assert.match(timezone, /createElement\('button'\)/);
 assert.match(timezone, /aria-pressed/);
 assert.match(timezone, /aria-expanded/);

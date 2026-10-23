@@ -1,11 +1,11 @@
-/* Local, opaque stacked surfaces; the original clock/popovers keep their IDs. */
+/* One glass face with exposed backing strips, never three overlapping fills. */
 #clock-deck {
-  --deck-surface: #334155;
+  --deck-surface: var(--glass-bg);
   --deck-under: #475569;
   --deck-last: #52647d;
   --deck-border: #64748b;
-  --deck-text: #f8fafc;
-  --deck-muted: #cbd5e1;
+  --deck-text: var(--glass-text);
+  --deck-muted: var(--glass-muted);
   --deck-accent: #a5b4fc;
   position: relative;
   z-index: 20;
@@ -16,12 +16,12 @@
   color: var(--deck-text);
 }
 body.theme-light #clock-deck {
-  --deck-surface: #f8fafc;
+  --deck-surface: var(--glass-bg);
   --deck-under: #e2e8f0;
   --deck-last: #cbd5e1;
   --deck-border: #cbd5e1;
-  --deck-text: #334155;
-  --deck-muted: #64748b;
+  --deck-text: var(--glass-text);
+  --deck-muted: var(--glass-muted);
   --deck-accent: #4f46e5;
 }
 /* A popover must lift the outer context above autocomplete and group tabs. */
@@ -36,16 +36,18 @@ body.theme-light #clock-deck {
 #clock-deck-stage::before, #clock-deck-stage::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 100%;
+  left: 1.5%;
+  width: 97%;
+  height: 8px;
   z-index: -1;
   border: 1px solid var(--deck-border);
-  border-radius: var(--radius-xl);
-  background: var(--deck-under);
-  transform: translateY(8px) scale(.97);
-  transform-origin: center bottom;
+  border-top: 0;
+  border-radius: 0 0 24px 24px;
+  background: var(--glass-hover-bg);
   pointer-events: none;
 }
-#clock-deck-stage::after { z-index: -2; background: var(--deck-last); transform: translateY(16px) scale(.94); }
+#clock-deck-stage::after { top: calc(100% + 8px); left: 3%; width: 94%; z-index: -2; background: var(--glass-bg); }
 #clock-deck .clock-deck-card {
   grid-area: 1 / 1;
   position: relative;
@@ -61,8 +63,8 @@ body.theme-light #clock-deck {
   background: var(--deck-surface);
   color: var(--deck-text);
   box-shadow: 0 18px 46px -28px rgba(15, 23, 42, .32);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  backdrop-filter: blur(var(--ui-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-blur-strong));
   transform: none;
   opacity: 1;
   visibility: visible;
@@ -102,7 +104,7 @@ body.theme-light #clock-deck {
 .clock-todo-mark { display: grid; place-items: center; width: 34px; height: 34px; margin-top: 14px; border: 1px solid var(--deck-border); border-radius: 11px; color: var(--deck-accent); font-size: 20px; }
 #clock-todo-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; width: 100%; max-height: 4.5em; margin-top: 12px; font-size: 21px; line-height: 1.5; font-weight: 500; }
 #clock-deck-peek { position: absolute; z-index: 0; bottom: -18px; left: 3%; width: 94%; height: 19px; padding: 0; border: 0; border-radius: 0 0 24px 24px; background: transparent; cursor: pointer; touch-action: manipulation; }
-#clock-deck-nav { display: flex; align-items: center; justify-content: center; gap: 0; width: max-content; max-width: 100%; margin: 28px auto 0; padding: 1px 5px; border: 1px solid var(--deck-border); border-radius: 999px; background: var(--deck-surface); }
+#clock-deck-nav { display: flex; align-items: center; justify-content: center; gap: 0; width: max-content; max-width: 100%; margin: 28px auto 0; padding: 1px 5px; border: 1px solid var(--deck-border); border-radius: 999px; background: var(--deck-surface); backdrop-filter: blur(var(--ui-blur-medium)); -webkit-backdrop-filter: blur(var(--ui-blur-medium)); }
 #clock-deck-nav button { display: grid; place-items: center; flex: none; min-width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--deck-muted); font: inherit; font-size: 23px; cursor: pointer; }
 #clock-deck-nav button:hover { background: var(--deck-under); color: var(--deck-text); }
 .clock-deck-dots { display: flex; gap: 0; }
@@ -122,7 +124,7 @@ body.minimal-mode #clock-deck #ampm { color: var(--text-primary); }
 @media (max-width: 760px) {
   #clock-deck { width: 100%; margin-top: 8px; }
   #clock-deck .clock-deck-card { min-height: 306px; padding: 28px 18px 22px; border-radius: 26px; }
-  #clock-deck-stage::before, #clock-deck-stage::after { border-radius: 26px; }
+  #clock-deck-stage::before, #clock-deck-stage::after { border-radius: 0 0 20px 20px; }
   #clock-deck #time { font-size: clamp(58px, 16vw, 84px); }
   /* Keep the timezone text clear of the fixed top-left Zen entry. */
   #clock-deck #timezone-label { margin-left: 36px; }

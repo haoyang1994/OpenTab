@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
@@ -107,7 +108,7 @@ function bingHarness({ initialView = viewFor('a') } = {}) {
       const saved = await persistence(payload, guard);
       if (saved !== true || JSON.stringify(view) !== JSON.stringify(guard.view)) return false;
       const p = profiles.find(p => p.id === guard.view.sceneId);
-      if (JSON.stringify(p.background) !== JSON.stringify(guard.before)) return false;
+      if (!isDeepStrictEqual(copy(p.background), copy(guard.before))) return false;
       const oldValue = copy(profiles);
       Object.assign(p, copy(payload));
       listeners.forEach(fn => fn({ sceneProfiles: { oldValue, newValue: copy(profiles) } }, 'local'));

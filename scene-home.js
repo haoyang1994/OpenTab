@@ -71,7 +71,10 @@
     if (result.uiBlur !== undefined) state.uiBlur = Number(result.uiBlur);
     if (result.iconFrameEnabled !== undefined) state.iconFrameEnabled = Boolean(result.iconFrameEnabled);
     state.openInNewTab = Boolean(result.openInNewTab);
-    if (result.timezone) state.timezone = result.timezone;
+    // Keep the durable preference distinct from its effective system fallback.
+    // Missing values clear stale boot state and remain absent until chosen.
+    state.timezone = result.timezone;
+    state.timezoneMode = result.timezoneMode;
     if (result.bingIndex !== undefined) state.bingIndex = result.bingIndex;
     if (result.themeMode) state.themeMode = result.themeMode;
     if (result.accentHue !== undefined) state.accentHue = Number(result.accentHue);

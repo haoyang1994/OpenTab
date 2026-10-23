@@ -149,7 +149,8 @@ try {
     assert.equal(await page.locator('#search-widget-wrap').evaluate(el => el.getBoundingClientRect().top), searchTop, 'card switch never shifts search');
     await noInactiveFocus();
     const surface = await page.locator('.clock-deck-card[data-active="true"]').evaluate(el => ({ bg: getComputedStyle(el).backgroundColor, blur: getComputedStyle(el).backdropFilter }));
-    assert.match(surface.bg, /^rgb\(/); assert.equal(surface.blur, 'none', 'solid slate surface');
+    assert.match(surface.bg, /^rgba\(/, 'clock uses the chosen translucent glass surface');
+    assert.match(surface.blur, /^blur\(\d+(?:\.\d+)?px\)$/, 'clock consumes the user blur setting');
     await page.locator('#clock-deck').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(artifacts, `clock-deck-${index}-light-en.png`), animations: 'disabled' });
   }

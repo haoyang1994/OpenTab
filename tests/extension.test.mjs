@@ -1,4 +1,5 @@
 import { verifyWallpaperReadability } from './wallpaper-readability.mjs';
+import { verifyBingCacheRepair } from './bing-cache-repair.mjs';
 import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
@@ -621,6 +622,7 @@ async function runExtensionE2E() {
     );
 
     await verifyWallpaperReadability(page, ARTIFACTS);
+    await verifyBingCacheRepair(page, serviceWorker, resetHome, ARTIFACTS);
 
     const sshPage = await context.newPage();
     const sshConsoleErrors = [];

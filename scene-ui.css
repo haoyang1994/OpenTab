@@ -128,8 +128,8 @@ body.theme-light .scene-status-error { color: #b91c1c; }
 }
 .scene-dialog { border-color: var(--field-border); }
 #scene-switcher { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
-.scene-trigger { background: var(--nav-surface); color: var(--nav-text); border-color: var(--nav-border); }
-.scene-trigger:hover:not(:disabled) { background: var(--nav-hover); }
+.scene-trigger { background: var(--glass-bg); color: var(--glass-text); border-color: var(--nav-border); backdrop-filter: blur(var(--ui-blur-medium)); -webkit-backdrop-filter: blur(var(--ui-blur-medium)); }
+.scene-trigger:hover:not(:disabled) { background: var(--glass-hover-bg); }
 .scene-row-current { --text-secondary: var(--nav-selected-text); --scene-accent: var(--nav-selected-text); background: var(--nav-selected); color: var(--nav-selected-text); }
 .scene-introduction { width: min(400px, calc(100vw - 32px)); padding: 18px; border: 1px solid var(--field-border); border-radius: 14px; background: var(--panel-bg-solid); text-align: left; box-shadow: 0 12px 32px #1e293b25; }
 .scene-introduction[hidden] { display: none; }
@@ -141,3 +141,5 @@ body.theme-light .scene-status-error { color: #b91c1c; }
 .scene-introduction :focus-visible, .scene-recovery :focus-visible { outline: 2px solid var(--nav-selected-text); outline-offset: 2px; }
 
 .scene-recovery::backdrop { background: rgb(30 41 59 / 30%); backdrop-filter: blur(5px); }
+
+.scene-trigger > svg, .scene-trigger > svg:last-child { color: var(--glass-text); }

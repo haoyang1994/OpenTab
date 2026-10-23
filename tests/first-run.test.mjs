@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { formatConsoleError, isAllowedConsoleError } from './console-allow.mjs';
+import { verifyTimezoneRegression } from './timezone.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, '..');
@@ -389,6 +390,7 @@ async function run() {
       themeMode: 'light',
       background: { type: 'gradient', value: 'linear-gradient(135deg, #09203f 0%, #537895 100%)', source: 'gradient' },
       timezone: E4_TZ,
+      timezoneMode: 'fixed',
       clockFormat: E4_FORMAT,
       showSeconds: false
     });
@@ -619,6 +621,7 @@ async function run() {
     } finally { await ext.context.close(); }
   }
 
+  await verifyTimezoneRegression({ launchExt, waitStorage, storageSet, openHome });
   console.log('first-run e2e passed');
 }
 

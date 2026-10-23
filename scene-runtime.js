@@ -203,7 +203,7 @@
       // layout save must not accidentally promote a pending Bing alias to data.
       const saved = await workspace.save(undefined, undefined, latest => sameView(expected)
         && !!active(latest, expected.sceneId)
-        && (before === undefined || equal(latest.sceneProfiles.find(item => item.id === expected.sceneId)?.background, before)));
+        && (before === undefined || sameStoredValue(latest.sceneProfiles.find(item => item.id === expected.sceneId)?.background, before)));
       if (saved !== true && !disposed) { syncVisibleAppearance(); renderVisible(); }
       return saved === true;
     }

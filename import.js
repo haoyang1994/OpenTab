@@ -288,7 +288,7 @@
     'uiBlur',
     'iconFrameEnabled',
     'openInNewTab',
-    'timezone',
+    'timezone', 'timezoneMode',
     'bingIndex',
     'themeMode',
     'accentHue',
@@ -360,6 +360,8 @@
       if (payload[key] !== undefined) merged[key] = payload[key];
       else if (current[key] !== undefined) merged[key] = current[key];
     });
+    // An older backup's explicit zone must not inherit this device's automatic mode.
+    if (payload.timezone !== undefined && payload.timezoneMode === undefined) merged.timezoneMode = 'fixed';
     if (payloadSceneMode || currentSceneMode) {
       // A restore replaces the entire ownership graph. Never fill missing
       // legacy graph fields with unrelated records from the current scenes.
