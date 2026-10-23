@@ -212,6 +212,8 @@
     }
   }
 
+  // Only the bulk website transaction can mint this scoped cross-scene capability.
+  const bulkUndoScopes = new WeakMap();
   function sceneUndoGuards(before, after, view, options) {
     // Only affected memberships are dependencies, not independent group labels.
     const changedGroups = new Set();
@@ -226,7 +228,12 @@
     }
     const protect = (snapshot, supplied) => {
       const groupIds = new Set(snapshot.folders.map(group => group.id));
-      const guard = sceneGuard(view, [...changedGroups].filter(id => groupIds.has(id)));
+      const ids = [...changedGroups].filter(id => groupIds.has(id)), scope = bulkUndoScopes.get(options);
+      const scoped = scope && bulkEqual(view, scope.sourceView) && bulkEqual(before.folders, after.folders)
+        && ids.every(id => id === scope.sourceGroupId || id === scope.destinationGroupId);
+      const guard = scoped
+        ? latest => sceneGuard(view, [scope.sourceGroupId])(latest) && groupInView(scope.destinationGroupId, scope.destinationScene, latest)
+        : sceneGuard(view, ids);
       return latest => (!supplied || supplied(latest)) && guard(latest);
     };
     return { guard: protect(before, options.guard), undoGuard: protect(after, options.undoGuard) };
@@ -752,16 +759,50 @@
     catch (_) { return false; }
   }
 
+  function bulkSceneIdentity(sceneId, data = state()) {
+    const scene = (data.scenes || []).find(item => item.id === sceneId);
+    return scene ? { sceneId: scene.id, homeGroupId: scene.homeGroupId, name: scene.name, iconKey: scene.iconKey, archivedAt: scene.archivedAt } : null;
+  }
+
+  function bulkGroupPath(groupId, scene, data = state()) {
+    if (!scene || !sceneActive(scene, data)) return null;
+    const groups = new Map((data.folders || []).map(group => [group.id, group])), path = [], seen = new Set();
+    for (let id = groupId; id;) {
+      const group = groups.get(id);
+      if (!group || seen.has(id) || group.sceneId !== scene.sceneId) return null;
+      seen.add(id); path.unshift(group); id = group.parentId;
+    }
+    return path.length ? path : null;
+  }
+
+  function bulkPathIdentity(path, names = true) {
+    return path && path.map(group => ({ id: group.id, sceneId: group.sceneId, parentId: group.parentId || '', ...(names ? { name: group.name } : {}) }));
+  }
+
+  function bulkDestinationMetadata(group, folder, view) {
+    const destinationScene = bulkSceneIdentity(group.sceneId), ancestors = bulkGroupPath(group.id, destinationScene);
+    if (!ancestors) return null;
+    const groupPath = ancestors.map(item => ({ id: item.id, name: item.name }));
+    return { view: { ...view }, sourceView: { ...view }, destinationScene, sceneId: destinationScene.sceneId,
+      sceneName: destinationScene.name, groupPath, path: [destinationScene.name, ...groupPath.map(item => item.name), ...(folder ? [folder.name] : [])] };
+  }
+
   function bulkMoveContext() {
     const groupId = state().currentFolderId, parentId = openFolderId || '', view = sceneView();
-    const groups = visibleGroups(), groupIds = new Set(groups.map(group => group.id));
+    const groups = view ? state().folders.filter(group => bulkGroupPath(group.id, bulkSceneIdentity(group.sceneId))) : visibleGroups();
+    const groupIds = new Set(groups.map(group => group.id));
+    const sourceValid = groupIds.has(groupId) && groupInView(groupId, view);
+    const destinations = [
+      ...groups.map(group => ({ kind: 'group', id: group.id, name: group.name, groupId: group.id, ...(view ? bulkDestinationMetadata(group, null, view) : {}) })),
+      ...state().icons.filter(icon => isFolder(icon) && (!view || !icon.parentId) && groupIds.has(icon.folderId)).map(folder => {
+        const group = groups.find(item => item.id === folder.folderId);
+        return { kind: 'folder', id: folder.id, name: folder.name, groupId: group.id, groupName: group.name, ...(view ? bulkDestinationMetadata(group, folder, view) : {}) };
+      })
+    ];
     return {
       scope: { groupId, parentId, ...(view ? { view } : {}) },
-      sites: state().icons.filter((icon) => groupIds.has(groupId) && icon.folderId === groupId && (icon.parentId || '') === parentId && isBulkWebsite(icon)).map(copyBulk),
-      destinations: [
-        ...groups.map((group) => ({ kind: 'group', id: group.id, name: group.name, groupId: group.id, ...(view ? { view: { ...view } } : {}) })),
-        ...state().icons.filter(icon => isFolder(icon) && groupIds.has(icon.folderId)).map((folder) => ({ kind: 'folder', id: folder.id, name: folder.name, groupId: folder.folderId, groupName: groups.find(group => group.id === folder.folderId)?.name, ...(view ? { view: { ...view } } : {}) }))
-      ]
+      sites: state().icons.filter(icon => sourceValid && icon.folderId === groupId && (icon.parentId || '') === parentId && isBulkWebsite(icon)).map(copyBulk),
+      destinations: sceneActive(view) ? destinations : []
     };
   }
 
@@ -776,32 +817,42 @@
   function captureBulkDestination(destination) {
     if (!destination || !['group', 'folder'].includes(destination.kind)) return null;
     const view = sceneView();
-    if (!sceneActive(view) || destination.view && !sameView(destination.view)) return null;
+    if (!sceneActive(view) || destination.view && !sameView(destination.view)
+      || destination.sourceView && !sameView(destination.sourceView)) return null;
     const record = destination.kind === 'group'
       ? state().folders.find((group) => group.id === destination.id) : find(destination.id);
-    if (!record || (destination.kind === 'folder' && !isFolder(record))) return null;
+    if (!record || (destination.kind === 'folder' && (!isFolder(record) || view && record.parentId))) return null;
     const token = {}, groupId = destination.kind === 'group' ? record.id : record.folderId;
     if (destination.name !== undefined && destination.name !== record.name
       || destination.groupId !== undefined && destination.groupId !== groupId) return null;
     const group = state().folders.find((item) => item.id === groupId);
-    if (!group || !groupInView(groupId, view) || destination.groupName !== undefined && destination.groupName !== group.name) return null;
-    bulkDestinations.set(token, { view, kind: destination.kind, id: record.id, groupId, record: copyBulk(record),
-      group: copyBulk(group),
+    if (!group || destination.groupName !== undefined && destination.groupName !== group.name) return null;
+    const metadata = view ? bulkDestinationMetadata(group, destination.kind === 'folder' ? record : null, view) : null;
+    if (view && (!metadata || group.sceneId !== view.sceneId && (!destination.sourceView || !destination.destinationScene))) return null;
+    if (view && ['destinationScene', 'sceneId', 'sceneName', 'groupPath', 'path'].some(key => destination[key] !== undefined && !bulkEqual(destination[key], metadata[key]))) return null;
+    bulkDestinations.set(token, { view, sourceView: view, destinationScene: metadata?.destinationScene || null,
+      path: metadata?.path, ancestors: view ? bulkPathIdentity(bulkGroupPath(groupId, metadata.destinationScene)) : null,
+      kind: destination.kind, id: record.id, groupId, record: copyBulk(record), group: copyBulk(group),
       intent: captureIntent({ icons: destination.kind === 'folder' ? [record.id] : [], folders: [groupId] }) });
     return token;
   }
 
-  // Runs again on the latest durable state under the workspace lock. In particular,
-  // unchanged destination records and source membership are read dependencies.
-  function bulkGuard(before, ids, sourceParent, destination, epoch, sourceGroupId) {
-    const watched = new Set(ids);
+  // Runs again on the latest durable state under the workspace lock. Bind both
+  // scenes and each ancestor, not just the leaf with the displayed target name.
+  function bulkGuard(before, ids, sourceParent, destination, epoch, sourceGroupId, sourceBefore = before) {
+    const watched = new Set(ids), sourceView = destination.sourceView;
+    const sourceScene = sourceView ? bulkSceneIdentity(sourceView.sceneId, sourceBefore) : null;
+    const sourcePath = sourceView ? bulkPathIdentity(bulkGroupPath(sourceGroupId, sourceScene, sourceBefore), false) : null;
     if (sourceParent) {
       watched.add(sourceParent);
       before.icons.filter((icon) => icon.parentId === sourceParent).forEach((icon) => watched.add(icon.id));
     }
     return (latest) => {
-      if ((latest['opentab.workspaceEpoch'] || 0) !== epoch
-        || !sceneGuard(destination.view, [sourceGroupId, destination.groupId])(latest)) return false;
+      if ((latest['opentab.workspaceEpoch'] || 0) !== epoch || !sceneGuard(sourceView, [sourceGroupId])(latest)) return false;
+      if (sourceView && (!sourcePath || !bulkEqual(sourceScene, bulkSceneIdentity(sourceView.sceneId, latest))
+        || !bulkEqual(sourcePath, bulkPathIdentity(bulkGroupPath(sourceGroupId, sourceScene, latest), false))
+        || !bulkEqual(destination.destinationScene, bulkSceneIdentity(destination.destinationScene.sceneId, latest))
+        || !bulkEqual(destination.ancestors, bulkPathIdentity(bulkGroupPath(destination.groupId, destination.destinationScene, latest))))) return false;
       const currentIcons = latest.icons || [];
       // Legacy workspaces omit folders entirely; hydration supplies the Home group.
       // A present array remains authoritative, including an explicitly deleted Home.
@@ -819,27 +870,38 @@
     if (!selection || !destination || !Array.isArray(selectedIds) || !selectedIds.length
       || selectedIds.length > selection.sites.length || new Set(selectedIds).size !== selectedIds.length
       || !selectedIds.every((id) => selection.sites.some((icon) => icon.id === id))) return { ok: false, reason: 'invalid' };
-    if (!sameView(destination.view) || !sceneActive(destination.view)
+    if (!sameView(destination.sourceView) || !sceneActive(destination.sourceView)
       || !isIntentCurrent(selection.intent) || !isIntentCurrent(destination.intent)
       || !bulkEqual(selection.scope, bulkMoveContext().scope)) return { ok: false, reason: 'stale' };
     const before = snapshot(), parentId = destination.kind === 'folder' ? destination.id : '';
     const ids = new Set(selectedIds), moving = state().icons.filter((icon) => ids.has(icon.id));
     if (moving.length !== ids.size || !moving.every(isBulkWebsite)) return { ok: false, reason: 'stale' };
-    if (moving.every((icon) => icon.folderId === destination.groupId && (icon.parentId || '') === parentId)) return { ok: true, moved: 0 };
     const guard = bulkGuard(selection.before, selectedIds, selection.scope.parentId, destination, selection.intent.epoch, selection.scope.groupId);
     if (!guard({ ...state(), ...before, 'opentab.workspaceEpoch': selection.intent.epoch })) return { ok: false, reason: 'stale' };
+    if (moving.every((icon) => icon.folderId === destination.groupId && (icon.parentId || '') === parentId)) return { ok: true, moved: 0 };
     bulkMovePending = true;
     try {
       moving.forEach((icon) => { icon.folderId = destination.groupId; icon.parentId = parentId; });
       if (selection.scope.parentId && selection.scope.parentId !== parentId) dissolveIfNeeded(selection.scope.parentId);
       const after = snapshot();
       const affectedIds = selectedIds.concat(before.icons.filter((icon) => icon.parentId === selection.scope.parentId && selection.scope.parentId).map((icon) => icon.id));
-      const undoGuard = bulkGuard(after, affectedIds, selection.scope.parentId, destination, selection.intent.epoch, selection.scope.groupId);
+      const undoGuard = bulkGuard(after, affectedIds, selection.scope.parentId, destination, selection.intent.epoch, selection.scope.groupId, selection.before);
       let stale = false;
       const checkedGuard = latest => { const accepted = guard(latest); if (!accepted) stale = true; return accepted; };
-      const saving = persistUndo(before, t('已移动 {count} 个网站', { count: moving.length }), { guard: checkedGuard, undoGuard });
+      const options = { guard: checkedGuard, undoGuard };
+      if (destination.sourceView && destination.sourceView.sceneId !== destination.destinationScene.sceneId) {
+        bulkUndoScopes.set(options, { sourceView: destination.sourceView, sourceGroupId: selection.scope.groupId,
+          destinationScene: destination.destinationScene, destinationGroupId: destination.groupId });
+      }
+      const text = destination.path ? t('已将 {count} 个网站移到「{path}」。', { count: moving.length, path: destination.path.join(' / ') }) : t('已移动 {count} 个网站', { count: moving.length });
+      const saving = persistUndo(before, text, options);
       host.refreshIconViews();
       const saved = await saving;
+      // The scene controller can reject its outer view/active-scene guard
+      // before checkedGuard runs. Save settles only after workspace recovery;
+      // classify that recovered graph, never the optimistic moved records.
+      // Epoch lives in the workspace bridge, not the hydrated state object.
+      if (!saved && !stale) stale = !guard({ ...state(), 'opentab.workspaceEpoch': host.captureIntent().epoch });
       host.refreshIconViews();
       return saved ? { ok: true, moved: moving.length } : { ok: false, reason: stale ? 'stale' : 'save-failed' };
     } finally { bulkMovePending = false; }

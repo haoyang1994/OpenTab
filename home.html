@@ -356,10 +356,11 @@
       </div>
     </div>
 
-    <dialog id="site-selection-dialog" class="site-selection-dialog" aria-labelledby="site-selection-title" aria-describedby="site-selection-error">
+    <dialog id="site-selection-dialog" class="site-selection-dialog" aria-labelledby="site-selection-title" aria-describedby="site-selection-preview site-selection-error">
       <h2 id="site-selection-title" data-i18n="移动选中的网站">移动选中的网站</h2>
       <label for="site-selection-destination" data-i18n="选择已有分组或文件夹">选择已有分组或文件夹</label>
       <select id="site-selection-destination"></select>
+      <p id="site-selection-preview" aria-live="polite"></p>
       <p id="site-selection-error" role="status" aria-live="polite"></p>
       <div class="site-selection-dialog-actions">
         <button id="site-selection-dialog-cancel" type="button" data-i18n="取消">取消</button>

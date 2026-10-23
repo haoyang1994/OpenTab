@@ -6,10 +6,12 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
 import { formatConsoleError } from './console-allow.mjs';
 import { assertPackagedNavigation } from './package-navigation.mjs';
-import { PIXEL } from './scenes-fixtures.mjs';
+import { PIXEL, graphKeys } from './scenes-fixtures.mjs';
+const Schema = createRequire(import.meta.url)('../scene-schema.js');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'opentab-package-smoke-'));
@@ -141,8 +143,58 @@ try {
       await page.click('#group-launch-cancel');
       await launched.close();
 
-
-
+      // Exercise the shipped cross-scene chooser from the extracted ZIP. This
+      // proof stays small enough for the package smoke's three-minute budget.
+      let moveFixture = Schema.create(Schema.migrateLegacy({
+        folders: [{ id: 'folder-home', name: 'Home' }],
+        icons: [{ id: 'packaged-move-site', name: 'Packaged move reference', url: launchUrl, type: 'shortcut', folderId: 'folder-home', parentId: '',
+          uploadedIconDataUrl: `data:image/png;base64,${PIXEL}`, iconSource: 'upload', opaque: { retained: true } }],
+        todos: [{ id: 'packaged-task', text: 'Retain packaged task', done: false }], currentFolderId: 'folder-home',
+        background: { type: 'gradient', value: 'linear-gradient(135deg, #09203f, #537895)', source: 'gradient' },
+        languagePreference: 'en', weatherEnabled: false, particlesEnabled: false, gradientFlow: false, browserSyncEnabled: false,
+        searchHistoryEnabled: false, searchSuggestionsEnabled: false, todoPanelOpen: false
+      }), { id: 'packaged-work', name: 'Work', iconKey: 'briefcase', homeGroupId: 'packaged-work-home', homeName: 'Home',
+        profile: { background: { type: 'gradient', value: 'linear-gradient(135deg, #09203f, #537895)', source: 'gradient' } } });
+      moveFixture.lastOpenedSceneId = 'packaged-work';
+      const moveKeys = [...graphKeys, 'currentFolderId', 'lastOpenedSceneId'];
+      await page.evaluate(async fixture => {
+        sessionStorage.setItem('opentab.scene.view', JSON.stringify({ sceneId: 'scene-default', lastGroupIds: { 'scene-default': 'folder-home' } }));
+        await OpenTabWorkspace.transaction(({ write }) => write(fixture));
+      }, moveFixture);
+      await page.reload({ waitUntil: 'load' });
+      await page.waitForFunction(() => OpenTabSceneNavigation?.getView()?.sceneId === 'scene-default' && document.querySelector('.icon-widget[data-id="packaged-move-site"]'));
+      await page.waitForLoadState('networkidle');
+      const moveBefore = await page.evaluate(keys => chrome.storage.local.get(keys), moveKeys);
+      const sourceSession = await page.evaluate(() => sessionStorage.getItem('opentab.scene.view'));
+      const pagesBefore = context.pages().length;
+      await page.click('#select-sites');
+      await page.locator('.icon-widget[data-id="packaged-move-site"] .site-selection-checkbox').check();
+      await page.click('#site-selection-move');
+      const destinationOption = page.locator('#site-selection-destination option[data-kind="group"][data-destination-id="packaged-work-home"]');
+      assert.equal(await destinationOption.count(), 1);
+      assert.match(await destinationOption.textContent(), /Work.*Home/);
+      await page.locator('#site-selection-destination').selectOption(await destinationOption.getAttribute('value'));
+      assert.match(await page.locator('#site-selection-preview').textContent(), /1.*Work.*Home/s);
+      await page.screenshot({ path: path.join(root, 'artifacts/package-cross-scene-move.png'), animations: 'disabled' });
+      await page.click('#site-selection-confirm');
+      await page.waitForFunction(() => !OpenTabSiteSelection.isPending() && !OpenTabSiteSelection.isActive());
+      const moved = structuredClone(moveBefore);
+      moved.icons.find(icon => icon.id === 'packaged-move-site').folderId = 'packaged-work-home';
+      assert.deepEqual(await page.evaluate(keys => chrome.storage.local.get(keys), moveKeys), moved, 'shipped chooser moves only membership, preserving complete records and profiles');
+      assert.equal(await page.evaluate(() => OpenTabSceneNavigation.getView().sceneId), 'scene-default');
+      assert.equal(await page.evaluate(() => sessionStorage.getItem('opentab.scene.view')), sourceSession);
+      assert.equal(context.pages().length, pagesBefore, 'packaged move does not launch tabs');
+      assert.equal(page.url(), target);
+      await page.reload({ waitUntil: 'load' });
+      await page.waitForFunction(() => OpenTabSceneNavigation?.getView()?.sceneId === 'scene-default' && globalThis.OpenTabSiteSelection);
+      assert.equal(await page.locator('.icon-widget[data-id="packaged-move-site"]').count(), 0, 'packaged source remains empty after reload');
+      await page.evaluate(() => sessionStorage.setItem('opentab.scene.view', JSON.stringify({ sceneId: 'packaged-work', lastGroupIds: { 'packaged-work': 'packaged-work-home' } })));
+      await page.reload({ waitUntil: 'load' });
+      await page.locator('.icon-widget[data-id="packaged-move-site"]').waitFor({ state: 'visible' });
+      assert.equal(await page.evaluate(() => OpenTabSceneNavigation.getView().sceneId), 'packaged-work');
+      assert.deepEqual(await page.evaluate(keys => chrome.storage.local.get(keys), moveKeys), moved, 'packaged destination reload retains the same original record');
+      // Keep the existing popup smoke's explicit Default/Home fixture intact.
+      await page.evaluate(() => OpenTabWorkspace.transaction(({ write }) => write({ lastOpenedSceneId: 'scene-default' })));
     }
     if (file === 'popup.html') {
       // Both asynchronous startup branches must finish, even when activeTab is

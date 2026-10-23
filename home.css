@@ -3258,6 +3258,8 @@ body.theme-light .site-list-row[data-status="invalid"] .site-list-result, body.t
 }
 .site-selection-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 #site-selection-error { font-size: 13px; line-height: 1.5; min-height: 1.5em; }
+#site-selection-preview { font-size: 13px; line-height: 1.6; color: var(--text-secondary); overflow-wrap: anywhere; margin: 12px 0; }
+#site-selection-preview:empty { display: none; }
 .site-selection-entry:focus-visible, .site-selection-toolbar button:focus-visible,
 .site-selection-dialog :focus-visible, .site-selection-checkbox:focus-visible { outline: 3px solid #648cff; outline-offset: 3px; }
 @media (max-width: 560px) {

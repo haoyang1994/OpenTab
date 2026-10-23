@@ -248,5 +248,8 @@ OpenTabI18n.register({
   "未能打开，可重试": "Could not open. You can retry.",
   "已打开 {opened} 个网站，{failed} 个未能打开。重试只会打开仍选中的网站。": "Opened {opened} websites; {failed} could not open. Retrying opens only the websites still selected.",
   "已在后台打开 {count} 个网站。": "Opened {count} websites in background tabs.",
-  "未能验证分组，未打开新网站。请重试。": "Could not verify the group. No new websites were opened. Please retry."
+  "未能验证分组，未打开新网站。请重试。": "Could not verify the group. No new websites were opened. Please retry.",
+  "将 {count} 个网站移到「{path}」。": "Move {count} websites to “{path}”.",
+  "移动后仍停留在当前场景，可撤销。": "You will stay in the current scene. This move can be undone.",
+  "已将 {count} 个网站移到「{path}」。": "Moved {count} websites to “{path}”."
 });
