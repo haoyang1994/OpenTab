@@ -47,16 +47,15 @@ jobs:
       - name: Audit dependencies for high-severity advisories
         run: npm audit --audit-level=high
 
-      - name: Install Playwright Chromium
+      - name: Install Chromium and native desktop dependencies
         timeout-minutes: 18
-        run: npx playwright install --with-deps chromium
-
-      - name: Install isolated native desktop fixture
-        if: matrix.e2e_group == 'core'
-        timeout-minutes: 3
+        env:
+          E2E_GROUP: ${{ matrix.e2e_group }}
         run: |
-          if ! command -v openbox >/dev/null 2>&1; then
-            sudo apt-get update
+          npx playwright install --with-deps chromium
+          # Playwright's dependency install has already refreshed apt indexes.
+          # Keep all dependency downloads within the existing setup budget.
+          if [[ "$E2E_GROUP" == core ]] && ! command -v openbox >/dev/null 2>&1; then
             sudo apt-get install --no-install-recommends -y openbox
           fi
 
