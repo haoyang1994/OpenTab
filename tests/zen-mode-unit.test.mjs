@@ -32,7 +32,7 @@ function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal =
     invoke(event, capture) {
       for (const item of this.listeners.get(event.type) || []) {
         if (item.capture !== capture) continue;
-        item.fn(event);
+        event.currentTarget = this; item.fn(event);
         if (event.immediateStopped) break;
       }
     }
@@ -61,6 +61,11 @@ function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal =
         add: value => this.classList.toggle(value, true), remove: value => this.classList.toggle(value, false)
       };
     }
+    set hidden(value) {
+      this._hidden = Boolean(value);
+      if (value && document?.activeElement && this.contains(document.activeElement)) document.activeElement = document.body;
+    }
+    get hidden() { return this._hidden; }
     appendChild(node) { this.children.push(node); node.parentElement = this; return node; }
     setAttribute(key, value) { this.attributes.set(key, String(value)); }
     getAttribute(key) { return this.attributes.get(key) ?? null; }
@@ -68,7 +73,11 @@ function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal =
     closest(selector) { for (let node = this; node; node = node.parentElement) if (matches(node, selector)) return node; return null; }
     querySelectorAll(selector) { return descendants(this).filter(node => matches(node, selector)); }
     focus() {
-      if (this.disabled || this.closest('[inert]') || this.hidden || !this.isConnected) return;
+      if (this.disabled || this.closest('[inert]') || !this.isConnected) return;
+      for (let node = this; node?.tagName; node = node.parentElement) {
+        if (node.hidden || node.classList.contains('hidden') || node.style.display === 'none' || node.style.visibility === 'hidden') return;
+      }
+      if (!['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(this.tagName) && this.getAttribute('tabindex') === null) return;
       document.activeElement = this;
       this.dispatchEvent(event('focusin'));
     }
@@ -135,7 +144,7 @@ function harness({ fullscreen = 'success', fullscreenExit = 'success', minimal =
   context.OpenTabZenMode.init(options);
   return { $, body, html, home, input, video, todo, script, panel, existingInert, document, root, state, pristine, focus, api: context.OpenTabZenMode, context, requests, exits, pending, pendingExits, order, changes, writes, session, timers,
     event, fullscreenChange, setHomeReady: value => { restoreHome = value; },
-    clickEntry() { entry.focus(); inEntryClick = true; entry.click(); inEntryClick = false; },
+    clickEntry({ focus = true } = {}) { if (focus) entry.focus(); inEntryClick = true; entry.click(); inEntryClick = false; },
     key(key, extra = {}, type = 'keydown') { const e = event(type, { key, ...extra }); document.activeElement.dispatchEvent(e); return e; },
     advance(ms) { now += ms; for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } },
     settle: async () => { await Promise.resolve(); await Promise.resolve(); }, opened: () => opened,
@@ -328,6 +337,34 @@ for (const fullscreen of ['unsupported', 'reject', 'throw']) {
   const h = harness(); const unrelated = h.$('clock-widget'); h.fullscreenChange(unrelated); h.clickEntry();
   assert.equal(h.requests.length, 0, 'pre-existing fullscreen is not claimed'); h.api.exit();
   assert.equal(h.document.fullscreenElement, unrelated); assert.equal(h.exits.length, 0, 'exit does not dismiss another fullscreen owner');
+}
+
+for (const tag of ['body', 'html']) {
+  const h = harness(), unfocusable = h[tag];
+  h.input.focus(); unfocusable.focus();
+  assert.equal(h.document.activeElement, h.input, `${tag} without tabindex cannot receive focus in the browser fixture`);
+  h.document.activeElement = unfocusable; h.api.enter(); h.api.exit();
+  assert.equal(h.document.activeElement, h.$('zen-toggle-btn'), `programmatic entry from ${tag} restores the usable Zen entry, not an unfocusable document node`);
+}
+{
+  const h = harness(); h.input.focus(); h.clickEntry({ focus: false });
+  assert.equal(h.requests[0].synchronous, true); h.api.exit();
+  assert.equal(h.document.activeElement, h.$('zen-toggle-btn'), 'entry click retains its actual button opener even when the browser did not focus that button first');
+  assert.equal(h.input.value, 'keep this search');
+  assert.deepEqual([h.input.selectionStart, h.input.selectionEnd, h.input.selectionDirection], [5, 9, 'backward']);
+}
+for (const unavailable of ['disabled', 'hidden', 'display', 'visibility']) {
+  const h = harness(); h.input.focus(); h.api.enter();
+  if (unavailable === 'disabled') h.input.disabled = true;
+  else if (unavailable === 'hidden') h.input.hidden = true;
+  else h.input.style[unavailable] = unavailable === 'display' ? 'none' : 'hidden';
+  h.api.exit();
+  assert.equal(h.document.activeElement, h.$('zen-toggle-btn'), `${unavailable}: failed restoration to a saved input falls back to the usable entry control`);
+}
+{
+  const h = harness(); h.input.focus(); h.api.enter(); h.api.exit();
+  assert.equal(h.document.activeElement, h.input, 'programmatic entry still restores an available focused input rather than forcing the button');
+  assert.deepEqual([h.input.selectionStart, h.input.selectionEnd, h.input.selectionDirection], [5, 9, 'backward']);
 }
 
 for (const minimal of [false, true]) for (const hiddenTodo of [false, true]) {

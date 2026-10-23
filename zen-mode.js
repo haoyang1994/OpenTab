@@ -27,10 +27,10 @@
     const status = value.phase === 'running' ? '专注中' : value.phase === 'paused' ? '已暂停' : value.phase === 'done' ? '已完成' : '';
     if ($('zen-status').textContent !== t(status)) $('zen-status').textContent = t(status);
   }
-  function enter() {
+  function enter(opener = document.activeElement) {
     if (active || !host?.focus) return false;
     const input = $('search-input'), video = $('background-video');
-    saved = { focus: document.activeElement, query: input?.value, start: input?.selectionStart, end: input?.selectionEnd, direction: input?.selectionDirection,
+    saved = { focus: opener, query: input?.value, start: input?.selectionStart, end: input?.selectionEnd, direction: input?.selectionDirection,
       nodes: [...document.body.children].filter(node => node !== $('zen-mode') && node.tagName !== 'SCRIPT').map(node => [node, node.inert]),
       videoPlaying: video && !video.paused };
     active = true;
@@ -75,8 +75,11 @@
     if (input && input.value === saved.query && Number.isInteger(saved.start)) input.setSelectionRange(saved.start, saved.end, saved.direction);
     host.onActiveChange?.(false);
     if (saved.videoPlaying) { try { Promise.resolve($('background-video').play()).catch(() => {}); } catch (_) {} }
-    const target = saved.focus?.isConnected && !saved.focus.closest('[inert]') ? saved.focus : $('zen-toggle-btn');
+    const target = saved.focus?.isConnected && saved.focus !== document.body && saved.focus !== document.documentElement && !saved.focus.closest('[inert]') ? saved.focus : $('zen-toggle-btn');
     target?.focus({ preventScroll: true });
+    // A saved node can become hidden, disabled or otherwise unfocusable while
+    // Zen is active. Restore a real control rather than leaving focus on body.
+    if (document.activeElement !== target) $('zen-toggle-btn')?.focus({ preventScroll: true });
     return true;
   }
   function keydown(event) {
@@ -105,7 +108,9 @@
     if (host || !options?.focus || !$('zen-mode')) return;
     host = options;
     host.focus.subscribe(render);
-    $('zen-toggle-btn').addEventListener('click', enter);
+    // Pointer activation does not focus buttons on every browser/platform.
+    // Keep the actual opener, while programmatic entry still saves current focus.
+    $('zen-toggle-btn').addEventListener('click', () => enter($('zen-toggle-btn')));
     $('zen-exit').addEventListener('click', exit);
     $('zen-focus-toggle').addEventListener('click', () => host.focus.toggle());
     $('zen-focus-reset').addEventListener('click', () => host.focus.reset());

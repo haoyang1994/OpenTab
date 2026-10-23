@@ -41,7 +41,34 @@ const url = `chrome-extension://${worker.url().split('/')[2]}/home.html`, page =
 // stops propagation to hidden UI. Observe final cancellation after dispatch,
 // not in an inter-listener microtask, and never change the event or browser API.
 await page.addInitScript(() => {
-  const log = window.__zenNativeEvents = { escape: [], fullscreen: [] };
+  const log = window.__zenNativeEvents = { escape: [], fullscreen: [], focus: [] };
+  const identity = node => node === window ? { tag: 'WINDOW', id: '' } : node === document ? { tag: 'DOCUMENT', id: '' }
+    : node ? { tag: node.tagName, id: node.id || '' } : null;
+  const details = node => {
+    if (!(node instanceof Element)) return identity(node);
+    const style = getComputedStyle(node), box = node.getBoundingClientRect();
+    return { ...identity(node), connected: node.isConnected, inert: Boolean(node.inert), inertAncestor: identity(node.closest('[inert]')),
+      hidden: Boolean(node.hidden), hiddenAncestor: identity(node.closest('[hidden], .hidden')), disabled: Boolean(node.disabled), tabIndex: node.tabIndex,
+      display: style.display, visibility: style.visibility, rect: { x: box.x, y: box.y, width: box.width, height: box.height } };
+  };
+  let focusSequence = 0;
+  const recordFocus = (label, event, checkpoint = false) => {
+    const item = { sequence: ++focusSequence, label, event: event ? { type: event.type, trusted: event.isTrusted,
+      target: identity(event.target), currentTarget: identity(event.currentTarget), defaultPrevented: event.defaultPrevented } : null,
+      active: details(document.activeElement) };
+    if (checkpoint) item.surfaces = { entry: details(document.getElementById('zen-toggle-btn')),
+      home: details(document.getElementById('homepage')), zen: details(document.getElementById('zen-mode')),
+      bodyClass: document.body?.className, fullscreen: identity(document.fullscreenElement) };
+    log.focus.push(item); if (log.focus.length > 64) log.focus.shift();
+  };
+  window.__zenFocusCheckpoint = label => recordFocus(label, null, true);
+  for (const type of ['focusin', 'focusout']) window.addEventListener(type, event => recordFocus(type, event), true);
+  for (const type of ['pointerdown', 'mousedown', 'click']) document.addEventListener(type, event => {
+    if (event.target.closest?.('#zen-toggle-btn, #zen-exit')) recordFocus(`capture-${type}`, event, true);
+  }, true);
+  document.addEventListener('DOMContentLoaded', () => {
+    for (const id of ['zen-toggle-btn', 'zen-exit']) document.getElementById(id)?.addEventListener('click', event => recordFocus('button-click', event, true), true);
+  }, { once: true });
   window.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
     const entry = { trusted: event.isTrusted, target: event.target?.id || event.target?.tagName,
@@ -123,16 +150,33 @@ async function fullscreen(mode = 'native') {
     return log.available;
   }, mode);
 }
+async function reportFocusFailure(stage) {
+  const diagnostic = await page.evaluate(stage => {
+    __zenFocusCheckpoint(`${stage}-failure`);
+    return { stage, active: { tag: document.activeElement?.tagName, id: document.activeElement?.id || '' },
+      zenActive: OpenTabZenMode.isActive(), timeline: __zenNativeEvents.focus };
+  }, stage).catch(error => ({ stage, unavailable: error.message }));
+  console.error(`Zen: focus diagnostics ${JSON.stringify(diagnostic)}`);
+}
 async function enter() {
-  await page.click('#zen-toggle-btn'); await page.waitForSelector('#zen-mode:not([hidden])');
-  assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), true);
-  assert.equal(await focusId(), 'zen-focus-toggle');
-  assert.equal(await page.locator('#zen-toggle-btn').getAttribute('aria-expanded'), 'true');
+  try {
+    await page.evaluate(() => __zenFocusCheckpoint('before-entry-click'));
+    await page.click('#zen-toggle-btn'); await page.waitForSelector('#zen-mode:not([hidden])');
+    await page.evaluate(() => __zenFocusCheckpoint('after-entry-click'));
+    assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), true);
+    assert.equal(await focusId(), 'zen-focus-toggle');
+    assert.equal(await page.locator('#zen-toggle-btn').getAttribute('aria-expanded'), 'true');
+  } catch (error) { await reportFocusFailure('entry'); throw error; }
 }
 async function exit() {
-  await page.click('#zen-exit'); await page.waitForSelector('#zen-mode[hidden]', { state: 'attached' });
-  assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), false);
-  assert.equal(await page.locator('#zen-toggle-btn').getAttribute('aria-expanded'), 'false');
+  try {
+    await page.evaluate(() => __zenFocusCheckpoint('before-exit-click'));
+    await page.click('#zen-exit'); await page.waitForSelector('#zen-mode[hidden]', { state: 'attached' });
+    await page.evaluate(() => __zenFocusCheckpoint('after-exit-click'));
+    assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), false);
+    assert.equal(await page.locator('#zen-toggle-btn').getAttribute('aria-expanded'), 'false');
+    assert.equal(await focusId(), 'zen-toggle-btn', 'quiet exit restores the actual entry button');
+  } catch (error) { await reportFocusFailure('exit'); throw error; }
 }
 async function nativeEscapeDiagnostics() {
   return page.evaluate(() => ({ mode: __zenFullscreen.mode, supported: __zenFullscreen.available,

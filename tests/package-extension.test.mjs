@@ -66,6 +66,52 @@ try {
       assert.match(await page.locator('#time').textContent(), /:/);
       assert.equal(await page.evaluate(() => typeof window.flatpickr), 'function');
       assert.ok(await page.evaluate(() => !!window.OpenTabI18n));
+
+      // Exercise native fullscreen and keyboard input from the shipped ZIP,
+      // without replacing browser APIs or widening the three-minute smoke.
+      await page.waitForFunction(() => globalThis.OpenTabZenMode && globalThis.OpenTabClockDeck?.getFocus() && !document.getElementById('homepage').inert);
+      const zenEntry = page.locator('#zen-toggle-btn');
+      assert.equal((await zenEntry.textContent()).trim(), '', 'packaged Zen entry is icon-only');
+      assert.equal(await zenEntry.locator('svg').count(), 1);
+      assert.ok(await zenEntry.getAttribute('aria-label'), 'icon-only entry has an accessible name');
+      const nativeFullscreen = await page.evaluate(() => document.fullscreenEnabled && typeof document.documentElement.requestFullscreen === 'function');
+      await zenEntry.click();
+      await page.locator('#zen-mode').waitFor({ state: 'visible' });
+      if (nativeFullscreen) {
+        await page.waitForFunction(() => document.fullscreenElement === document.documentElement, undefined, { timeout: 10000 });
+      } else {
+        assert.equal(await page.evaluate(() => document.fullscreenElement), null, 'unsupported fullscreen leaves usable windowed Zen');
+      }
+      assert.equal(await page.locator('#zen-time').textContent(), '25:00');
+      assert.equal(await page.locator('#zen-mode').getAttribute('data-phase'), 'idle');
+      assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase), 'idle');
+      assert.equal(await page.evaluate(() => sessionStorage.getItem(OpenTabClockDeck.FOCUS_KEY)), null, 'entry never starts or persists the shared focus timer');
+      assert.deepEqual((await page.locator('#zen-mode button').allTextContents()).map(text => text.trim()), ['', '', ''], 'Zen controls remain quiet and icon-only');
+      assert.equal(await page.locator('#homepage').isVisible(), false);
+      assert.equal(await page.locator('#homepage').evaluate(home => home.inert), true);
+      fs.mkdirSync(path.join(root, 'artifacts'), { recursive: true });
+      await page.screenshot({ path: path.join(root, 'artifacts/package-zen.png'), animations: 'disabled' });
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.fullscreenElement === null, undefined, { timeout: 10000 });
+      assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), true, 'native Escape leaves Zen open');
+      assert.equal(await page.locator('#zen-mode').isVisible(), true);
+      assert.equal(await page.locator('#zen-time').textContent(), '25:00');
+      await page.click('#zen-focus-toggle');
+      assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase), 'running', 'shipped Zen controls the existing clock-deck timer');
+      assert.equal(await page.locator('#clock-focus-toggle').textContent(), 'Pause');
+      await page.click('#zen-focus-reset');
+      assert.equal(await page.evaluate(() => OpenTabClockDeck.getFocus().snapshot().phase), 'idle');
+      assert.equal(await page.locator('#clock-focus-time').textContent(), '25:00');
+      assert.equal(await page.locator('#zen-time').textContent(), '25:00');
+      await page.click('#zen-exit');
+      await page.locator('#zen-mode').waitFor({ state: 'hidden' });
+      await page.locator('#homepage').waitFor({ state: 'visible' });
+      assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), false);
+      assert.equal(await page.locator('#homepage').evaluate(home => home.inert), false);
+      assert.equal(await zenEntry.getAttribute('aria-expanded'), 'false');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'zen-toggle-btn', 'quiet exit restores the actual entry control');
+      assert.equal(await page.evaluate(() => document.fullscreenElement), null);
+
       assert.equal(await page.locator('#tool-subtype option[value="fix-parser"]').count(), 0);
       const legacy = { id: 'removed-tool-fixture', name: 'Saved FIX shortcut', type: 'tool', toolSubtype: 'fix-parser', folderId: 'folder-home' };
       await page.evaluate(async icon => { await chrome.storage.local.set({ icons: [icon] }); }, legacy);
