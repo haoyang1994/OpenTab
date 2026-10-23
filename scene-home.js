@@ -9,7 +9,7 @@
   function create(host) {
     const window = root;
     const { OpenTabSceneSchema, OpenTabWorkspace, OpenTabLayout, OpenTabFolders, OpenTabIcons, OpenTabBingCache } = root;
-    const { state, HOME_FOLDER_ID, LEGACY_PRESET_FOLDER_IDS, activeHomeId, t, ensureFolders, normalizeIconType, migrateBackground, backgroundsEqual, getFolderById, updateClock, renderTimezoneList, initCalendar, renderWorkspaceSettings, workspace, refreshIconViews, renderTodos, setTodoPanelOpen, saveState, writeBootMirror } = host;
+    const { state, HOME_FOLDER_ID, LEGACY_PRESET_FOLDER_IDS, activeHomeId, t, ensureFolders, normalizeIconType, migrateBackground, backgroundsEqual, getFolderById, renderTimezoneList, initCalendar, renderWorkspaceSettings, workspace, refreshIconViews, renderTodos, setTodoPanelOpen, saveState, writeBootMirror } = host;
     return function applyLoadedState(result, raw = result) {
     const sceneEnabled = result[OpenTabSceneSchema.SCHEMA_KEY] === 2;
     if (sceneEnabled) {
@@ -87,7 +87,6 @@
     const requestedFolderId = result.currentFolderId || activeHomeId();
     state.currentFolderId = getFolderById(requestedFolderId) ? requestedFolderId : activeHomeId();
 
-    updateClock();
     renderTimezoneList();
     // Preserve the initial selected date, but build hidden calendar DOM only
     // when its actual control opens it, never on the first-grid path.

@@ -95,7 +95,7 @@ function bingHarness({ initialView = viewFor('a') } = {}) {
     caches: { open: async () => ({ match: async () => null }) },
     Image: class { set src(value) { this.value = value; images.push(this); queueMicrotask(() => this.onload?.()); } decode() { return Promise.resolve(); } },
     document: { createElement: () => element(), readyState: 'loading', addEventListener() {}, documentElement: element() },
-    chrome: { runtime: { sendMessage(message, cb) { callbacks.push({ message, cb }); } }, storage: {
+    chrome: { runtime: { id: 'opentab-test', sendMessage(message, cb) { callbacks.push({ message, cb }); } }, storage: {
       onChanged: { addListener(fn) { listeners.push(fn); } }, local: { set(payload, cb) { writes.push(copy(payload)); cb?.(); } }
     } },
     OpenTabBoot: { DEFAULT_BG: 'assets/default.jpg', isLocalAsset: url => url.startsWith('assets/') },
@@ -133,6 +133,30 @@ function bingHarness({ initialView = viewFor('a') } = {}) {
     },
     notify: changes => listeners.forEach(fn => fn(changes, 'local'))
   };
+}
+// Transport failure may retain only the source actually painted for this
+// view/background. Metadata lookup is not a paint, nor is a boot placeholder.
+for (const method of ['refreshDailyIfNeeded', 'fetchRandomBackground']) for (const target of ['scene', 'background', 'placeholder', 'placeholder-during', 'stale-fade']) {
+  const h = bingHarness(); await h.api.updateBackground({ fade: false });
+  if (target === 'scene') h.changeView('b');
+  if (target === 'stale-fade') {
+    await h.api.updateBackground({ fade: true });
+    while (h.frames.length) h.frames.shift()();
+    h.changeView('b', 2, false);
+  }
+  if (target === 'background') h.state.background = background('a-next');
+  if (target === 'placeholder') h.elements.backgroundLayer.style.backgroundImage = 'url(assets/placeholder.jpg)';
+  h.api.describeBackground(); // May scope metadata before the new pixels exist.
+  const imageCount = h.images.length;
+  const pending = h.api[method]();
+  if (target === 'placeholder-during') h.elements.backgroundLayer.style.backgroundImage = 'url(assets/placeholder.jpg)';
+  h.g.chrome.runtime.lastError = { message: 'The message port closed before a response was received.' };
+  h.callbacks[0].cb(); h.g.chrome.runtime.lastError = null;
+  await pending; await settle();
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, `url(${h.state.background.value})`, `${method}/${target}: paint the current requested owner`);
+  assert.ok(h.images.length > imageCount, `${method}/${target}: stale/unowned paint cannot suppress current background resolution`);
+  assert.deepEqual(h.mirrors.at(-1).view, h.getView());
+  assert.equal(h.persisted.length, 0); assert.equal(h.writes.length, 0);
 }
 // Installed scene hooks fail closed while startup cannot resolve a safe view.
 {

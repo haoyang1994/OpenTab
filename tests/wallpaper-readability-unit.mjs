@@ -92,10 +92,7 @@ for (const selector of ['#search-widget', '.settings-panel', '.folder-panel', '#
 }
 const deck = fs.readFileSync(new URL('../clock-deck.css', import.meta.url), 'utf8');
 assert.match(deck, /--deck-surface: var\(--glass-bg\)/);
-const backing = deck.slice(deck.indexOf('#clock-deck-stage::before, #clock-deck-stage::after {'), deck.indexOf('}', deck.indexOf('#clock-deck-stage::before, #clock-deck-stage::after {')));
-assert.match(backing, /top: 100%;/); assert.match(backing, /height: 8px;/);
-assert.doesNotMatch(backing, /inset: 0|scale\(|translateY\(/, 'no full-area rear card can compound the front tint');
-assert.match(deck, /#clock-deck-stage::after \{ top: calc\(100% \+ 8px\)/, 'rear strips do not overlap each other');
+await import('./clock-stack-unit.mjs');
 assert.match(deck, /backdrop-filter: blur\(var\(--ui-blur-strong\)\)/);
 const scene = fs.readFileSync(new URL('../scene-ui.css', import.meta.url), 'utf8');
 assert.match(scene, /\.scene-trigger \{ background: var\(--glass-bg\)/);

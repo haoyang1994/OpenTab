@@ -2,6 +2,7 @@ import { runUiRefinement } from './ui-refinement.mjs';
 import { verifyInterfaceGlass } from './interface-glass.mjs';
 import { verifySettingsDismissal } from './settings-dismiss.mjs';
 import { waitForAsync } from './wait-for-async.mjs';
+import { installStartupDiagnostics } from './startup-diagnostics.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -47,51 +48,6 @@ async function storageSet(serviceWorker, payload) {
   await serviceWorker.evaluate((data) => new Promise((resolve) => {
     chrome.storage.local.set(data, resolve);
   }), payload);
-}
-
-function captureLayoutAtGridReady() {
-  const orig = performance.mark.bind(performance);
-  performance.mark = function (name, ...rest) {
-    if (name === 'opentab:grid-ready') {
-      const cs = getComputedStyle(document.documentElement);
-      window.__layoutAtGridReady = {
-        iconSize: cs.getPropertyValue('--layout-icon-size').trim(),
-        columns: cs.getPropertyValue('--layout-columns').trim(),
-        maxWidth: cs.getPropertyValue('--layout-max-width').trim(),
-        hideNames: document.body.classList.contains('layout-hide-names'),
-        fixedCols: document.body.classList.contains('layout-fixed-cols')
-      };
-    }
-    return orig(name, ...rest);
-  };
-}
-
-function stripLayoutMirrorThenCapture() {
-  try {
-    const raw = localStorage.getItem('opentab.boot.v1');
-    if (raw) {
-      const data = JSON.parse(raw);
-      delete data.layoutIconSize;
-      delete data.layoutColumns;
-      delete data.layoutShowNames;
-      delete data.layoutMaxWidth;
-      localStorage.setItem('opentab.boot.v1', JSON.stringify(data));
-    }
-  } catch {}
-  const orig = performance.mark.bind(performance);
-  performance.mark = function (name, ...rest) {
-    if (name === 'opentab:grid-ready') {
-      const cs = getComputedStyle(document.documentElement);
-      window.__layoutAtGridReady = {
-        iconSize: cs.getPropertyValue('--layout-icon-size').trim(),
-        columns: cs.getPropertyValue('--layout-columns').trim(),
-        maxWidth: cs.getPropertyValue('--layout-max-width').trim(),
-        hideNames: document.body.classList.contains('layout-hide-names'),
-        fixedCols: document.body.classList.contains('layout-fixed-cols')
-      };
-    }
-    return orig(name, ...rest);
-  };
 }
 
 async function waitForGrid(page) {
@@ -170,7 +126,7 @@ async function runSettingsLayoutE2E() {
     const homeUrl = `chrome-extension://${extensionId}/home.html`;
 
     const page = await context.newPage();
-    await page.addInitScript(captureLayoutAtGridReady);
+    await page.addInitScript(installStartupDiagnostics);
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(formatConsoleError(msg));
     });
@@ -188,6 +144,12 @@ async function runSettingsLayoutE2E() {
         [phase, performance.getEntriesByName('opentab:initial-' + phase)[0]?.startTime ?? null]));
       return {
         dcl: nav ? nav.domContentLoadedEventEnd : null,
+        navigation: nav ? {
+          responseEnd: nav.responseEnd, domInteractive: nav.domInteractive,
+          domContentLoadedEventStart: nav.domContentLoadedEventStart,
+          domContentLoadedEventEnd: nav.domContentLoadedEventEnd
+        } : null,
+        startupDiagnostics: window.__startupDiagnostics || null,
         gridReady: marks.length ? marks[0].startTime : null,
         phases,
         calendarBuilds: performance.getEntriesByName('opentab:calendar-build-start').length,
@@ -205,6 +167,12 @@ async function runSettingsLayoutE2E() {
       loaderToGrid: elapsed(navTiming.gridReady, navTiming.phases['loader-start'])
     };
     console.log('AC7 startup phases/resources: ' + JSON.stringify(navTiming));
+    console.log('AC7 diagnostic API intervals include browser scheduling/IPC and cannot isolate disk I/O; style snapshot overhead is included, never subtracted.');
+    fs.writeFileSync(path.join(ARTIFACTS, 'startup-diagnostics.json'), JSON.stringify({
+      navigation: navTiming.navigation, phases: navTiming.phases,
+      gridReady: navTiming.gridReady, dcl: navTiming.dcl,
+      diagnostics: navTiming.startupDiagnostics
+    }, null, 2));
     assert.equal(navTiming.calendarBuilds, 0, 'hidden calendar construction is not part of first-grid startup');
     assert.ok(navTiming.dcl > 0, 'AC7 DCL must be > 0');
     assert.ok(navTiming.gridReady != null, 'AC7 grid-ready missing');
@@ -350,7 +318,7 @@ async function runSettingsLayoutE2E() {
       if (msg.type() === 'error') consoleErrors.push(formatConsoleError(msg));
     });
     cold.on('pageerror', (error) => consoleErrors.push(error.message));
-    await cold.addInitScript(stripLayoutMirrorThenCapture);
+    await cold.addInitScript(installStartupDiagnostics, { stripLayoutMirror: true });
     await cold.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
     const coldReady = await layoutAtGridReady(cold);
     assert.ok(coldReady, 'BUG-030 loadState snapshot missing at grid-ready');

@@ -1,5 +1,6 @@
 import { verifyWallpaperReadability } from './wallpaper-readability.mjs';
 import { verifyBingCacheRepair } from './bing-cache-repair.mjs';
+import { verifyBingTransportLifecycle } from './bing-transport-lifecycle.mjs';
 import { waitForAsync } from './wait-for-async.mjs';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
@@ -2324,7 +2325,7 @@ async function runExtensionE2E() {
     assert.equal(errorBuckets.sw.length, 0, `T9: service worker errors: ${errorBuckets.sw.join(' | ')}`);
     console.log('T9 passed');
 
-
+    await verifyBingTransportLifecycle({ chromium, extensionPath: EXTENSION_PATH, artifacts: ARTIFACTS, headless });
     console.log('E2E passed: extension newtab UI loaded and core interactions work.');
   } catch (error) {
     // Preserve synthetic-fixture state before closing the browser on CI failure.

@@ -15,6 +15,8 @@
   let manualCleanup = null;
   let manualDisplayHold = null;
   let metaScene = '', metaBackground = '';
+  let displayedOwner = null;
+  let pendingFade = null;
 
   // Chrome's storage dictionaries need not preserve insertion order. Compare
   // values, not serialization order, or our own durable acknowledgement can
@@ -49,6 +51,48 @@
     return current && ['sceneId', 'homeGroupId', 'generation'].every(key => current[key] === view[key]);
   }
 
+  function displayedSource() {
+    const layer = ctx.elements.backgroundLayer, video = ctx.elements.backgroundVideo;
+    return {
+      image: layer?.style.backgroundImage || '', background: layer?.style.background || '',
+      video: video?.style.display === 'block' ? video.src || '' : ''
+    };
+  }
+
+  function recordDisplayed(background, view, signature = stateSignature(background || {})) {
+    displayedOwner = { background: signature, view, source: displayedSource() };
+  }
+
+  function sameDisplayOwner(owner, background) {
+    if (!owner || owner.background !== background) return false;
+    const view = sceneView();
+    // Request generations reject late work, but do not change ownership of
+    // already committed pixels in the same scene/home group/background.
+    return owner.view ? view && owner.view.sceneId === view.sceneId && owner.view.homeGroupId === view.homeGroupId : !sceneEnabled();
+  }
+
+  function retainDisplayed(background) {
+    const layer = ctx.elements.backgroundLayer, fade = pendingFade;
+    // Complete a matching selected photo's transition rather than rereading
+    // its cache. The overlay is not recorded as base-owner before this commit.
+    if (sameDisplayOwner(fade, background) && fade.overlay.parentNode === layer
+      && fade.overlay.style.backgroundImage === fade.source) {
+      ++paintGen;
+      paintPhoto(fade.source, false, () => sameDisplayOwner(fade, background), ctx.state.background, sceneView());
+    }
+    if (!sameDisplayOwner(displayedOwner, background)) return false;
+    const source = displayedSource();
+    if (stateSignature(source) !== stateSignature(displayedOwner.source)
+      || !((source.image && source.image !== 'none') || (source.background && source.background !== 'none') || source.video)) return false;
+    // An obsolete overlay cannot hide the current owner's retained base.
+    if (layer.querySelectorAll('.bg-fade-in').length) {
+      ++paintGen;
+      layer.querySelectorAll('.bg-fade-in').forEach(overlay => overlay.remove());
+      pendingFade = null;
+    }
+    return true;
+  }
+
   // A backup replacement owns storage until reload. Invalidate old responses,
   // but allow callers to resume after a failed replacement.
   function invalidatePending() {
@@ -61,6 +105,7 @@
       manualInflight = null;
       if (manualCleanup) manualCleanup();
       ctx.elements.backgroundLayer?.querySelectorAll('.bg-fade-in').forEach(overlay => overlay.remove());
+      pendingFade = null;
     }
   }
 
@@ -112,17 +157,56 @@
     }
   }
 
-  function send(action, extra) {
+  function send(action, extra, canSend = () => true) {
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(bingError('timeout', 'Background script no response')), 25000);
-      chrome.runtime.sendMessage(Object.assign({ action: action }, extra || {}), (response) => {
-        clearTimeout(timeout);
-        if (chrome.runtime.lastError) {
-          reject(bingError('archive', chrome.runtime.lastError.message));
-          return;
+      const runtime = g.chrome?.runtime, extensionId = runtime?.id;
+      let settled = false, retried = false, retryTimer;
+      const finish = (error, response) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout); clearTimeout(retryTimer);
+        if (error) reject(error); else resolve(response);
+      };
+      // One deadline covers both dispatches. A missing receiver means the
+      // channel never opened; a closed port or timeout may have executed work
+      // and must not be retried. Chrome normally wakes dormant workers itself.
+      const timeout = setTimeout(() => finish(bingError('timeout', 'Background script no response')), 25000);
+      const contextIsValid = () => Boolean(extensionId && runtime?.id === extensionId && g.chrome?.runtime === runtime);
+      const attempt = () => {
+        retryTimer = undefined;
+        if (settled) return;
+        if (!canSend()) { finish(null); return; }
+        if (!contextIsValid() || typeof runtime.sendMessage !== 'function') {
+          finish(bingError('context', 'Extension context invalidated.')); return;
         }
-        resolve(response);
-      });
+        let answered = false;
+        const receive = (error, response) => {
+          if (answered || settled) return;
+          answered = true;
+          if (!error) {
+            finish(response == null ? bingError('transport', 'Background script returned no response') : null, response);
+            return;
+          }
+          const message = error.message || String(error);
+          if (!contextIsValid() || /Extension context invalidated\.?$/i.test(message)) {
+            finish(bingError('context', message)); return;
+          }
+          if (!retried && message === 'Could not establish connection. Receiving end does not exist.' && canSend()) {
+            retried = true;
+            retryTimer = setTimeout(attempt, 250);
+            return;
+          }
+          finish(bingError('transport', message));
+        };
+        try {
+          runtime.sendMessage(Object.assign({ action }, extra || {}), response => {
+            // Read lastError even after the deadline to consume Chrome's error.
+            const error = runtime.lastError;
+            receive(error, response);
+          });
+        } catch (error) { receive(error); }
+      };
+      attempt();
     });
   }
 
@@ -130,6 +214,8 @@
 
   function failureMessage(error) {
     const labels = {
+      context: '扩展连接已失效，已保留原背景，请刷新此标签页后重试',
+      transport: '扩展后台不可用，已保留原背景，请重新加载扩展后重试',
       archive: 'Bing 壁纸信息获取失败，已保留原背景，请稍后重试',
       timeout: '壁纸更新超时，已保留原背景，请稍后重试',
       image: '壁纸图片无法加载，已保留原背景，请稍后重试',
@@ -195,7 +281,7 @@
       catch (error) {
         if (!resolved.fromCache || error.bingStage === 'timeout' || !canApply()) throw error;
         revokeBlob(resolved.blobUrl); resolved = null;
-        const repair = await send('repairBingImage', { url: background.value });
+        const repair = await send('repairBingImage', { url: background.value }, canApply);
         if (!repair?.success) throw bingError(repair?.stage || 'image', repair?.error || 'Bing image repair failed');
         if (!canApply()) return null;
         // The worker replaced the entry only after its complete body arrived.
@@ -212,7 +298,7 @@
           if (released || !canApply()) return false;
           released = true; ++paintGen;
           ctx.elements.backgroundLayer.className = 'image-bg'; stopVideo();
-          paintPhoto(`url(${resolved.display})`, false);
+          paintPhoto(`url(${resolved.display})`, false, canApply, background, sceneView());
           scopeMetadata(background);
           lastMeta = { kind: 'bing', css: resolved.local ? background.value : '', lqip: extra.lqip, color: extra.color || themeColor() };
           adoptBlob(resolved.blobUrl || '');
@@ -247,9 +333,10 @@
     }
   }
 
-  function paintPhoto(css, fade, canApply = () => true) {
+  function paintPhoto(css, fade, canApply, background, view) {
     if (!canApply()) return;
     const generation = paintGen;
+    const signature = stateSignature(background || {});
     const layer = ctx.elements.backgroundLayer;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     layer.classList.remove('boot-lqip');
@@ -257,10 +344,12 @@
       // A preceding daily fade may still cover the base layer. A synchronous
       // commit must retire it now, not wait for its obsolete timer.
       layer.querySelectorAll('.bg-fade-in').forEach((overlay) => overlay.remove());
+      pendingFade = null;
       layer.style.background = '';
       layer.style.backgroundImage = css;
       layer.style.backgroundSize = 'cover';
       layer.style.backgroundPosition = 'center';
+      recordDisplayed(background, view, signature);
       return;
     }
     const overlay = document.createElement('div');
@@ -269,16 +358,20 @@
     overlay.style.backgroundSize = 'cover';
     overlay.style.backgroundPosition = 'center';
     layer.appendChild(overlay);
+    const transition = { background: signature, view, source: overlay.style.backgroundImage, overlay };
+    pendingFade = transition;
+    const retire = () => { overlay.remove(); if (pendingFade === transition) pendingFade = null; };
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { if (generation === paintGen && canApply()) overlay.style.opacity = '1'; else overlay.remove(); });
+      requestAnimationFrame(() => { if (generation === paintGen && canApply()) overlay.style.opacity = '1'; else retire(); });
     });
     setTimeout(() => {
-      if (generation !== paintGen || !canApply()) { overlay.remove(); return; }
+      if (generation !== paintGen || !canApply()) { retire(); return; }
       layer.style.background = '';
       layer.style.backgroundImage = css;
       layer.style.backgroundSize = 'cover';
       layer.style.backgroundPosition = 'center';
-      if (overlay.parentNode) overlay.remove();
+      retire();
+      recordDisplayed(background, view, signature);
     }, 200);
   }
 
@@ -316,6 +409,7 @@
       adoptBlob('');
       layer.style.backgroundImage = 'none';
       layer.style.background = value || ctx.DEFAULT_GRADIENT;
+      recordDisplayed(bg, view);
       lastMeta = { kind: 'gradient', css: value || ctx.DEFAULT_GRADIENT, lqip: '', color: '' };
       writeMirror();
       return;
@@ -328,11 +422,12 @@
       layer.style.backgroundImage = 'none';
       if (video) {
         if (video.getAttribute('src') !== value) video.src = value;
-        const show = function () { if (canApply()) video.style.display = 'block'; };
+        const show = function () { if (canApply()) { video.style.display = 'block'; recordDisplayed(bg, view); } };
         if (video.readyState >= 2) show();
         else video.addEventListener('canplay', show, { once: true });
         video.play().catch(() => {});
       }
+      recordDisplayed(bg, view);
       writeMirror();
       return;
     }
@@ -343,7 +438,7 @@
     if (g.OpenTabBoot.isLocalAsset(url)) {
       if (!canApply()) return;
       adoptBlob('');
-      paintPhoto(`url(${url})`, fade, sceneCurrent);
+      paintPhoto(`url(${url})`, fade, sceneCurrent, bg, view);
       lastMeta = { kind: 'image', css: url, lqip: lastMeta.lqip || '', color: lastMeta.color || themeColor() };
       writeMirror();
       loadImage(url).then((img) => {
@@ -378,7 +473,7 @@
       }
       if (gen !== paintGen) paintGen += 1;
       scopeMetadata(bg);
-      paintPhoto(`url(${resolved.display})`, fade, sceneCurrent);
+      paintPhoto(`url(${resolved.display})`, fade, sceneCurrent, bg, view);
       lastMeta = {
         kind: bg.type === 'bing' ? 'bing' : 'image',
         css: g.OpenTabBoot.isLocalAsset(url) ? url : '',
@@ -396,7 +491,7 @@
           const img = await loadImage(fallback);
           if (!canApply()) return;
           adoptBlob('');
-          paintPhoto(`url(${fallback})`, false, sceneCurrent);
+          paintPhoto(`url(${fallback})`, false, sceneCurrent, bg, view);
           lastMeta = { kind: 'image', css: fallback, lqip: '', color: themeColor() };
           writeMirror();
         } catch (e2) {
@@ -440,7 +535,7 @@
     let prepared = null;
     const btn = ctx.elements.refreshBgBtn;
     const layer = ctx.elements.backgroundLayer;
-    const hadDisplayed = Boolean(layer?.style.backgroundImage || layer?.style.background || ctx.elements.backgroundVideo?.style.display === 'block');
+    retainDisplayed(background);
     const hold = { generation, view, before: background, selected: '', description: describeBackground() };
     manualDisplayHold = hold;
     const choiceIsCurrent = () => requestIsCurrent(generation, selectedBackground || background, view);
@@ -456,12 +551,12 @@
     manualCleanup = cleanup;
     try {
       const index = Number.isInteger(ctx.state.bingIndex) ? ctx.state.bingIndex : 0;
-      let result = await send('fetchBingImage', { index: index });
+      let result = await send('fetchBingImage', { index: index }, choiceIsCurrent);
       if (!requestIsCurrent(generation, background, view)) return;
       // Existing daily/pinned backgrounds may still carry archive index zero.
       if (result && result.success && result.url === ctx.state.background.value) {
         const next = Number.isInteger(result.nextIndex) ? result.nextIndex : (index + 1) % 8;
-        result = await send('fetchBingImage', { index: next });
+        result = await send('fetchBingImage', { index: next }, choiceIsCurrent);
       }
       if (!requestIsCurrent(generation, background, view)) return;
       if (!result || !result.success) throw bingError(result?.stage || 'archive', result?.error || 'Unknown Bing fetch error');
@@ -500,9 +595,9 @@
       if (choiceIsCurrent() || requestIsCurrent(generation, background, view)) {
         ctx.state.background = JSON.parse(background);
         ctx.state.bingIndex = previousIndex;
-        if (!hadDisplayed) {
+        if (!retainDisplayed(background)) {
           if (manualDisplayHold === hold) manualDisplayHold = null;
-          try { await updateBackground({ fade: false, preserveOnError: true }); } catch (_) {}
+          try { await updateBackground({ fade: false }); } catch (_) {}
         }
         if (requestIsCurrent(generation, background, view) && ctx.showToast) ctx.showToast(failureMessage(e));
       }
@@ -526,7 +621,7 @@
       return;
     }
     try {
-      const result = await send('refreshBingDaily');
+      const result = await send('refreshBingDaily', null, () => requestIsCurrent(generation, background, view));
       if (!requestIsCurrent(generation, background, view)) return;
       if (!result || !result.success) {
         console.warn('Failed to refresh background:', result && result.error);
@@ -598,6 +693,9 @@
     } catch (e) {
       if (!requestIsCurrent(generation, background, view)) return;
       console.warn('Failed to refresh background:', e);
+      // Retain only this view/background's committed pixels, not a preceding
+      // scene or boot placeholder. Metadata scoping alone is not a paint.
+      if (['context', 'transport', 'timeout'].includes(e.bingStage) && retainDisplayed(background)) return;
       await updateBackground({ fade: false });
     }
   }
@@ -669,6 +767,8 @@
   g.OpenTabBingCache = {
     init: function (c) {
       ctx = c;
+      displayedOwner = null;
+      pendingFade = null;
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local') return;
         if (sceneEnabled()) {

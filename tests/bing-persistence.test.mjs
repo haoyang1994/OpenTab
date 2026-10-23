@@ -8,7 +8,7 @@ function harness() {
   const state = { icons: [], folders: [], background: { type: 'bing', value: 'assets/old.jpg', bing: {} }, bingIndex: 0 };
   const stored = clone(state), writes = [], callbacks = [], listeners = [], toasts = [];
   let failWrite = false;
-  const chrome = { runtime: { lastError: null, sendMessage(message, cb) { callbacks.push({ message, cb }); } }, storage: {
+  const chrome = { runtime: { id: 'opentab-test', lastError: null, sendMessage(message, cb) { callbacks.push({ message, cb }); } }, storage: {
     onChanged: { addListener(fn) { listeners.push(fn); } },
     local: {
       get(keys, cb) { const result = Object.fromEntries((keys || Object.keys(stored)).filter((key) => stored[key] !== undefined).map((key) => [key, clone(stored[key])])); cb?.(result); return Promise.resolve(result); },
@@ -274,9 +274,10 @@ for (const repair of ['ok', 'bad-body', 'failed']) {
 // Exercise scene-mode persistence and callbacks with a held durable save. Both
 // optimistic candidate renders and rollback renders must leave old pixels live.
 for (const outcome of ['saved', 'failed', 'switched']) {
-  const h = photoHarness(), before = await displayOld(h), save = defer();
+  const h = photoHarness(), save = defer();
   let view = { sceneId: 'a', homeGroupId: 'a-home', generation: 1 };
   h.host.getSceneView = () => view;
+  const before = await displayOld(h);
   h.host.persistBackground = async () => { await h.g.OpenTabBingCache.updateBackground({ fade: false }); return save.promise; };
   h.entries.set(nextUrl, 'candidate');
   const pending = h.g.OpenTabBingCache.fetchRandomBackground(); h.respond(0, { url: nextUrl }); await flush();
@@ -402,3 +403,157 @@ for (const scene of [false, true]) for (const order of ['notification-first', 'c
   assert.equal(h.toasts.length, 0); assert.equal(h.elements.refreshBgBtn.disabled, false);
 }
 console.log('Bing native storage ordering passed: reordered nested dictionaries, async own-write notifications and adoption before/after acknowledgement');
+
+// A transport rejection is not an archive/network rejection. Retry only the
+// exact pre-delivery no-receiver error, within one deadline and the same view.
+const NO_RECEIVER = 'Could not establish connection. Receiving end does not exist.';
+async function transportHarness(getSceneView) {
+  const h = photoHarness();
+  if (getSceneView) h.host.getSceneView = getSceneView;
+  const previous = await displayOld(h), timers = new Map(), failures = [];
+  let now = 0, nextTimer = 0;
+  h.g.console.warn = (_label, error) => failures.push(error);
+  h.g.setTimeout = (fn, ms) => { const id = ++nextTimer; timers.set(id, { fn, at: now + ms }); return id; };
+  h.g.clearTimeout = id => timers.delete(id);
+  h.entries.set(nextUrl, 'candidate');
+  return { ...h, previous, timers, failures,
+    error(index, message) {
+      h.g.chrome.runtime.lastError = { message };
+      h.callbacks[index].cb();
+      h.g.chrome.runtime.lastError = null;
+    },
+    async advance(ms) {
+      now += ms;
+      for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); }
+      await flush();
+    }
+  };
+}
+function assertTransportRetained(h) {
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, h.previous);
+  assert.deepEqual(h.revoked, []);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.elements.refreshBgBtn.disabled, false);
+  assert.equal(h.timers.size, 0, 'every dispatch/retry/deadline timer is cleared');
+}
+for (const outcome of ['success', 'unavailable', 'timeout']) {
+  const h = await transportHarness();
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  assert.equal(h.g.OpenTabBingCache.fetchRandomBackground(), pending, 'recovery stays single-flight');
+  h.error(0, NO_RECEIVER);
+  await h.advance(249); assert.equal(h.callbacks.length, 1);
+  await h.advance(1); assert.equal(h.callbacks.length, 2);
+  assert.deepEqual(h.callbacks[1].message, h.callbacks[0].message, 'retry preserves action and archive index');
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, h.previous);
+  assert.equal(h.writes.length, 0);
+  if (outcome === 'success') h.respond(1, { url: nextUrl });
+  if (outcome === 'unavailable') h.error(1, NO_RECEIVER);
+  if (outcome === 'timeout') await h.advance(24750);
+  await pending;
+  assert.equal(h.callbacks.length, 2, 'never dispatch a third attempt');
+  assert.equal(h.timers.size, 0);
+  if (outcome === 'success') {
+    assert.match(h.elements.backgroundLayer.style.backgroundImage, /candidate/);
+    assert.equal(h.stored.background.value, nextUrl); assert.equal(h.toasts.length, 0);
+    assert.deepEqual(h.revoked, [h.created[0]]);
+  } else {
+    assertTransportRetained(h);
+    assert.equal(h.failures[0].bingStage, outcome === 'timeout' ? 'timeout' : 'transport');
+    assert.equal(h.toasts.length, 1);
+    if (outcome === 'unavailable') assert.match(h.toasts[0], /扩展后台/);
+    h.respond(1, { url: nextUrl }); await flush();
+    assertTransportRetained(h);
+  }
+}
+for (const failure of ['missing-id', 'sync-invalid', 'callback-invalid', 'sync-other', 'closed-port', 'api-error', 'no-response', 'timeout']) {
+  const h = await transportHarness();
+  if (failure === 'missing-id') delete h.g.chrome.runtime.id;
+  if (failure.startsWith('sync-')) h.g.chrome.runtime.sendMessage = () => { throw new Error(failure === 'sync-invalid' ? 'Extension context invalidated.' : 'Synthetic dispatch error'); };
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  if (failure === 'callback-invalid') h.error(0, 'Extension context invalidated.');
+  if (failure === 'closed-port') h.error(0, 'The message port closed before a response was received.');
+  if (failure === 'api-error') h.respond(0, { success: false, stage: 'archive', error: 'Bing API status 503' });
+  if (failure === 'no-response') h.callbacks[0].cb();
+  if (failure === 'timeout') await h.advance(25000);
+  await pending;
+  assertTransportRetained(h);
+  assert.ok(h.callbacks.length <= 1, `${failure}: cannot safely replay`);
+  assert.equal(h.toasts.length, 1);
+  if (['missing-id', 'sync-invalid', 'callback-invalid'].includes(failure)) {
+    assert.equal(h.failures[0].bingStage, 'context'); assert.match(h.toasts[0], /刷新此标签页/);
+  }
+  if (['sync-other', 'closed-port', 'no-response'].includes(failure)) assert.equal(h.failures[0].bingStage, 'transport');
+  if (failure === 'timeout') { h.respond(0, { url: nextUrl }); await flush(); assertTransportRetained(h); }
+}
+for (const changed of ['scene', 'choice', 'import', 'context']) {
+  let view = { sceneId: 'a', homeGroupId: 'a-home', generation: 1 };
+  const h = await transportHarness(() => view);
+  const pending = h.g.OpenTabBingCache.fetchRandomBackground(); h.error(0, NO_RECEIVER);
+  if (changed === 'scene') view = { sceneId: 'b', homeGroupId: 'b-home', generation: 2 };
+  if (changed === 'choice') h.state.background = { type: 'gradient', value: 'linear-gradient(red, blue)' };
+  if (changed === 'import') h.g.OpenTabBingCache.invalidatePending();
+  if (changed === 'context') h.g.chrome.runtime.id = undefined;
+  await h.advance(250); await pending;
+  assert.equal(h.callbacks.length, 1, `${changed}: stale recovery must not dispatch`);
+  assertTransportRetained(h);
+  assert.equal(h.toasts.length, changed === 'context' ? 1 : 0);
+  if (changed === 'choice') assert.equal(h.state.background.type, 'gradient', 'new choice not rolled back');
+}
+console.log('Bing transport tests passed: bounded no-receiver recovery, truthful context/transport failures, no uncertain replay, timer cleanup and stale-view cancellation');
+// A transport failure during automatic refresh must not re-read a now-corrupt
+// cached copy and replace the still-valid source already on screen.
+{
+  const h = await transportHarness(); h.entries.set(oldUrl, 'corrupt');
+  const pending = h.g.OpenTabBingCache.refreshDailyIfNeeded();
+  h.error(0, NO_RECEIVER); await h.advance(250); h.error(1, NO_RECEIVER); await pending;
+  assertTransportRetained(h);
+}
+// Retry backoff never extends the original total message deadline.
+{
+  const h = await transportHarness(); const pending = h.g.OpenTabBingCache.fetchRandomBackground();
+  await h.advance(24900); h.error(0, NO_RECEIVER); await h.advance(100); await pending;
+  assert.equal(h.callbacks.length, 1, 'deadline cancels a retry not yet dispatched');
+  assertTransportRetained(h);
+}
+{
+  const h = await transportHarness(); h.elements.backgroundLayer.style.backgroundImage = 'none';
+  const pending = h.g.OpenTabBingCache.refreshDailyIfNeeded();
+  h.error(0, NO_RECEIVER); await h.advance(250); h.error(1, NO_RECEIVER); await pending;
+  assert.match(h.elements.backgroundLayer.style.backgroundImage, /url\(blob:previous-/,
+    'an explicitly empty initial layer still receives its existing cached background');
+  assert.equal(h.writes.length, 0); assert.equal(h.timers.size, 0);
+}
+// Display ownership is semantic, unlike asynchronous request freshness. A new
+// generation in the same scene/home group does not invalidate committed pixels.
+for (const method of ['fetchRandomBackground', 'refreshDailyIfNeeded']) for (const lateGeneration of [false, true]) {
+  let view = { sceneId: 'a', homeGroupId: 'a-home', generation: 1 };
+  const h = await transportHarness(() => view); h.entries.set(oldUrl, 'corrupt');
+  if (!lateGeneration) view = { ...view, generation: 2 };
+  const pending = h.g.OpenTabBingCache[method]();
+  if (lateGeneration) view = { ...view, generation: 2 };
+  h.error(0, 'The message port closed before a response was received.'); await pending;
+  assertTransportRetained(h); assert.equal(h.created.length, 1);
+  assert.equal(h.toasts.length, !lateGeneration && method === 'fetchRandomBackground' ? 1 : 0,
+    'late request generations remain rejected even when the existing pixels still belong to the scene');
+}
+// A selected, decoded fade is a usable source even before its base-layer timer.
+// Complete that exact transition; never replace it by rereading a corrupt cache.
+for (const method of ['fetchRandomBackground', 'refreshDailyIfNeeded']) {
+  let view = { sceneId: 'a', homeGroupId: 'a-home', generation: 1 };
+  const h = await transportHarness(() => view);
+  h.g.matchMedia = () => ({ matches: false }); h.g.requestAnimationFrame = fn => fn();
+  await h.g.OpenTabBingCache.updateBackground({ fade: true });
+  const overlay = h.elements.backgroundLayer.children[0], visible = overlay.style.backgroundImage;
+  assert.equal(overlay.style.opacity, '1'); assert.notEqual(visible, h.previous);
+  h.entries.set(oldUrl, 'corrupt'); view = { ...view, generation: 2 };
+  const pending = h.g.OpenTabBingCache[method]();
+  h.error(0, 'The message port closed before a response was received.'); await pending;
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, visible);
+  assert.equal(h.elements.backgroundLayer.children.length, 0);
+  assert.equal(h.created.length, 2, 'no new cache materialization');
+  assert.deepEqual(h.revoked, [h.created[0]], 'the usable decoded fade blob is never revoked');
+  await h.advance(200);
+  assert.equal(h.elements.backgroundLayer.style.backgroundImage, visible, 'old fade timer cannot overwrite its synchronous ownership commit');
+  assert.equal(h.writes.length, 0); assert.equal(h.timers.size, 0);
+}
+console.log('Bing display ownership passed: same-scene generation retention, strict stale requests and decoded fade promotion without cache reread');

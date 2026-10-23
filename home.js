@@ -362,6 +362,8 @@
 
   let timezoneMenuStamp = '';
   function renderTimezoneList() {
+    // Opening rebuilds before focus; hidden loads need no menu DOM or Intl work.
+    if (elements.timezoneSelector.classList.contains('hidden')) return;
     const current = OpenTabTimezone.preference(state);
     const zones = COMMON_TIMEZONES.slice();
     if (!zones.some(tz => OpenTabTimezone.sameZone(tz.id, current.timezone))) {
@@ -1123,7 +1125,7 @@
 
   function renderCurrentWorkspace() {
     sceneRuntime?.syncVisibleAppearance();
-    refreshIconViews(false); renderTodos(); updateClock();
+    refreshIconViews(false); renderTodos();
     renderWorkspaceSettings(); renderTodoPanel(); updateBackground({ fade: false });
   }
   const workspace = OpenTabWorkspace.connect({

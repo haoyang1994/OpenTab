@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { waitForAsync } from './wait-for-async.mjs';
+import { assertRoundedStackGeometry } from './clock-stack.mjs';
 
 // Pure geometry guard is shared with offline negative controls. A settings
 // pixel over another UI surface cannot prove single-surface transmission.
@@ -89,7 +90,7 @@ export async function verifyInterfaceGlass(page, worker, artifacts) {
       const clock = document.getElementById('clock-widget').getBoundingClientRect(), sheet = document.getElementById('settings-panel').getBoundingClientRect();
       const section = document.getElementById('ui-opacity').closest('.setting-section').getBoundingClientRect();
       const stage = document.getElementById('clock-deck-stage');
-      const backing = ['::before', '::after'].map(pseudo => { const s = getComputedStyle(stage, pseudo); return { top: parseFloat(s.top), height: parseFloat(s.height), transform: s.transform }; });
+      const backing = ['::before', '::after'].map(pseudo => { const s = getComputedStyle(stage, pseudo); return { left: parseFloat(s.left), top: stage.getBoundingClientRect().height - parseFloat(s.bottom) - parseFloat(s.height), width: parseFloat(s.width), height: parseFloat(s.height), radius: parseFloat(s.borderBottomLeftRadius), mask: s.maskImage || s.webkitMaskImage, pointerEvents: s.pointerEvents, transform: s.transform }; });
       const points = {
         clock: { x: clock.left + 40, y: clock.top + 105, size: 20 },
         sheet: { x: sheet.right - 8, y: sheet.top + sheet.height / 2 },
@@ -111,7 +112,7 @@ export async function verifyInterfaceGlass(page, worker, artifacts) {
         if (!document.elementFromPoint(points.clock.x + dx, points.clock.y + dy)?.closest('#clock-widget')) throw Error('Clock pixel sample is obscured');
       }
       if (getComputedStyle(document.getElementById('clock-widget'), '::before').display !== 'none') throw Error('Unmodelled clock foreground overlay');
-      return { surfaces, samples, backing, stageHeight: stage.getBoundingClientRect().height, points, behindSheet };
+      return { surfaces, samples, backing, stageHeight: stage.getBoundingClientRect().height, stageWidth: stage.getBoundingClientRect().width, radius: parseFloat(getComputedStyle(document.getElementById('clock-widget')).borderBottomLeftRadius), points, behindSheet };
 
     });
   }
@@ -145,8 +146,7 @@ export async function verifyInterfaceGlass(page, worker, artifacts) {
         const oldCardAlpha = theme === 'light' ? opacity / 100 * .5 + .4 : opacity / 100 * .72 + .12;
         assert.ok(Math.abs(report.surfaces['#search-widget'].background[3] - oldCardAlpha) < .006, 'existing search alpha remains unchanged');
         for (const sample of report.samples) assert.ok(sample.ratio >= 4.5, `${theme}/${opacity}/${blur} ${sample.selector}: ${sample.ratio}`);
-        assert.ok(report.backing[0].top >= report.stageHeight - 1, 'first backing begins below the front face');
-        assert.ok(report.backing[1].top >= report.backing[0].top + report.backing[0].height - 1, 'backing strips never overlap');
+        assertRoundedStackGeometry({ width: report.stageWidth, height: report.stageHeight, radius: report.radius, backing: report.backing });
         for (const backdrop of ['#000', '#fff']) {
           await background(backdrop);
           const sampled = await samplePng(await page.screenshot({ animations: 'disabled' }), report.points);
