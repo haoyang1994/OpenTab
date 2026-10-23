@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { formatConsoleError } from './console-allow.mjs';
 import { assertPackagedNavigation } from './package-navigation.mjs';
+import { PIXEL } from './scenes-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'opentab-package-smoke-'));
@@ -100,6 +101,36 @@ try {
       assert.equal(saved.id, legacy.id);
       assert.equal(saved.toolSubtype, 'json-format', 'only explicit selection converts tool');
       assert.equal(await tile.getAttribute('href'), `chrome-extension://${id}/tool.html?tool=json-format`);
+
+      // The release ZIP includes the new module, localized dialog and style,
+      // not merely a working checkout-only feature.
+      const launchUrl = 'https://packaged-launch.example.test/guide?mode=one#details';
+      await page.evaluate(async ({ url, pixel }) => {
+        await OpenTabWorkspace.transaction(({ write }) => write({ icons: [
+          { id: 'packaged-launch-site', name: 'Packaged reference', url, type: 'shortcut', folderId: 'folder-home', parentId: '', uploadedIconDataUrl: `data:image/png;base64,${pixel}`, iconSource: 'upload' }
+        ] }));
+      }, { url: launchUrl, pixel: PIXEL });
+      await page.reload({ waitUntil: 'load' });
+      await page.waitForFunction(() => globalThis.OpenTabGroupLaunch && document.querySelector('.icon-widget[data-id="packaged-launch-site"]'));
+      await page.waitForLoadState('networkidle');
+      const launchBefore = await page.evaluate(() => chrome.storage.local.get(['icons', 'folders']));
+      await page.click('#group-launch-entry');
+      assert.equal(await page.locator('#group-launch-list input[type="checkbox"]').count(), 1);
+      assert.equal(await page.locator('#group-launch-list input').inputValue(), launchUrl);
+      assert.equal(await page.locator('#group-launch-confirm').textContent(), 'Open 1 selected websites');
+      fs.mkdirSync(path.join(root, 'artifacts'), { recursive: true });
+      await page.screenshot({ path: path.join(root, 'artifacts/package-group-launch.png'), animations: 'disabled' });
+      const opened = context.waitForEvent('page');
+      await page.click('#group-launch-confirm');
+      const launched = await opened;
+      await launched.waitForURL(launchUrl);
+      await page.waitForFunction(() => !OpenTabGroupLaunch.isPending() && document.querySelector('#group-launch-list input').disabled);
+      assert.equal(page.url(), target, 'packaged group launch leaves its home page intact');
+      assert.equal(await page.locator('#group-launch-status').textContent(), 'Opened 1 websites in background tabs.');
+      assert.deepEqual(await page.evaluate(() => chrome.storage.local.get(['icons', 'folders'])), launchBefore, 'packaged launch never rewrites the workspace');
+      await page.click('#group-launch-cancel');
+      await launched.close();
+
 
 
     }

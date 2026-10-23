@@ -233,5 +233,20 @@ OpenTabI18n.register({
   "语言": "Language",
   "跟随浏览器": "Follow browser",
   "语言保存失败，请重试。": "Could not save language. Please try again.",
-  "正在保存语言…": "Saving language…"
+  "正在保存语言…": "Saving language…",
+  "全选": "Select all",
+  "预览并打开分组": "Preview and open group",
+  "打开分组：{name}": "Open group: {name}",
+  "仅包含本分组及其文件夹中的 HTTP(S) 网站，重复网址只列出一次。确认后在后台打开，不会离开当前页面。": "Only HTTP(S) websites in this group and its folders are included. Duplicate URLs appear once. Confirm to open background tabs without leaving this page.",
+  "已选择 {count} / {total} 个网站": "{count} of {total} websites selected",
+  "每次最多打开 20 个网站，请取消部分选择后继续。": "Open up to 20 websites at a time. Deselect some to continue.",
+  "打开选中的 {count} 个网站": "Open {count} selected websites",
+  "正在打开…": "Opening…",
+  "此分组中没有可打开的网站。": "There are no websites to open in this group.",
+  "分组或网站已变化，请关闭后重新预览。": "The group or websites changed. Close and preview again.",
+  "已打开": "Opened",
+  "未能打开，可重试": "Could not open. You can retry.",
+  "已打开 {opened} 个网站，{failed} 个未能打开。重试只会打开仍选中的网站。": "Opened {opened} websites; {failed} could not open. Retrying opens only the websites still selected.",
+  "已在后台打开 {count} 个网站。": "Opened {count} websites in background tabs.",
+  "未能验证分组，未打开新网站。请重试。": "Could not verify the group. No new websites were opened. Please retry."
 });

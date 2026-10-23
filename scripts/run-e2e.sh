@@ -29,6 +29,7 @@ run_headed() {
   local suites=(
     tests/scenes.test.mjs
     tests/clock-deck.test.mjs
+    tests/group-launch.test.mjs
     tests/site-selection.test.mjs
     tests/paste-sites.test.mjs
     tests/command-palette.test.mjs

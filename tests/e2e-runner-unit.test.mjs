@@ -11,6 +11,7 @@ const bash = execFileSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' 
 const suites = [
   'tests/scenes.test.mjs',
   'tests/clock-deck.test.mjs',
+  'tests/group-launch.test.mjs',
   'tests/site-selection.test.mjs',
   'tests/paste-sites.test.mjs',
   'tests/command-palette.test.mjs',
@@ -151,7 +152,7 @@ try {
     const success = run(mode);
     assert.equal(success.status, 0, mode.name);
     assertCalls(suites);
-    assert.match(success.stdout, /E2E: all 13 suites passed/);
+    assert.match(success.stdout, new RegExp(`E2E: all ${suites.length} suites passed`));
     for (const suite of suites) {
       assert.ok(success.stdout.includes(`stdout: ${suite}\n`), 'suite stdout must remain visible');
       assert.ok(success.stderr.includes(`stderr: ${suite}\n`), 'suite stderr must remain visible');
