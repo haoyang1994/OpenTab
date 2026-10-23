@@ -11,7 +11,43 @@ const HOME = 'folder-home';
 const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 const NARROW = [[320, 480], [360, 560], [390, 844], [640, 360], [760, 600]];
 const DESKTOP = [[761, 600], [1024, 768], [1280, 900]];
-const TARGETS = '#group-tabs-bar button, #icons-container .icon-widget, #add-shortcut-tile';
+const TARGETS = '#group-tabs-bar button, #icons-container .icon-widget, #add-shortcut-tile, #search-engine-switch:not(.engine-deck-open) .engine-btn.active, #search-engine-switch.engine-deck-open .engine-btn';
+
+export function assertZenEntryGeometry(report, label, inset = 0, minimal = false) {
+  const { width, height, content, zen } = report, narrow = width <= 760;
+  const near = (actual, expected, description) => assert.ok(Math.abs(actual - expected) < 1,
+    `${label}: ${description}: ${actual} != ${expected}`);
+  near(zen.width, 44, 'Zen width'); near(zen.height, 44, 'Zen height');
+  near(zen.left, narrow ? minimal ? 14 : 18 : 20, 'Zen left');
+  if (narrow && !minimal) {
+    near(zen.bottom, height - 18 - inset, 'Zen safe-area bottom');
+    assert.ok(zen.top - content.bottom >= 13, `${label}: Zen clears the real scroll clip`);
+  } else near(zen.top, narrow ? 14 : 20, 'unchanged top-left Zen');
+  assert.equal(zen.hit, true, `${label}: Zen center is intercepted by ${zen.target}`);
+  assert.equal(zen.edgeHits.length, 4, `${label}: all four Zen target edges are sampled`);
+  assert.ok(zen.edgeHits.every(Boolean), `${label}: all four Zen target edges remain reachable`);
+  assert.ok(zen.left >= 4 && zen.right <= width - 4 && zen.top >= 4 && zen.bottom <= height - 4,
+    `${label}: complete Zen target and outward focus ring fit the viewport`);
+}
+
+export function assertTimezoneFocusGeometry(report, label) {
+  const { panel, clip, innerClip, target, outline, scrollPadding, focused, focusVisible, hit } = report;
+  const inside = (box, bounds, gap = 0) => box.left >= bounds.left + gap - .5 && box.right <= bounds.right - gap + .5
+    && box.top >= bounds.top + gap - .5 && box.bottom <= bounds.bottom - gap + .5;
+  assert.ok(inside(panel, clip, 8), `${label}: complete timezone panel clears the content clip: ${JSON.stringify(report)}`);
+  assert.equal(focused, true, `${label}: timezone option retains actual focus`);
+  assert.equal(focusVisible, true, `${label}: native keyboard focus visibly styles the timezone option`);
+  assert.equal(outline.width, 3, `${label}: original 3px focus outline remains`);
+  assert.equal(outline.offset, 3, `${label}: original 3px outward outline offset remains`);
+  assert.equal(outline.style, 'solid', `${label}: focus outline is painted`);
+  assert.equal(scrollPadding.top, 6, `${label}: native focus scrolling reserves the top 6px ring clearance`);
+  assert.equal(scrollPadding.bottom, 6, `${label}: native focus scrolling reserves the bottom 6px ring clearance`);
+  const out = outline.width + outline.offset;
+  const ring = { left: target.left - out, right: target.right + out, top: target.top - out, bottom: target.bottom + out };
+  assert.ok(inside(ring, clip) && inside(ring, innerClip),
+    `${label}: complete 6px outward focus ring clears both scroll clips: ${JSON.stringify(report)}`);
+  assert.equal(hit, true, `${label}: actual timezone option wins its center hit test`);
+}
 
 // Shared with offline counterexamples. Native callers supply real layout and
 // elementFromPoint results; rectangle non-overlap alone is not pointer proof.
@@ -32,11 +68,14 @@ export function assertHomeControlsGeometry(report, label, inset = 0) {
   }
   assert.equal(report.transparent, true, `${label}: no opaque footer or content backing is introduced`);
   assert.ok(report.scrollWidth <= width, `${label}: no horizontal page overflow`);
+  assertZenEntryGeometry(report, label, inset);
   if (narrow) {
     near(content.scrollPadding, 8, 'focus/scroll padding');
     for (const target of report.visibleTargets) assert.equal(target.hit, true,
       `${label}: visible ${target.id} center is intercepted by ${target.target}`);
   }
+  for (const target of report.visibleTargets.filter(target => target.engine)) assert.equal(target.hit, true,
+    `${label}: visible engine ${target.id} center is intercepted by ${target.target}`);
 }
 
 function fixture(themeMode, groups, count = 18) {
@@ -100,17 +139,36 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
       const rect = el => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
       const sample = el => {
         const box = rect(el), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-        return { ...box, id: el.id || el.dataset.id || el.className, hit: el.contains(hit), target: hit?.closest('button, a')?.id || hit?.id || hit?.tagName };
+        return { ...box, id: el.id || el.dataset.id || el.dataset.engine || el.className, engine: el.matches('.engine-btn'),
+          hit: el.contains(hit), target: hit?.closest('button, a')?.id || hit?.id || hit?.tagName };
       };
       const el = document.getElementById('content'), content = rect(el), style = getComputedStyle(el);
       const transparent = node => { const s = getComputedStyle(node); return s.backgroundColor === 'rgba(0, 0, 0, 0)' && s.backgroundImage === 'none'; };
       return { width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth,
         content: { ...content, scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, paddingBottom: parseFloat(style.paddingBottom), scrollPadding: parseFloat(style.scrollPaddingTop) },
         buttons: ['refresh-bg-btn', 'settings-btn'].map(id => sample(document.getElementById(id))),
+        zen: (() => {
+          const node = document.getElementById('zen-toggle-btn'), box = sample(node);
+          return { ...box, edgeHits: [[box.left + 2, box.top + box.height / 2], [box.right - 2, box.top + box.height / 2],
+            [box.left + box.width / 2, box.top + 2], [box.left + box.width / 2, box.bottom - 2]]
+            .map(([x, y]) => node.contains(document.elementFromPoint(x, y))) };
+        })(),
         transparent: transparent(el) && transparent(document.getElementById('homepage')),
         visibleTargets: [...document.querySelectorAll(targets)].filter(el => {
           const r = rect(el), s = getComputedStyle(el), y = r.top + r.height / 2;
-          return r.width > 0 && r.height > 0 && s.visibility === 'visible' && !el.hidden && y >= content.top && y < content.bottom;
+          if (!(r.width > 0 && r.height > 0 && s.visibility === 'visible' && !el.hidden && y >= content.top && y < content.bottom)) return false;
+          // Closed deck back cards and partially clipped rail options are not
+          // exposed controls. Keep the existing center-based tile checks, but
+          // only claim engine pointer reachability for complete visible targets.
+          if (el.matches('.engine-btn')) {
+            if (el.disabled || el.closest('[hidden], [inert]')) return false;
+            for (let node = el.parentElement; node; node = node.parentElement) {
+              const bounds = rect(node), style = getComputedStyle(node);
+              if (/(auto|scroll|hidden|clip)/.test(style.overflowX) && (r.left < bounds.left || r.right > bounds.right)) return false;
+              if (/(auto|scroll|hidden|clip)/.test(style.overflowY) && (r.top < bounds.top || r.bottom > bounds.bottom)) return false;
+            }
+          }
+          return true;
         }).map(sample) };
     }, TARGETS);
   }
@@ -131,6 +189,7 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
       const hit = document.elementFromPoint(x, y), ancestors = [];
       for (let node = el; node && ancestors.length < 8; node = node.parentElement) ancestors.push(details(node));
       return { x, y, hit: el.contains(hit), target: identity(hit), requested: identity(el), targetRect: r,
+        hitControl: identity(hit?.closest('button, a')),
         activeElement: identity(document.activeElement), activeDetails: details(document.activeElement), focused: document.activeElement === el,
         hitClockCard: identity(hit?.closest('#clock-deck-nav [data-clock-card]')),
         elementsAtPoint: document.elementsFromPoint(x, y).slice(0, 10).map(identity), ancestors,
@@ -151,6 +210,133 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
   }
   async function pointer(target, label) {
     const p = await center(target, label); await page.mouse.click(p.x, p.y);
+  }
+  async function zenKeyboardNavigation(label) {
+    const before = await page.locator('#content').evaluate(el => el.scrollTop);
+    await page.locator('#refresh-bg-btn').focus(); await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'zen-toggle-btn', `${label}: native reverse Tab reaches Zen`);
+    assert.equal(await page.locator('#zen-toggle-btn').evaluate(el => el.matches(':focus-visible')), true, `${label}: Zen has visible keyboard focus`);
+    assertZenEntryGeometry(await snapshot(), label);
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'refresh-bg-btn', `${label}: native Tab leaves Zen for refresh`);
+    assert.equal(await page.locator('#content').evaluate(el => el.scrollTop), before, `${label}: control-lane keyboard navigation preserves scroll`);
+  }
+  async function prepareZenFullscreen() {
+    await page.evaluate(() => {
+      window.__viewportFullscreenSettled = !document.fullscreenEnabled;
+      const settled = event => {
+        if (event.type !== 'fullscreenerror' && document.fullscreenElement !== document.documentElement) return;
+        window.__viewportFullscreenSettled = true;
+        document.removeEventListener('fullscreenchange', settled);
+        document.removeEventListener('fullscreenerror', settled);
+      };
+      if (!window.__viewportFullscreenSettled) {
+        document.addEventListener('fullscreenchange', settled);
+        document.addEventListener('fullscreenerror', settled);
+      }
+    });
+  }
+  async function zenRoundTrip(activate, viewport, label) {
+    const before = await page.locator('#content').evaluate(el => el.scrollTop);
+    await prepareZenFullscreen(); await activate();
+    await page.waitForFunction(() => OpenTabZenMode.isActive() && document.getElementById('homepage').inert && window.__viewportFullscreenSettled);
+    await page.locator('#zen-exit').focus(); await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !OpenTabZenMode.isActive() && !document.fullscreenElement && !document.getElementById('homepage').inert);
+    await page.setViewportSize(viewport); await page.mouse.move(1, 1); await settle();
+    assert.equal(await page.locator('#content').evaluate(el => el.scrollTop), before, `${label}: Zen restores the existing scroll position`);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'zen-toggle-btn', `${label}: Zen restores its real opener`);
+  }
+  async function zenEngineCounterexample() {
+    await reset('light', 6); await page.setViewportSize({ width: 640, height: 360 }); await scroll(.5);
+    const active = page.locator('#search-engine-panel .engine-btn.active');
+    const initial = await inspectCenter(active), beforeScroll = await page.locator('#content').evaluate(el => el.scrollTop);
+    let old;
+    try {
+      // Reproduce the accepted previous corner position, not a fabricated
+      // interception or a changed search layout. The 44px target is unchanged.
+      old = await page.addStyleTag({ content: 'body:not(.minimal-mode) #zen-toggle-btn { top: 14px; left: 14px; bottom: auto; }' });
+      await settle(); const covered = await inspectCenter(active);
+      assert.deepEqual(covered.targetRect, initial.targetRect, 'old Zen corner leaves the actual engine geometry unchanged');
+      assert.ok(covered.inside && !covered.hit && covered.hitControl?.id === 'zen-toggle-btn',
+        `old corner must intercept the actual visible engine center: ${JSON.stringify(covered)}`);
+      reports.push({ label: 'old Zen corner / 640×360 middle', ...covered });
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-zen-engine-before-640x360.png'), animations: 'disabled' });
+      // Native pointer input at the covered engine center really enters Zen.
+      await zenRoundTrip(() => page.mouse.click(covered.x, covered.y), { width: 640, height: 360 }, 'old corner interception');
+      assert.equal(await page.locator('#search-engine-switch').getAttribute('data-expanded'), 'false', 'the intercepted engine click did not open the engine deck');
+      await old.evaluate(el => el.remove()); old = null; await settle();
+      const repaired = await center(active, 'repaired same-point engine');
+      assert.deepEqual(repaired.targetRect, covered.targetRect, 'repair preserves exact engine geometry');
+      assert.equal(await page.locator('#content').evaluate(el => el.scrollTop), beforeScroll, 'before/after retain the same outer scroll');
+      assertHomeControlsGeometry(await snapshot(), 'repaired Zen and engine controls');
+      reports.push({ label: 'repaired Zen lane / 640×360 same middle scroll', ...repaired });
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-zen-engine-after-640x360.png'), animations: 'disabled' });
+      await pointer(active, 'repaired engine actual click');
+      await page.waitForFunction(() => document.getElementById('search-engine-switch').dataset.expanded === 'true');
+      assert.equal(await page.evaluate(() => OpenTabZenMode.isActive()), false, 'the repaired engine click never enters Zen');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.getElementById('search-engine-switch').dataset.expanded === 'false');
+      await zenKeyboardNavigation('640×360 same-scroll keyboard controls');
+      await zenRoundTrip(() => pointer(page.locator('#zen-toggle-btn'), 'repaired Zen actual click'),
+        { width: 640, height: 360 }, 'repaired separate Zen control');
+      assertHomeControlsGeometry(await snapshot(), '640×360 after native Zen restoration');
+    } finally { if (old) await old.evaluate(el => el.remove()); }
+  }
+  async function timezoneFocusSnapshot(target) {
+    return target.evaluate(el => {
+      const rect = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
+      const selector = document.getElementById('timezone-selector'), content = document.getElementById('content');
+      const panel = rect(selector), target = rect(el), style = getComputedStyle(el);
+      const selectorStyle = getComputedStyle(selector);
+      const left = panel.left + selector.clientLeft, top = panel.top + selector.clientTop;
+      return { panel, target, clip: rect(content), innerClip: { left, top, right: left + selector.clientWidth, bottom: top + selector.clientHeight },
+        outline: { width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset), style: style.outlineStyle },
+        scrollPadding: { top: parseFloat(selectorStyle.scrollPaddingTop), bottom: parseFloat(selectorStyle.scrollPaddingBottom) },
+        focused: document.activeElement === el, focusVisible: el.matches(':focus-visible'),
+        hit: el.contains(document.elementFromPoint(target.left + target.width / 2, target.top + target.height / 2)),
+        outerScroll: content.scrollTop, innerScroll: selector.scrollTop, scrollHeight: selector.scrollHeight, clientHeight: selector.clientHeight };
+    });
+  }
+  async function timezoneEdge(target, label, { normalizeOuter = false } = {}) {
+    // Traverse out and back with real Tab input after choosing the edge; do not
+    // dispatch a key event, force a click, or substitute synthetic focus state.
+    await target.focus(); await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+    if (normalizeOuter) await page.locator('#content').evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+    await settle(); const report = await timezoneFocusSnapshot(target);
+    reports.push({ label, ...report }); return report;
+  }
+  async function timezoneBoundsCounterexample() {
+    await reset('light', 6); await page.setViewportSize({ width: 320, height: 480 }); await scroll(0);
+    await page.locator('#timezone-btn').focus(); await page.keyboard.press('Enter');
+    await page.waitForSelector('#timezone-selector:not(.hidden)');
+    const first = page.locator('#timezone-list button').first(), last = page.locator('#timezone-list button').last();
+    let old;
+    try {
+      old = await page.addStyleTag({ content: 'body:not(.minimal-mode) .timezone-selector { max-height: 330px; }' });
+      const clipped = await timezoneEdge(last, 'old timezone height / 320×480', { normalizeOuter: true });
+      assert.ok(clipped.panel.bottom > clipped.clip.bottom && clipped.target.bottom + 6 > clipped.clip.bottom,
+        `old 330px popover must clip both panel and outward ring: ${JSON.stringify(clipped)}`);
+      assert.ok(clipped.focused && clipped.focusVisible && clipped.hit, 'the old ring clips despite a focused, pointer-reachable option');
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-timezone-bounds-before-320x480.png'), animations: 'disabled' });
+      await old.evaluate(el => el.remove()); old = null;
+      const repaired = await timezoneEdge(last, 'repaired timezone height / 320×480 same outer scroll', { normalizeOuter: true });
+      assert.equal(repaired.outerScroll, clipped.outerScroll, 'timezone comparison keeps the same outer scroll');
+      assert.equal(repaired.panel.top, clipped.panel.top, 'timezone anchor does not move');
+      assert.deepEqual(repaired.outline, clipped.outline, 'the full outward focus ring is unchanged');
+      assertTimezoneFocusGeometry(repaired, 'repaired last timezone');
+      assert.ok(repaired.innerScroll > 0 && repaired.innerScroll + repaired.clientHeight >= repaired.scrollHeight - 1,
+        'last option remains reachable by the popup internal scroll');
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-timezone-bounds-after-320x480.png'), animations: 'disabled' });
+      const firstReport = await timezoneEdge(first, 'repaired first timezone / 320×480', { normalizeOuter: true });
+      assertTimezoneFocusGeometry(firstReport, 'repaired first timezone');
+      assert.ok(firstReport.innerScroll < 1, 'first option is visible at the real popup scroll origin');
+      await timezoneEdge(last, 'repaired last timezone activation');
+      const zone = await last.getAttribute('data-tz'); await pointer(last, 'bounded timezone pointer activation');
+      await page.waitForSelector('#timezone-selector.hidden', { state: 'attached' });
+      await waitForAsync(worker, async zone => (await chrome.storage.local.get('timezone')).timezone === zone, zone);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'timezone-btn', 'bounded timezone selection restores opener focus');
+      await stageClosed('bounded timezone');
+    } finally { if (old) await old.evaluate(el => el.remove()); }
   }
   async function closeSettings() {
     await page.keyboard.press('Escape');
@@ -265,8 +451,21 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     const engine = await lastEngine.getAttribute('data-engine'); await page.keyboard.press('Enter');
     await page.waitForFunction(engine => OpenTabSearch.getState().searchEngine === engine
       && document.getElementById('search-engine-switch').dataset.expanded === 'false', engine);
+    await scroll(0);
     const timezone = page.locator('#timezone-btn'); await timezone.focus(); await page.keyboard.press('Enter');
-    const lastZone = page.locator('#timezone-list button').last(); await lastZone.focus();
+    const firstZone = page.locator('#timezone-list button').first(), lastZone = page.locator('#timezone-list button').last();
+    const firstZoneBounds = await timezoneEdge(firstZone, `${label} first timezone ring`);
+    assertTimezoneFocusGeometry(firstZoneBounds, `${label} first timezone`);
+    assert.ok(firstZoneBounds.innerScroll < 1, `${label}: first timezone uses the internal scroll origin`);
+    const focusedArtifact = /\/(320×480|640×360)$/.exec(label);
+    if (focusedArtifact) await page.screenshot({ path: path.join(artifacts,
+      `home-controls-timezone-${label.split('/')[0]}-${focusedArtifact[1].replace('×', 'x')}-first.png`), animations: 'disabled' });
+    const lastZoneBounds = await timezoneEdge(lastZone, `${label} last timezone ring`);
+    assertTimezoneFocusGeometry(lastZoneBounds, `${label} last timezone`);
+    assert.ok(lastZoneBounds.innerScroll > 0 && lastZoneBounds.innerScroll + lastZoneBounds.clientHeight >= lastZoneBounds.scrollHeight - 1,
+      `${label}: last timezone uses the internal scroll end`);
+    if (focusedArtifact) await page.screenshot({ path: path.join(artifacts,
+      `home-controls-timezone-${label.split('/')[0]}-${focusedArtifact[1].replace('×', 'x')}-last.png`), animations: 'disabled' });
     await center(lastZone, `${label} last timezone`); const zone = await lastZone.getAttribute('data-tz');
     await page.keyboard.press('Enter'); await page.waitForSelector('#timezone-selector.hidden', { state: 'attached' });
     await waitForAsync(worker, async zone => (await chrome.storage.local.get('timezone')).timezone === zone, zone);
@@ -305,7 +504,7 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     await reset('dark', 1, 1);
     // Reproduce the CI screenshot's old full-height scroll clip. No target
     // repositioning, fake hit result, force click or event-handler replacement.
-    const old = await page.addStyleTag({ content: 'body:not(.minimal-mode) #content { height: 100vh; height: 100dvh; padding-bottom: 96px; scroll-padding: 0; }' });
+    const old = await page.addStyleTag({ content: 'body:not(.minimal-mode) #content { height: 100vh; height: 100dvh; padding-bottom: 96px; scroll-padding: 0; } body:not(.minimal-mode) #zen-toggle-btn { top: 14px; left: 14px; bottom: auto; }' });
     await scroll(0); const negative = await snapshot();
     const covered = negative.visibleTargets.filter(target => !target.hit && ['group-launch-entry', 'select-sites', 'add-group-btn'].includes(target.id));
     assert.ok(covered.length > 0, `old 360×560 layout must reproduce the group/control hit collision: ${JSON.stringify(negative)}`);
@@ -321,6 +520,8 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     await page.screenshot({ path: path.join(artifacts, 'home-controls-after-360x560.png'), animations: 'disabled' });
     reports.push({ negative, fixed });
     await timezoneLayerCounterexample();
+    await zenEngineCounterexample();
+    await timezoneBoundsCounterexample();
 
     for (const theme of ['light', 'dark']) for (const groups of [1, 6]) {
       await reset(theme, groups);
@@ -334,7 +535,10 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
           if (groups === 6 && position === 'middle' && (width <= 760 || width === 1280)) {
             await page.screenshot({ path: path.join(artifacts, `home-controls-${theme}-${width}x${height}.png`), animations: 'disabled' });
           }
-          if (width <= 760) await settingsAtPosition(`${label}/${position}`);
+          if (width <= 760) {
+            await settingsAtPosition(`${label}/${position}`);
+            await zenKeyboardNavigation(`${label}/${position}`);
+          }
         }
         if (width <= 760) {
           await groupAndLastTile(label);
@@ -355,30 +559,24 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
         if (fraction === .5) await page.screenshot({ path: path.join(artifacts, `home-controls-${theme}-simulated-inset.png`), animations: 'disabled' });
       }
       await groupAndLastTile(`${theme}/simulated inset`);
+      // Use a viewport where the 330px cap is not the limiting factor, so this
+      // proves the safe-area subtraction in the popover bound itself.
+      await page.setViewportSize({ width: 320, height: 480 }); await scroll(0);
+      await page.locator('#timezone-btn').focus(); await page.keyboard.press('Enter');
+      for (const [edge, target] of [['first', page.locator('#timezone-list button').first()], ['last', page.locator('#timezone-list button').last()]]) {
+        const bounded = await timezoneEdge(target, `${theme}/32px inset/320×480/${edge} timezone`);
+        assertTimezoneFocusGeometry(bounded, `${theme}/32px inset/${edge} timezone`);
+      }
+      await page.keyboard.press('Escape'); await stageClosed(`${theme}/simulated inset`);
       await page.locator('#homepage').evaluate(el => el.style.removeProperty('--home-controls-safe-area'));
+      await page.setViewportSize({ width: 360, height: 560 });
       await scroll(1);
       for (let cycle = 0; cycle < 2; cycle++) {
-        const before = await page.locator('#content').evaluate(el => el.scrollTop);
-        await page.evaluate(() => {
-          window.__viewportFullscreenSettled = !document.fullscreenEnabled;
-          const settled = event => {
-            if (event.type !== 'fullscreenerror' && document.fullscreenElement !== document.documentElement) return;
-            window.__viewportFullscreenSettled = true;
-            document.removeEventListener('fullscreenchange', settled);
-            document.removeEventListener('fullscreenerror', settled);
-          };
-          if (!window.__viewportFullscreenSettled) {
-            document.addEventListener('fullscreenchange', settled);
-            document.addEventListener('fullscreenerror', settled);
-          }
-        });
-        await page.locator('#zen-toggle-btn').focus(); await page.keyboard.press('Enter');
-        await page.waitForFunction(() => OpenTabZenMode.isActive() && document.getElementById('homepage').inert && window.__viewportFullscreenSettled);
-        await page.locator('#zen-exit').focus(); await page.keyboard.press('Enter');
-        await page.waitForFunction(() => !OpenTabZenMode.isActive() && !document.fullscreenElement && !document.getElementById('homepage').inert);
-        await page.setViewportSize({ width: 360, height: 560 }); await page.mouse.move(1, 1); await settle();
-        assert.equal(await page.locator('#content').evaluate(el => el.scrollTop), before, 'Zen restores the existing scroll position');
-        assert.equal(await page.evaluate(() => document.activeElement.id), 'zen-toggle-btn', 'Zen restores its real opener');
+        await zenRoundTrip(async () => {
+          await page.locator('#refresh-bg-btn').focus(); await page.keyboard.press('Shift+Tab');
+          assert.equal(await page.evaluate(() => document.activeElement.id), 'zen-toggle-btn', 'native reverse Tab reaches the actual Zen entry');
+          await page.keyboard.press(cycle ? 'Space' : 'Enter');
+        }, { width: 360, height: 560 }, `${theme}/Zen keyboard cycle ${cycle}`);
         assertHomeControlsGeometry(await snapshot(), `${theme}/Zen restoration ${cycle}`);
       }
       await pointer(page.locator('#settings-btn'), 'minimal preference'); await page.waitForSelector('#settings-panel:not(.hidden)');
@@ -389,6 +587,7 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
         assert.equal(minimal.height, height, 'minimal mode retains its full-height layout'); assert.equal(minimal.padding, '0px', 'minimal mode retains zero padding');
         assert.equal(await page.locator('#refresh-bg-btn').isVisible(), false);
         await center(page.locator('#settings-btn'), 'minimal settings');
+        assertZenEntryGeometry(await snapshot(), `${theme}/minimal ${width}×${height}`, 0, true);
       }
       await page.setViewportSize({ width: 360, height: 560 }); await page.locator('#settings-btn').focus(); await page.keyboard.press('Space');
       await page.waitForSelector('#settings-panel:not(.hidden)'); await page.uncheck('#minimal-mode-enabled');
@@ -396,7 +595,7 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
       assertHomeControlsGeometry(await snapshot(), `${theme}/minimal restoration`);
     }
     assert.deepEqual(errors, [], 'responsive fixture has no page errors');
-    console.log('Home controls: native old-layout hit-test counterexample; two themes, one/six groups, top/middle/bottom, 760/761 boundary, last popover actions, simulated inset and Settings/Zen/minimal restoration passed.');
+    console.log('Home controls: native old-layout, Zen/engine same-point and timezone panel/ring counterexamples; two themes, one/six groups, top/middle/bottom, 760/761 boundary, first/last timezone focus, simulated inset and Settings/Zen/minimal restoration passed.');
   } catch (error) {
     // Include timeouts as well as hit-test failures, preserving the original
     // error even if a page or screenshot is unavailable during diagnostics.

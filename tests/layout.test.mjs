@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { assertHomeControlsGeometry } from './home-controls-viewport.mjs';
+import { assertHomeControlsGeometry, assertZenEntryGeometry, assertTimezoneFocusGeometry } from './home-controls-viewport.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -223,11 +223,14 @@ console.log('layout unit tests passed');
     const narrow = width <= 760, size = narrow ? 46 : 48;
     const bottom = height - (narrow ? 18 + inset : 28);
     const contentHeight = narrow ? height - 76 - inset : height;
+    const zenLeft = narrow ? 18 : 20, zenTop = narrow ? bottom - 44 : 20;
     return { width, height, scrollWidth: width, transparent: true,
       content: { height: contentHeight, bottom: contentHeight, paddingBottom: narrow ? 18 : 104, scrollPadding: narrow ? 8 : 0 },
+      zen: { id: 'zen-toggle-btn', left: zenLeft, right: zenLeft + 44, top: zenTop, bottom: zenTop + 44,
+        width: 44, height: 44, hit: true, edgeHits: [true, true, true, true] },
       buttons: ['refresh-bg-btn', 'settings-btn'].map((id, i) => ({ id, width: size, height: size, top: bottom - size, bottom,
         right: width - (i ? narrow ? 18 : 28 : narrow ? 82 : 92), hit: true })),
-      visibleTargets: [{ id: 'select-sites', hit: true }] };
+      visibleTargets: [{ id: 'select-sites', hit: true }, { id: 'google', engine: true, hit: true }] };
   }
   for (const width of [320, 360, 390, 640, 760, 761, 1024, 1280]) assertHomeControlsGeometry(sample(width), `unit ${width}`);
   assertHomeControlsGeometry(sample(360, 560, 32), 'unit simulated inset', 32);
@@ -243,5 +246,52 @@ console.log('layout unit tests passed');
   assert.throws(() => assertHomeControlsGeometry(opaque, 'opaque footer'), /opaque footer/);
   const wrongInset = sample(360, 560, 32); wrongInset.buttons[0].bottom += 32;
   assert.throws(() => assertHomeControlsGeometry(wrongInset, 'unshared safe area', 32), /refresh-bg-btn bottom/);
+  const oldZen = sample(640, 360); Object.assign(oldZen.zen, { left: 14, right: 58, top: 14, bottom: 58 });
+  assert.throws(() => assertHomeControlsGeometry(oldZen, 'old Zen corner'), /Zen left/);
+  const wrongZenInset = sample(360, 560, 32); wrongZenInset.zen.bottom += 32;
+  assert.throws(() => assertHomeControlsGeometry(wrongZenInset, 'Zen ignores safe area', 32), /Zen safe-area bottom/);
+  const zenBlocked = sample(); zenBlocked.zen.hit = false; zenBlocked.zen.target = 'search-engine-switch';
+  assert.throws(() => assertHomeControlsGeometry(zenBlocked, 'covered Zen'), /Zen center is intercepted/);
+  const zenEdge = sample(); zenEdge.zen.edgeHits[2] = false;
+  assert.throws(() => assertHomeControlsGeometry(zenEdge, 'partially covered Zen'), /Zen target edges/);
+  const engineBlocked = sample(640, 360); engineBlocked.visibleTargets[1].hit = false; engineBlocked.visibleTargets[1].target = 'zen-toggle-btn';
+  assert.throws(() => assertHomeControlsGeometry(engineBlocked, 'old engine interception'), /google center is intercepted/);
+  const desktopEngine = sample(1280, 900); desktopEngine.visibleTargets[1].hit = false;
+  assert.throws(() => assertHomeControlsGeometry(desktopEngine, 'desktop engine interception'), /visible engine google center is intercepted/);
+  for (const width of [360, 640, 761]) {
+    const minimal = sample(width), corner = width <= 760 ? 14 : 20;
+    Object.assign(minimal.zen, { left: corner, right: corner + 44, top: corner, bottom: corner + 44 });
+    assertZenEntryGeometry(minimal, `unit minimal ${width}`, 0, true);
+    minimal.zen.top += 10;
+    assert.throws(() => assertZenEntryGeometry(minimal, 'moved minimal entry', 0, true), /unchanged top-left Zen/);
+  }
   assert.match(homeCss, /--home-controls-safe-area:\s*env\(safe-area-inset-bottom,\s*0px\)/, 'native safe-area inset feeds the shared narrow layout variable');
+}
+
+{
+  const timezone = () => ({
+    panel: { left: 41, right: 291, top: 81, bottom: 395 }, clip: { left: 0, right: 320, top: 0, bottom: 404 },
+    innerClip: { left: 42, right: 280, top: 82, bottom: 394 }, target: { left: 48, right: 274, top: 352, bottom: 388 },
+    outline: { width: 3, offset: 3, style: 'solid' }, scrollPadding: { top: 6, bottom: 6 },
+    focused: true, focusVisible: true, hit: true
+  });
+  assertTimezoneFocusGeometry(timezone(), 'unit final timezone');
+  const first = timezone(); Object.assign(first.target, { top: 88, bottom: 124 });
+  assertTimezoneFocusGeometry(first, 'unit first timezone');
+  const clippedPanel = timezone(); clippedPanel.panel.bottom = 411; clippedPanel.target.bottom = 404;
+  assert.throws(() => assertTimezoneFocusGeometry(clippedPanel, 'old 330px panel'), /complete timezone panel/);
+  const clippedRing = timezone(); clippedRing.target.bottom = 390;
+  assert.throws(() => assertTimezoneFocusGeometry(clippedRing, 'inner ring edge clipped'), /complete 6px outward focus ring/);
+  const reducedOutline = timezone(); reducedOutline.outline.width = 2;
+  assert.throws(() => assertTimezoneFocusGeometry(reducedOutline, 'shrunk outline'), /original 3px focus outline/);
+  const insetOutline = timezone(); insetOutline.outline.offset = -3;
+  assert.throws(() => assertTimezoneFocusGeometry(insetOutline, 'inset instead of preserved ring'), /original 3px outward outline offset/);
+  const noTopClearance = timezone(); noTopClearance.scrollPadding.top = 0;
+  assert.throws(() => assertTimezoneFocusGeometry(noTopClearance, 'focus scroll ignores top ring'), /top 6px ring clearance/);
+  const noBottomClearance = timezone(); noBottomClearance.scrollPadding.bottom = 0;
+  assert.throws(() => assertTimezoneFocusGeometry(noBottomClearance, 'focus scroll ignores bottom ring'), /bottom 6px ring clearance/);
+  const hiddenFocus = timezone(); hiddenFocus.focusVisible = false;
+  assert.throws(() => assertTimezoneFocusGeometry(hiddenFocus, 'focus state without visible ring'), /native keyboard focus visibly styles/);
+  const intercepted = timezone(); intercepted.hit = false;
+  assert.throws(() => assertTimezoneFocusGeometry(intercepted, 'timezone behind nav'), /wins its center hit test/);
 }

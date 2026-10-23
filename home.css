@@ -2372,6 +2372,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   width: 250px;
   max-height: 330px;
   overflow-y: auto;
+  /* Native focus scrolling must also reveal the existing 3px + 3px outline. */
+  scroll-padding-block: 6px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   background: var(--panel-bg);
@@ -3075,6 +3077,21 @@ body.minimal-mode #settings-btn:hover {
   #zen-toggle-btn {
     top: 14px;
     left: 14px;
+  }
+
+  /* Reuse the clear control lane instead of covering scrolling search targets.
+     Desktop and the full-height minimal layout retain their top-left entry. */
+  body:not(.minimal-mode) #zen-toggle-btn {
+    top: auto;
+    left: 18px;
+    bottom: calc(18px + var(--home-controls-safe-area));
+  }
+
+  /* 76px controls + 18px content + 8px deck + 54px anchor + 10px clearance.
+     Keep the panel and its full outward focus ring inside the scroll viewport. */
+  body:not(.minimal-mode) .timezone-selector {
+    max-height: min(330px, calc(100vh - 166px - var(--home-controls-safe-area)));
+    max-height: min(330px, calc(100dvh - 166px - var(--home-controls-safe-area)));
   }
 
   #refresh-bg-btn {

@@ -120,12 +120,22 @@ async function zenEntryClearance(expectedText, label) {
       visible: getComputedStyle(timezone).visibility === 'visible' && Number(getComputedStyle(timezone).opacity) > 0,
       centerHit: hit(rect.left + rect.width / 2, rect.top + rect.height / 2), textHits,
       entryHit: entry.contains(document.elementFromPoint(entryRect.left + entryRect.width / 2, entryRect.top + entryRect.height / 2)),
+      minimal: document.body.classList.contains('minimal-mode'),
+      contentBottom: document.getElementById('content').getBoundingClientRect().bottom,
       viewport: { width: innerWidth, height: innerHeight } };
   });
   const detail = `${label}: ${JSON.stringify(geometry)}`, { timezone, entry, viewport } = geometry;
   assert.equal(geometry.text, expectedText, `${detail}: resizing preserves timezone content`);
   assert.ok(geometry.text.trim() && geometry.visible && timezone.width > 0 && timezone.height > 0, `${detail}: timezone text remains visible`);
-  assert.ok(entry.width > 0 && entry.height > 0 && entry.left >= 0 && entry.left <= 24 && entry.top >= 0 && entry.top <= 24, `${detail}: Zen stays in the top-left corner`);
+  assert.equal(entry.width, 44, `${detail}: Zen retains its target width`);
+  assert.equal(entry.height, 44, `${detail}: Zen retains its target height`);
+  assert.ok(entry.left >= 0 && entry.left <= 24, `${detail}: Zen retains its left-edge placement`);
+  if (viewport.width <= 760 && !geometry.minimal) {
+    assert.ok(Math.abs(entry.bottom - (viewport.height - 18)) < 1 && entry.top >= geometry.contentBottom + 12,
+      `${detail}: narrow Zen clears the scrolling content in the existing bottom control lane`);
+  } else {
+    assert.ok(entry.top >= 0 && entry.top <= 24, `${detail}: desktop and minimal Zen retain the top-left entry`);
+  }
   assert.ok(timezone.left >= 0 && timezone.right <= viewport.width && timezone.top >= 0 && timezone.bottom <= viewport.height, `${detail}: timezone is inside the viewport`);
   assert.equal(entry.left < timezone.right && entry.right > timezone.left && entry.top < timezone.bottom && entry.bottom > timezone.top, false, `${detail}: Zen and timezone rectangles never intersect`);
   if (entry.top < timezone.bottom && entry.bottom > timezone.top) {
