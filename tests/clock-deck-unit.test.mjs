@@ -344,7 +344,7 @@ assert.equal(navStyle['justify-content'], 'center');
 assert.match(navStyle.margin || '', /^\S+\s+auto(?:\s+\S+)?$/, 'navigation stays horizontally centered beneath the cards');
 const mobileStyle = css.match(/@media\s*\(max-width:\s*760px\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
 const mobileTimezoneMargin = mobileStyle.match(/#clock-deck #timezone-label\s*\{[^}]*\bmargin-left:\s*(\d+(?:\.\d+)?)px\s*;/)?.[1];
-assert.ok(Number(mobileTimezoneMargin) >= 36, 'mobile timezone text reserves clearance from the fixed top-left Zen entry and its focus outline');
+assert.ok(Number(mobileTimezoneMargin) >= 36, 'mobile timezone text retains its existing header spacing');
 assert.ok(html.indexOf('src="clock-deck.js"') < html.indexOf('src="home.js"'));
 assert.match(home, /openTodoList\(opener\).*setTodoPanelOpen\(true\).*rememberFocus\(opener\).*todoInput\.focus/);
 assert.match(css, /touch-action: pan-y/); assert.match(css, /prefers-reduced-motion: reduce/);
