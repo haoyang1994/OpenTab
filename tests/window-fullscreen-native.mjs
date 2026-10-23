@@ -7,9 +7,27 @@ import { promisify } from 'node:util';
 import { waitForAsync } from './wait-for-async.mjs';
 const execute = promisify(execFile);
 
+// Playwright 1.58.2 enables focus emulation on every main-frame session. A
+// public CDP session can disable Blink's page-global focus override, but cannot
+// release the original session's visible capturer (Chromium 145 EmulationHandler).
+// Test real tab/focus transitions instead of claiming native hidden visibility;
+// the visibility-only application path is covered by offline production units.
+export async function createNativeFixtureFocus(context, page) {
+  const session = await context.newCDPSession(page);
+  let resets = 0;
+  return {
+    async afterNavigation() {
+      await session.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+      resets++;
+    },
+    resetCount: () => resets,
+    detach: () => session.detach()
+  };
+}
+
 // Failure-only diagnostics are bounded and never replace the original error.
 // This inspects only the disposable fixture page and its known target window.
-export async function reportWindowFullscreenFailure({ page, worker, windowId, expectedCommands, artifacts, phase = 'unknown' }) {
+export async function reportWindowFullscreenFailure({ page, worker, windowId, tabId, expectedCommands, artifacts, phase = 'unknown', focusResetCount = 0 }) {
   async function bounded(task) {
     let timer;
     try {
@@ -19,21 +37,25 @@ export async function reportWindowFullscreenFailure({ page, worker, windowId, ex
     } catch (_) { return { unavailable: true }; }
     finally { clearTimeout(timer); }
   }
-  const observation = await bounded(() => worker.evaluate(async id => {
+  const observation = await bounded(() => worker.evaluate(async ({ windowId, tabId }) => {
     const log = globalThis.__windowFullscreenNative || {}, events = log.events || [], results = log.results || [];
-    let windowState, binding;
+    let windowState, tabState, binding;
     try {
-      const window = await chrome.windows.get(id);
+      const window = await chrome.windows.get(windowId);
       windowState = { id: window.id, type: window.type, state: window.state, focused: window.focused };
     } catch (_) { windowState = { unavailable: true }; }
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      tabState = { id: tab.id, windowId: tab.windowId, active: tab.active };
+    } catch (_) { tabState = { unavailable: true }; }
     try {
       const command = (await chrome.commands.getAll()).find(item => item.name === 'toggle-window-fullscreen');
       binding = { registered: !!command, shortcut: String(command?.shortcut || '').slice(0, 80) };
     } catch (_) { binding = { unavailable: true }; }
-    return { eventCount: events.length, resultCount: results.length, windowState, binding,
+    return { eventCount: events.length, resultCount: results.length, windowState, tabState, binding,
       events: events.slice(-8).map(event => ({ name: String(event.name).slice(0, 80), windowId: event.windowId })),
       results: results.slice(-8).map(result => ({ success: result.success, reason: result.reason, windowId: result.windowId, state: result.state })) };
-  }, windowId));
+  }, { windowId, tabId }));
   const pageState = await bounded(() => page.evaluate(() => {
     const panel = document.getElementById('settings-panel'), binding = document.getElementById('window-fullscreen-shortcut-binding');
     const trace = globalThis.__windowFullscreenLifecycle;
@@ -47,7 +69,7 @@ export async function reportWindowFullscreenFailure({ page, worker, windowId, ex
     await page.screenshot({ path: path.join(artifacts, 'window-fullscreen-failure.png'), animations: 'disabled', timeout: 2000 });
     return { captured: true, file: 'window-fullscreen-failure.png' };
   });
-  const diagnostics = { phase, expectedCommands, observation, pageState, screenshot };
+  const diagnostics = { phase, expectedCommands, focusResetCount, visibilityMayRemainEmulated: true, observation, pageState, screenshot };
   console.error('Native browser fullscreen failure diagnostics: ' + JSON.stringify(diagnostics));
   return diagnostics;
 }
@@ -88,14 +110,20 @@ export async function verifyWindowFullscreenShortcut({ context, worker, url, pro
   await page.waitForFunction(() => globalThis.OpenTabSettingsNav && performance.getEntriesByName('opentab:grid-ready').length);
   const initial = await page.evaluate(() => chrome.windows.getCurrent());
   assert.equal(initial.type, 'normal');
+  const tabId = await page.evaluate(async () => (await chrome.tabs.getCurrent()).id);
+  assert.ok(Number.isInteger(tabId) && tabId >= 0, 'fixture has a real Chrome tab identity');
   const preservedKeys = ['icons', 'folders', 'todos', 'scenes', 'sceneProfiles'];
   const before = await worker.evaluate(keys => chrome.storage.local.get(keys), preservedKeys);
   const binding = () => worker.evaluate(async command => (await chrome.commands.getAll()).find(item => item.name === command), command);
   const windowState = () => worker.evaluate(id => chrome.windows.get(id).then(window => window.state), initial.id);
   const waitState = state => waitForAsync(worker, async ({ id, state }) => (await chrome.windows.get(id)).state === state, { id: initial.id, state });
+  const waitTabActive = active => waitForAsync(worker, async ({ tabId, windowId, active }) => {
+    const tab = await chrome.tabs.get(tabId);
+    return tab.windowId === windowId && tab.active === active;
+  }, { tabId, windowId: initial.id, active });
   const combo = 'Control+Shift+Y';
   const nativeTitle = `OpenTab fullscreen native ${randomUUID()}`;
-  let commands = 0, failure = null, phase = 'unbound-settings';
+  let commands = 0, failure = null, nativeFocus, phase = 'disable-focus-emulation';
   async function press(expectedState, enabled) {
     phase = 'native-key-emission';
     await page.bringToFront();
@@ -122,16 +150,24 @@ export async function verifyWindowFullscreenShortcut({ context, worker, url, pro
     }
   }
   try {
+    nativeFocus = await createNativeFixtureFocus(context, page);
+    await nativeFocus.afterNavigation();
+    phase = 'unbound-settings';
+    await waitTabActive(true);
+    await page.waitForFunction(() => document.hasFocus());
     assert.equal((await binding()).shortcut, '', 'a fresh profile has a real registered but unassigned Chrome command');
     await page.click('#settings-btn'); await page.fill('#settings-search', 'fullscreen');
     assert.equal(await page.locator('#window-fullscreen-shortcut-enabled').isChecked(), false);
     assert.equal(await page.locator('#window-fullscreen-shortcut-binding').innerText(), 'Not set');
     await page.screenshot({ path: path.join(artifacts, 'window-fullscreen-settings-unbound.png'), animations: 'disabled' });
     phase = 'chrome-shortcut-binding';
+    const blurBefore = await page.evaluate(() => __windowFullscreenLifecycle.counts.blur);
     const opening = context.waitForEvent('page');
     await page.click('#manage-window-fullscreen-shortcut'); shortcuts = await opening;
     await shortcuts.waitForURL('chrome://extensions/shortcuts');
-    await page.waitForFunction(() => document.visibilityState === 'hidden');
+    await waitTabActive(false);
+    await page.waitForFunction(count => !document.hasFocus() && __windowFullscreenLifecycle.counts.blur > count &&
+      __windowFullscreenLifecycle.events.findLast(event => event.type === 'blur')?.trusted === true, blurBefore);
     const extensionId = worker.url().split('/')[2];
     // Both supported Chrome UI generations are selected through normal DOM
     // controls. Playwright pierces their open shadow roots for a real click/key.
@@ -146,14 +182,20 @@ export async function verifyWindowFullscreenShortcut({ context, worker, url, pro
     assert.equal(await scope.inputValue(), 'CHROME', 'binding stays scoped to Chrome, not OS-global');
     await shortcuts.screenshot({ path: path.join(artifacts, 'window-fullscreen-chrome-binding.png'), animations: 'disabled' });
     phase = 'return-binding-label';
+    const focusBefore = await page.evaluate(() => __windowFullscreenLifecycle.counts.focus);
+    // No emulation reset at this boundary: only the real tab return may focus
+    // the page and trigger production settings refresh.
     await page.bringToFront();
-    await page.waitForFunction(() => document.visibilityState === 'visible');
+    await waitTabActive(true);
+    await page.waitForFunction(count => document.hasFocus() && __windowFullscreenLifecycle.counts.focus > count &&
+      __windowFullscreenLifecycle.events.findLast(event => event.type === 'focus')?.trusted === true, focusBefore);
     await page.waitForFunction(shortcut => document.getElementById('window-fullscreen-shortcut-binding').textContent === shortcut, assigned);
     await press(initial.state, false);
     phase = 'durable-opt-in';
     await page.check('#window-fullscreen-shortcut-enabled');
     await waitForAsync(worker, async key => (await chrome.storage.local.get(key))[key] === true, key);
-    await page.reload(); await page.waitForFunction(() => globalThis.OpenTabSettingsNav && performance.getEntriesByName('opentab:grid-ready').length);
+    await page.reload(); await nativeFocus.afterNavigation();
+    await page.waitForFunction(() => globalThis.OpenTabSettingsNav && performance.getEntriesByName('opentab:grid-ready').length);
     await page.click('#settings-btn'); await page.fill('#settings-search', 'fullscreen');
     assert.equal(await page.locator('#window-fullscreen-shortcut-enabled').isChecked(), true, 'explicit opt-in survives page reload');
     assert.equal(await page.locator('#window-fullscreen-shortcut-binding').innerText(), assigned);
@@ -167,9 +209,10 @@ export async function verifyWindowFullscreenShortcut({ context, worker, url, pro
       await press(state, true);
     }
     // A chrome:// page exercises the same browser command without page injection.
-    await page.goto('chrome://settings/');
+    await page.goto('chrome://settings/'); await nativeFocus.afterNavigation();
     await press('fullscreen', true); await press('maximized', true);
-    await page.goto(url); await page.waitForFunction(() => globalThis.OpenTabSettingsNav && performance.getEntriesByName('opentab:grid-ready').length);
+    await page.goto(url); await nativeFocus.afterNavigation();
+    await page.waitForFunction(() => globalThis.OpenTabSettingsNav && performance.getEntriesByName('opentab:grid-ready').length);
     phase = 'disable-shortcut';
     await page.click('#settings-btn'); await page.fill('#settings-search', 'fullscreen');
     await page.uncheck('#window-fullscreen-shortcut-enabled');
@@ -177,10 +220,10 @@ export async function verifyWindowFullscreenShortcut({ context, worker, url, pro
     await press('maximized', false);
     assert.equal((await binding()).shortcut, assigned, 'disabling does not pretend to unregister a Chrome-managed binding');
     assert.deepEqual(await worker.evaluate(keys => chrome.storage.local.get(keys), preservedKeys), before, 'native shortcut actions preserve scene and user-content fixtures');
-    console.log('Native browser fullscreen: real Chrome binding/command dispatch, default off, durable opt-in, normal/maximized restore and chrome:// targeting passed');
+    console.log('Native browser fullscreen: real Chrome tab/focus return, binding/command dispatch, default off, durable opt-in, normal/maximized restore and chrome:// targeting passed; visibility-only refresh is unit-covered (Playwright capture remains)');
   } catch (error) {
     failure = error;
-    try { await reportWindowFullscreenFailure({ page, worker, windowId: initial.id, expectedCommands: commands, artifacts, phase }); }
+    try { await reportWindowFullscreenFailure({ page, worker, windowId: initial.id, tabId, expectedCommands: commands, artifacts, phase, focusResetCount: nativeFocus?.resetCount() || 0 }); }
     catch (_) { console.error('Native fullscreen failure diagnostics unavailable; the original error is preserved.'); }
     throw error;
   } finally {
@@ -191,6 +234,9 @@ export async function verifyWindowFullscreenShortcut({ context, worker, url, pro
         await chrome.windows.update(id, { state });
       }, { key, id: initial.id, state: initial.state });
     } catch (error) { cleanupErrors.push(error); }
+    if (nativeFocus) {
+      try { await nativeFocus.detach(); } catch (error) { cleanupErrors.push(error); }
+    }
     for (const target of [shortcuts, page].filter(Boolean)) {
       try { await target.close(); } catch (error) { cleanupErrors.push(error); }
     }

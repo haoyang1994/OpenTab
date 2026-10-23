@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { reportWindowFullscreenFailure } from './window-fullscreen-native.mjs';
+import { createNativeFixtureFocus, reportWindowFullscreenFailure } from './window-fullscreen-native.mjs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), Workspace = require('../workspace-persistence.js');
 const read = name => fs.readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
@@ -233,15 +233,37 @@ const settings = read('settings-nav.js');
   assert.equal(output.textContent, '未设置'); assert.equal(output.attributes['data-i18n'], '未设置', 'clearing the Chrome binding restores the localized fallback');
 }
 console.log('Browser-window fullscreen units passed: actual command listener, strict opt-in, native window targeting, serialization, restart restore, failures and settings durability.');
+// Only the owned page gets a public CDP session. Reset after each navigation,
+// never inject a focus event/refresh, and propagate failed setup without retry.
+{
+  const page = {}, calls = [], rejection = new Error('CDP reset rejected'); let reject = false;
+  const focus = await createNativeFixtureFocus({ async newCDPSession(target) {
+    assert.equal(target, page); calls.push('attach');
+    return { async send(method, params) {
+      calls.push({ method, params }); if (reject) throw rejection;
+    }, async detach() { calls.push('detach'); } };
+  } }, page);
+  assert.deepEqual(calls, ['attach']); assert.equal(focus.resetCount(), 0);
+  for (let i = 0; i < 4; i++) await focus.afterNavigation();
+  assert.equal(focus.resetCount(), 4);
+  assert.deepEqual(calls.slice(1), Array.from({ length: 4 }, () => ({ method: 'Emulation.setFocusEmulationEnabled', params: { enabled: false } })));
+  reject = true;
+  await assert.rejects(focus.afterNavigation(), error => error === rejection);
+  assert.equal(calls.length, 6, 'a rejected CDP action is attempted only once');
+  assert.equal(focus.resetCount(), 4, 'diagnostics count only acknowledged resets');
+  await focus.detach(); assert.equal(calls.at(-1), 'detach');
+  await assert.rejects(createNativeFixtureFocus({ async newCDPSession() { throw rejection; } }, page), error => error === rejection);
+}
 // Failure diagnostics run without a browser and never log URLs, page titles,
 // process arguments, or raw errors from an unrelated target.
 {
   const errors = [], screenshots = [], originalError = console.error;
   console.error = message => errors.push(message);
   try {
-    const worker = { evaluate(fn, id) {
-      return vm.runInNewContext(`(${fn.toString()})(id)`, { id,
-        chrome: { windows: { get: async () => ({ id, type: 'normal', state: 'maximized', focused: false, title: 'private title' }) },
+    const worker = { evaluate(fn, target) {
+      return vm.runInNewContext(`(${fn.toString()})(target)`, { target,
+        chrome: { windows: { get: async id => ({ id, type: 'normal', state: 'maximized', focused: false, title: 'private title' }) },
+          tabs: { get: async id => ({ id, windowId: 7, active: false, url: 'private URL', title: 'private title' }) },
           commands: { getAll: async () => [{ name: COMMAND, shortcut: 'Ctrl+Shift+Y', description: 'private description' }] } },
         __windowFullscreenNative: {
           events: Array.from({ length: 20 }, () => ({ name: COMMAND, windowId: 7, url: 'private URL' })),
@@ -258,12 +280,14 @@ console.log('Browser-window fullscreen units passed: actual command listener, st
       }); }
     };
     const report = await reportWindowFullscreenFailure({ worker, page,
-      windowId: 7, expectedCommands: 21, artifacts: '/tmp/disposable-native-artifacts', phase: 'return-binding-label' });
+      windowId: 7, tabId: 12, expectedCommands: 21, artifacts: '/tmp/disposable-native-artifacts', phase: 'return-binding-label', focusResetCount: 4 });
     assert.equal(report.observation.eventCount, 20); assert.equal(report.observation.resultCount, 20);
     assert.equal(report.observation.events.length, 8); assert.equal(report.observation.results.length, 8);
     assert.deepEqual(clone(report.observation.windowState), { id: 7, type: 'normal', state: 'maximized', focused: false });
+    assert.deepEqual(clone(report.observation.tabState), { id: 12, windowId: 7, active: false });
     assert.deepEqual(clone(report.observation.binding), { registered: true, shortcut: 'Ctrl+Shift+Y' });
     assert.equal(report.phase, 'return-binding-label');
+    assert.equal(report.focusResetCount, 4); assert.equal(report.visibilityMayRemainEmulated, true);
     assert.equal(report.pageState.visible, true); assert.equal(report.pageState.focused, false);
     assert.equal(report.pageState.settingsOpen, true); assert.equal(report.pageState.bindingPresent, true);
     assert.equal(report.pageState.bindingText, 'Not set');
