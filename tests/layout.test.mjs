@@ -272,7 +272,8 @@ console.log('layout unit tests passed');
   const timezone = () => ({
     panel: { left: 41, right: 291, top: 81, bottom: 395 }, clip: { left: 0, right: 320, top: 0, bottom: 404 },
     innerClip: { left: 42, right: 280, top: 82, bottom: 394 }, target: { left: 48, right: 274, top: 352, bottom: 388 },
-    outline: { width: 3, offset: 3, style: 'solid' }, focused: true, focusVisible: true, hit: true
+    outline: { width: 3, offset: 3, style: 'solid' }, scrollPadding: { top: 6, bottom: 6 },
+    focused: true, focusVisible: true, hit: true
   });
   assertTimezoneFocusGeometry(timezone(), 'unit final timezone');
   const first = timezone(); Object.assign(first.target, { top: 88, bottom: 124 });
@@ -285,6 +286,10 @@ console.log('layout unit tests passed');
   assert.throws(() => assertTimezoneFocusGeometry(reducedOutline, 'shrunk outline'), /original 3px focus outline/);
   const insetOutline = timezone(); insetOutline.outline.offset = -3;
   assert.throws(() => assertTimezoneFocusGeometry(insetOutline, 'inset instead of preserved ring'), /original 3px outward outline offset/);
+  const noTopClearance = timezone(); noTopClearance.scrollPadding.top = 0;
+  assert.throws(() => assertTimezoneFocusGeometry(noTopClearance, 'focus scroll ignores top ring'), /top 6px ring clearance/);
+  const noBottomClearance = timezone(); noBottomClearance.scrollPadding.bottom = 0;
+  assert.throws(() => assertTimezoneFocusGeometry(noBottomClearance, 'focus scroll ignores bottom ring'), /bottom 6px ring clearance/);
   const hiddenFocus = timezone(); hiddenFocus.focusVisible = false;
   assert.throws(() => assertTimezoneFocusGeometry(hiddenFocus, 'focus state without visible ring'), /native keyboard focus visibly styles/);
   const intercepted = timezone(); intercepted.hit = false;

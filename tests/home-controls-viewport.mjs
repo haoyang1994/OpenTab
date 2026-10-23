@@ -31,7 +31,7 @@ export function assertZenEntryGeometry(report, label, inset = 0, minimal = false
 }
 
 export function assertTimezoneFocusGeometry(report, label) {
-  const { panel, clip, innerClip, target, outline, focused, focusVisible, hit } = report;
+  const { panel, clip, innerClip, target, outline, scrollPadding, focused, focusVisible, hit } = report;
   const inside = (box, bounds, gap = 0) => box.left >= bounds.left + gap - .5 && box.right <= bounds.right - gap + .5
     && box.top >= bounds.top + gap - .5 && box.bottom <= bounds.bottom - gap + .5;
   assert.ok(inside(panel, clip, 8), `${label}: complete timezone panel clears the content clip: ${JSON.stringify(report)}`);
@@ -40,6 +40,8 @@ export function assertTimezoneFocusGeometry(report, label) {
   assert.equal(outline.width, 3, `${label}: original 3px focus outline remains`);
   assert.equal(outline.offset, 3, `${label}: original 3px outward outline offset remains`);
   assert.equal(outline.style, 'solid', `${label}: focus outline is painted`);
+  assert.equal(scrollPadding.top, 6, `${label}: native focus scrolling reserves the top 6px ring clearance`);
+  assert.equal(scrollPadding.bottom, 6, `${label}: native focus scrolling reserves the bottom 6px ring clearance`);
   const out = outline.width + outline.offset;
   const ring = { left: target.left - out, right: target.right + out, top: target.top - out, bottom: target.bottom + out };
   assert.ok(inside(ring, clip) && inside(ring, innerClip),
@@ -285,9 +287,11 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
       const rect = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
       const selector = document.getElementById('timezone-selector'), content = document.getElementById('content');
       const panel = rect(selector), target = rect(el), style = getComputedStyle(el);
+      const selectorStyle = getComputedStyle(selector);
       const left = panel.left + selector.clientLeft, top = panel.top + selector.clientTop;
       return { panel, target, clip: rect(content), innerClip: { left, top, right: left + selector.clientWidth, bottom: top + selector.clientHeight },
         outline: { width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset), style: style.outlineStyle },
+        scrollPadding: { top: parseFloat(selectorStyle.scrollPaddingTop), bottom: parseFloat(selectorStyle.scrollPaddingBottom) },
         focused: document.activeElement === el, focusVisible: el.matches(':focus-visible'),
         hit: el.contains(document.elementFromPoint(target.left + target.width / 2, target.top + target.height / 2)),
         outerScroll: content.scrollTop, innerScroll: selector.scrollTop, scrollHeight: selector.scrollHeight, clientHeight: selector.clientHeight };

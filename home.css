@@ -2372,6 +2372,8 @@ body.theme-light .setting-row input[type='checkbox']:checked {
   width: 250px;
   max-height: 330px;
   overflow-y: auto;
+  /* Native focus scrolling must also reveal the existing 3px + 3px outline. */
+  scroll-padding-block: 6px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   background: var(--panel-bg);
