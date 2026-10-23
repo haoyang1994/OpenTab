@@ -49,7 +49,7 @@ function absoluteBingUrl(url) {
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason !== 'install') return;
   OpenTabWorkspace.transaction(async ({ read, write }) => {
-    const result = await read(['icons', 'background', 'clockFormat', 'showSeconds', 'timezone', 'timezoneMode', 'bingIndex', 'themeMode']);
+    const result = await read(null);
     if (result.icons) return;
     const defaults = {
       icons: [], background: { type: 'image', value: DEFAULT_LOCAL_BG, source: 'preset' },

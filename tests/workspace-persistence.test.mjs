@@ -90,16 +90,20 @@ const installFixture = {
   background: { type: 'gradient', value: 'linear-gradient(135deg, #09203f, #537895)', source: 'gradient' },
   searchEngine: 'google', searchHistoryEnabled: false
 };
-function installHarness() {
-  const h = memory({}), installedWork = [], warnings = [];
-  let installed, releaseRead, captured, pauseRead = true;
+function installHarness(initial = {}, { pauseRead = true, failRead = false } = {}) {
+  const h = memory(initial), installedWork = [], warnings = [], reads = [];
+  let installed, releaseRead, captured, installerActive = false;
   const gate = new Promise((resolve) => { releaseRead = resolve; });
   const get = h.chrome.storage.local.get;
   h.chrome.storage.local.get = async (keys) => {
+    if (installerActive) {
+      reads.push(clone(keys));
+      if (failRead) throw new Error('installer read failed');
+    }
     const snapshot = await get(keys);
     // Pause the actual installer's initial read, not a coordinator schema
     // preflight performed by an earlier fixture transaction.
-    if (pauseRead && Array.isArray(keys) && keys.includes('clockFormat') && keys.includes('timezone')) {
+    if (pauseRead && installerActive) {
       pauseRead = false;
       captured = clone(snapshot);
       await gate;
@@ -112,15 +116,89 @@ function installHarness() {
     chrome: h.chrome, importScripts() {},
     console: { warn: (...args) => warnings.push(args) },
     OpenTabWorkspace: { ...h.api, transaction(task) {
-      const result = h.api.transaction(task);
+      const result = h.api.transaction(async tx => {
+        installerActive = true;
+        try { return await task(tx); }
+        finally { installerActive = false; }
+      });
       installedWork.push(result);
       return result;
     } }
   });
   vm.runInContext(fs.readFileSync(new URL('../background.js', import.meta.url), 'utf8'), context);
   assert.equal(typeof installed, 'function', 'actual background module registers the install listener');
-  return { ...h, warnings, releaseRead, captured: () => captured,
-    install() { installed({ reason: 'install' }); assert.equal(installedWork.length, 1); return installedWork[0]; } };
+  return { ...h, warnings, reads, releaseRead, captured: () => captured,
+    install(reason = 'install') { installed({ reason }); assert.equal(installedWork.length, reason === 'install' ? 1 : 0); return installedWork[0]; } };
+}
+{
+  const h = installHarness({}, { pauseRead: false });
+  await h.install();
+  assert.deepEqual(h.reads, [null], 'fresh installation reads the complete locked snapshot exactly once');
+  assert.equal(h.writes.length, 1, 'fresh installation commits defaults once');
+  assert.deepEqual(h.store.icons, []);
+  assert.equal(h.store.themeMode, 'light');
+  assert.equal(h.store.timezoneMode, 'system');
+  assert.deepEqual(h.warnings, []);
+}
+for (const initial of [
+  { icons: [] },
+  { icons: [{ id: 'existing', name: 'Existing' }], themeMode: 'dark', unrelated: 'keep' }
+]) {
+  const h = installHarness(initial, { pauseRead: false });
+  await h.install();
+  assert.deepEqual(h.reads, [null]);
+  assert.deepEqual(h.store, initial, 'existing icons short-circuit installation without touching any data');
+  assert.equal(h.writes.length, 0); assert.deepEqual(h.warnings, []);
+}
+{
+  const initial = { background: { type: 'gradient', value: 'user-choice' }, clockFormat: '24h', showSeconds: true,
+    timezone: 'America/New_York', timezoneMode: 'fixed', bingIndex: 6, themeMode: 'auto', unrelated: { keep: true } };
+  const h = installHarness(initial, { pauseRead: false });
+  await h.install();
+  assert.deepEqual(h.reads, [null]);
+  assert.deepEqual(h.writes, [{ icons: [] }], 'only undefined defaults are written');
+  assert.deepEqual(h.store, { ...initial, icons: [] }, 'all existing choices and unrelated data survive initialization');
+  assert.deepEqual(h.warnings, []);
+}
+for (const initial of [
+  { 'opentab.sceneSchemaVersion': 99 },
+  { 'opentab.sceneSchemaVersion': 2 },
+  { scenes: [{ id: 'incomplete' }] }
+]) {
+  const h = installHarness(initial, { pauseRead: false });
+  await assert.rejects(h.install());
+  assert.deepEqual(h.reads, [null]);
+  assert.equal(h.writes.length, 0, 'unknown or damaged scene graphs reject before any installer write');
+  assert.deepEqual(h.store, initial); assert.equal(h.warnings.length, 1);
+}
+for (const failure of ['read', 'write']) {
+  const h = installHarness({}, { pauseRead: false, failRead: failure === 'read' });
+  if (failure === 'write') h.failNext();
+  await assert.rejects(h.install(), failure === 'read' ? /installer read failed/ : /test storage failure/);
+  assert.deepEqual(h.reads, [null]);
+  assert.deepEqual(h.store, {}); assert.equal(h.writes.length, 0);
+  assert.equal(h.warnings.length, 1, 'failed initialization keeps the existing warning path');
+  await h.api.commit({}, { icons: [{ id: 'after-failure' }] });
+  assert.equal(h.store.icons[0].id, 'after-failure', 'failed initialization releases the lock for later writes');
+}
+{
+  const initial = { themeMode: 'dark' }, h = installHarness(initial, { pauseRead: false });
+  await h.install('update');
+  assert.deepEqual(h.reads, []); assert.equal(h.writes.length, 0);
+  assert.deepEqual(h.store, initial); assert.deepEqual(h.warnings, []);
+}
+{
+  const h = installHarness(), installing = h.install();
+  await until(() => h.captured() !== undefined);
+  let loaded = false;
+  const loading = h.api.read().then(value => { loaded = true; return value; });
+  await Promise.resolve();
+  assert.equal(loaded, false, 'first-page reads wait for the complete installer transaction');
+  h.releaseRead();
+  const [, value] = await Promise.all([installing, loading]);
+  assert.deepEqual(h.reads, [null]);
+  assert.equal(h.writes.length, 1);
+  assert.deepEqual(value, h.store, 'first-page reads observe the durably committed defaults, not an empty snapshot');
 }
 {
   const h = installHarness(), installing = h.install();
