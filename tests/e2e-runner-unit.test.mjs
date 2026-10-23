@@ -90,6 +90,7 @@ const bin = path.join(temp, 'bin');
 const log = path.join(temp, 'suites.log');
 const xvfbLog = path.join(temp, 'xvfb.log');
 const wmLog = path.join(temp, 'wm.log');
+const wmPidFile = path.join(temp, 'wm.pid');
 fs.mkdirSync(bin);
 
 function executable(name, contents, interpreter = bash) {
@@ -119,7 +120,19 @@ executable('openbox', `
 [[ "$1" == --sm-disable && "$2" == --startup ]] || exit 91
 [[ "$OPENTAB_E2E_OWNED_DISPLAY" == 1 && "$DISPLAY" == :owned ]] || exit 92
 printf 'start\\n' >> "$E2E_WM_LOG"
-trap 'printf "stop\\n" >> "$E2E_WM_LOG"; exit 0' HUP INT TERM
+printf '%s\\n' "$$" > "$E2E_WM_PID"
+# Group cancellation and owned-child cleanup can both deliver TERM. Model an
+# idempotent shutdown, rather than re-entering the log handler during exit.
+shutdown_manager() {
+  trap "" HUP INT TERM
+  printf 'stop\\n' >> "$E2E_WM_LOG"
+  if [[ "\${FAKE_WM_REPEAT_SIGNAL:-}" == 1 && "\${signal_repeated:-}" != 1 ]]; then
+    signal_repeated=1
+    kill -TERM "$$"
+  fi
+  exit 0
+}
+trap shutdown_manager HUP INT TERM
 if [[ "\${FAKE_WM_EXIT:-}" == 1 ]]; then exit 44; fi
 # Openbox uses g_shell_parse_argv + g_spawn_async, not implicit shell eval.
 if [[ "\${FAKE_WM_NOT_READY:-}" != 1 ]]; then
@@ -165,6 +178,7 @@ function prepare(mode, extra = {}) {
   fs.writeFileSync(log, '');
   fs.writeFileSync(xvfbLog, '');
   fs.writeFileSync(wmLog, '');
+  fs.writeFileSync(wmPidFile, '');
   const env = {
     ...process.env,
     PATH: bin,
@@ -175,6 +189,7 @@ function prepare(mode, extra = {}) {
     E2E_LOG: log,
     E2E_XVFB_LOG: xvfbLog,
     E2E_WM_LOG: wmLog,
+    E2E_WM_PID: wmPidFile,
   };
   // CI deliberately sets this variable. Default-run coverage must remain full
   // even when the runner unit tests execute inside either CI partition.
@@ -185,6 +200,23 @@ function prepare(mode, extra = {}) {
 
 function calls() {
   return fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean);
+}
+
+async function assertManagerExited() {
+  const value = fs.readFileSync(wmPidFile, 'utf8').trim();
+  if (!value) return;
+  const pid = Number(value);
+  assert.ok(Number.isInteger(pid) && pid > 1, 'only the recorded fake manager PID is inspected');
+  const deadline = Date.now() + 2000;
+  while (true) {
+    try { process.kill(pid, 0); }
+    catch (error) {
+      assert.equal(error.code, 'ESRCH', 'the owned fake manager must no longer exist');
+      return;
+    }
+    assert.ok(Date.now() < deadline, 'runner completion must not leave its fake manager alive');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
 }
 
 function assertCalls(expected) {
@@ -232,6 +264,7 @@ async function cancel(mode, signal, expectedStatus, selected = suites, extra = {
   assert.equal(result.exitSignal, null);
   assertCalls(selected.slice(0, blockedIndex + 1));
   assert.doesNotMatch(stdout, /E2E: all \d+ suites passed/);
+  await assertManagerExited();
 }
 
 try {
@@ -241,6 +274,7 @@ try {
     assertCalls(suites);
     assert.equal(fs.readFileSync(wmLog, 'utf8'), mode.xvfb ? 'start\nsuite\nstop\n' : '',
       'only the Zen suite on a runner-owned display gets a scoped, cleaned-up WM');
+    await assertManagerExited();
     assert.match(success.stdout, new RegExp(`E2E: all ${suites.length} suites passed`));
     for (const suite of suites) {
       assert.ok(success.stdout.includes(`stdout: ${suite}\n`), 'suite stdout must remain visible');
@@ -271,6 +305,11 @@ try {
     await cancel(mode, 'SIGINT', 130);
     await cancel(mode, 'SIGTERM', 143);
     if (mode.xvfb) {
+      const repeatedSignal = run(mode, { FAKE_WM_REPEAT_SIGNAL: '1' });
+      assert.equal(repeatedSignal.status, 0);
+      assertCalls(suites);
+      assert.equal(fs.readFileSync(wmLog, 'utf8'), 'start\nsuite\nstop\n', 'a repeated TERM during shutdown cannot re-enter the fake manager handler');
+      await assertManagerExited();
       await cancel(mode, 'SIGTERM', 143, suites, { FAKE_BLOCK_SUITE: 'tests/zen-mode.test.mjs' });
       assert.equal(fs.readFileSync(wmLog, 'utf8'), 'start\nsuite\nstop\n', 'cancelling the WM-backed suite cleans up its manager');
       const wmFailure = run(mode, { FAKE_WM_EXIT: '1' });
