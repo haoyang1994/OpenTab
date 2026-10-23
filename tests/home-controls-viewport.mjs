@@ -114,13 +114,38 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
         }).map(sample) };
     }, TARGETS);
   }
-  async function center(target, label) {
-    const point = await target.evaluate(el => {
-      const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
-      const hit = document.elementFromPoint(x, y);
-      return { x, y, hit: el.contains(hit), target: hit?.id || hit?.tagName,
+  async function inspectCenter(target) {
+    return target.evaluate(el => {
+      const rect = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
+      const identity = node => node instanceof Element ? { tag: node.tagName, id: node.id, className: node.getAttribute('class'),
+        clockCard: node.getAttribute('data-clock-card'), timezone: node.getAttribute('data-tz'),
+        inClockNav: Boolean(node.closest('#clock-deck-nav')) } : null;
+      const details = node => {
+        if (!node) return null;
+        const style = getComputedStyle(node);
+        return { ...identity(node), rect: rect(node), scrollTop: node.scrollTop, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight,
+          position: style.position, zIndex: style.zIndex, isolation: style.isolation, backdropFilter: style.backdropFilter,
+          transform: style.transform, visibility: style.visibility, pointerEvents: style.pointerEvents, overflowX: style.overflowX, overflowY: style.overflowY };
+      };
+      const r = rect(el), x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const hit = document.elementFromPoint(x, y), ancestors = [];
+      for (let node = el; node && ancestors.length < 8; node = node.parentElement) ancestors.push(details(node));
+      return { x, y, hit: el.contains(hit), target: identity(hit), requested: identity(el), targetRect: r,
+        activeElement: identity(document.activeElement), focused: document.activeElement === el,
+        hitClockCard: identity(hit?.closest('#clock-deck-nav [data-clock-card]')),
+        elementsAtPoint: document.elementsFromPoint(x, y).slice(0, 10).map(identity), ancestors,
+        surfaces: Object.fromEntries(['content', 'clock-deck', 'clock-deck-stage', 'clock-deck-nav', 'timezone-selector', 'calendar-popover']
+          .map(id => [id, details(document.getElementById(id))])),
         inside: r.width > 0 && r.height > 0 && x >= 0 && x < innerWidth && y >= 0 && y < innerHeight };
     });
+  }
+  async function center(target, label) {
+    const point = await inspectCenter(target);
+    if (!point.inside || !point.hit) {
+      reports.push({ failure: label, ...point });
+      try { await page.screenshot({ path: path.join(artifacts, 'home-controls-failure.png'), animations: 'disabled' }); }
+      catch (error) { reports.push({ screenshotFailure: error.message }); }
+    }
     assert.ok(point.inside && point.hit, `${label}: target center is not reachable: ${JSON.stringify(point)}`);
     return point;
   }
@@ -168,6 +193,69 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     await page.keyboard.press('Enter'); await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape'); await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
   }
+  async function stageClosed(label) {
+    assert.equal(await page.locator('#clock-deck-stage').evaluate(el => getComputedStyle(el).zIndex), 'auto',
+      `${label}: closing popovers restores the ordinary stage stacking order`);
+  }
+  async function timezoneLayerCounterexample() {
+    await reset('light', 6); await page.setViewportSize({ width: 320, height: 480 });
+    const lastZone = page.locator('#timezone-list button').last();
+    async function revealLast() {
+      if (await page.locator('#timezone-selector').evaluate(el => !el.classList.contains('hidden'))) await page.keyboard.press('Escape');
+      await scroll(0); await page.locator('#timezone-btn').focus(); await page.keyboard.press('Enter');
+      await page.waitForSelector('#timezone-selector:not(.hidden)');
+      await lastZone.focus();
+      // Normalize only the outer scroll, retaining the native popup's own
+      // last-option scroll. The old-height comparison must not hide a scroll shift.
+      await page.locator('#content').evaluate(el => el.scrollTo({ top: 0, behavior: 'instant' }));
+      await settle(); return inspectCenter(lastZone);
+    }
+    const sameGeometry = (a, b, label) => {
+      assert.deepEqual(a.targetRect, b.targetRect, `${label}: the last option did not move`);
+      assert.deepEqual(a.surfaces['clock-deck-nav'].rect, b.surfaces['clock-deck-nav'].rect, `${label}: the nav did not move`);
+      assert.equal(a.x, b.x, `${label}: same hit-test x`); assert.equal(a.y, b.y, `${label}: same hit-test y`);
+    };
+    const interceptedByDot = (report, label) => {
+      assert.ok(report.inside && report.focused && !report.hit && report.hitClockCard?.clockCard !== null
+        && report.hitClockCard?.inClockNav === true, `${label}: actual clock navigation must intercept the focused timezone option: ${JSON.stringify(report)}`);
+    };
+    const initial = await revealLast();
+    let oldStage, oldHeight;
+    try {
+      // Revert only the stacking repair. Coordinates, event handlers and target
+      // layout stay untouched, so the before/after hit is a causal comparison.
+      oldStage = await page.addStyleTag({ content: '#clock-deck-stage { z-index: auto !important; }' });
+      await settle(); const old = await inspectCenter(lastZone);
+      reports.push({ label: 'timezone old stage / repaired viewport', ...old });
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-timezone-before-320x480.png'), animations: 'disabled' });
+      sameGeometry(initial, old, 'stage-only counterexample'); interceptedByDot(old, 'old stage at repaired height');
+
+      // Prove whether the sibling interception existed with the old full-height
+      // content too, rather than attributing it to the 76px viewport repair.
+      oldHeight = await page.addStyleTag({ content: 'body:not(.minimal-mode) #content { height: 100vh; height: 100dvh; padding-bottom: 96px; scroll-padding: 0; }' });
+      const fullHeight = await revealLast();
+      reports.push({ label: 'timezone old stage / old full-height viewport', ...fullHeight });
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-timezone-old-height-320x480.png'), animations: 'disabled' });
+      interceptedByDot(fullHeight, 'old stage at old full height');
+      await oldHeight.evaluate(el => el.remove()); oldHeight = null;
+      const restoredOld = await revealLast();
+      sameGeometry(old, restoredOld, 'restored repaired viewport'); interceptedByDot(restoredOld, 'old stage after viewport restoration');
+
+      await oldStage.evaluate(el => el.remove()); oldStage = null; await settle();
+      const repaired = await center(lastZone, 'repaired timezone same-point pointer target');
+      sameGeometry(restoredOld, repaired, 'restored stage');
+      reports.push({ label: 'timezone repaired stage / repaired viewport', ...repaired });
+      await page.screenshot({ path: path.join(artifacts, 'home-controls-timezone-after-320x480.png'), animations: 'disabled' });
+      const zone = await lastZone.getAttribute('data-tz');
+      await pointer(lastZone, 'repaired timezone actual activation');
+      await page.waitForSelector('#timezone-selector.hidden', { state: 'attached' });
+      await waitForAsync(worker, async zone => (await chrome.storage.local.get('timezone')).timezone === zone, zone);
+      await stageClosed('timezone counterexample');
+    } finally {
+      if (oldHeight) await oldHeight.evaluate(el => el.remove());
+      if (oldStage) await oldStage.evaluate(el => el.remove());
+    }
+  }
   async function popovers(label) {
     const activeEngine = page.locator('#search-engine-panel .engine-btn.active');
     await activeEngine.focus(); await page.keyboard.press('End');
@@ -182,13 +270,16 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     await center(lastZone, `${label} last timezone`); const zone = await lastZone.getAttribute('data-tz');
     await page.keyboard.press('Enter'); await page.waitForSelector('#timezone-selector.hidden', { state: 'attached' });
     await waitForAsync(worker, async zone => (await chrome.storage.local.get('timezone')).timezone === zone, zone);
+    await stageClosed(`${label} timezone`);
     const date = page.locator('#date'); await date.focus(); await page.keyboard.press('Enter');
     await page.waitForSelector('#calendar-popover:not(.hidden) .flatpickr-day');
+    assert.equal(await page.locator('#clock-deck-stage').evaluate(el => getComputedStyle(el).zIndex), '1', `${label}: calendar lifts its containing stage`);
     const lastDay = page.locator('.flatpickr-day:not(.prevMonthDay):not(.nextMonthDay):not(.flatpickr-disabled)').last();
     await lastDay.scrollIntoViewIfNeeded(); const day = await lastDay.evaluate(el => el.dateObj.getTime());
     await pointer(lastDay, `${label} final calendar row`);
     assert.equal(await page.locator('#calendar-input').evaluate(el => el._flatpickr.selectedDates[0].getTime()), day, `${label}: final calendar day activates`);
     await page.keyboard.press('Escape'); await page.waitForSelector('#calendar-popover.hidden', { state: 'attached' });
+    await stageClosed(`${label} calendar`);
     await page.locator('#search-input').fill(''); await page.locator('#search-input').focus();
     await page.waitForSelector('#search-history:not(.hidden) .search-history-item');
     const lastResult = page.locator('.search-history-item').last(); await lastResult.scrollIntoViewIfNeeded();
@@ -210,18 +301,21 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     await page.screenshot({ path: path.join(artifacts, 'home-controls-before-360x560.png'), animations: 'disabled' });
     await old.evaluate(el => el.remove()); await scroll(0);
     const fixed = await snapshot(); assertHomeControlsGeometry(fixed, '360×560 repaired negative-control fixture');
+    await page.screenshot({ path: path.join(artifacts, 'home-controls-after-same-scroll-360x560.png'), animations: 'disabled' });
     await page.locator('#group-launch-entry').scrollIntoViewIfNeeded();
     await pointer(page.locator('#group-launch-entry'), 'repaired group launch');
     await page.waitForSelector('#group-launch-dialog[open]'); await page.keyboard.press('Escape');
     await page.waitForSelector('#group-launch-dialog:not([open])', { state: 'attached' });
     await page.screenshot({ path: path.join(artifacts, 'home-controls-after-360x560.png'), animations: 'disabled' });
     reports.push({ negative, fixed });
+    await timezoneLayerCounterexample();
 
     for (const theme of ['light', 'dark']) for (const groups of [1, 6]) {
       await reset(theme, groups);
       for (const [width, height] of [...NARROW, ...DESKTOP]) {
         await page.setViewportSize({ width, height });
         const label = `${theme}/${groups} groups/${width}×${height}`;
+        await stageClosed(label);
         for (const [position, fraction] of [['top', 0], ['middle', .5], ['bottom', 1]]) {
           await scroll(fraction); const report = await snapshot();
           assertHomeControlsGeometry(report, `${label}/${position}`); reports.push({ label, position, ...report });
