@@ -1,0 +1,45 @@
+name: Edge compatibility
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  edge:
+    name: Genuine Edge packaged compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install official Microsoft Edge and native test desktop
+        timeout-minutes: 15
+        run: |
+          npx playwright install --with-deps msedge
+          sudo apt-get install --no-install-recommends -y xvfb xdotool scrot openbox
+      - name: Test real Edge through developer sideload UI
+        timeout-minutes: 4
+        env:
+          DEBUG: pw:browser
+          OPENTAB_E2E_OWNED_DISPLAY: "1"
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" bash scripts/run-native-desktop.sh node tests/edge-extension.test.mjs
+      - name: Upload Edge verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: genuine-edge-verification
+          path: artifacts/edge-*
+          if-no-files-found: warn
+          retention-days: 7

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Edge compatibility
+- Use Microsoft Edge’s shortcut-settings page when running in Edge; retain Chrome’s existing destination.
+- Make bookmark-import and browser-update wording browser-neutral without changing stored data, search providers, permissions, or the shared MV3 package.
+- Add an actual Microsoft Edge packaged-extension CI check and document normal sideload/new-tab confirmation and cross-browser data boundaries.
+
 ### Added
 - Preview websites in the current group and its folders before explicitly opening up to 20 selected background tabs. Preserve distinct URL paths, queries and fragments; reject unsafe schemes and credential URLs; revalidate local and durable sources, prevent duplicate submissions, and retry only failed tabs. No new permissions or background launch.
 

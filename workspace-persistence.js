@@ -138,7 +138,7 @@
   function createAPI(getChrome, getLocks) {
     function transaction(task) {
       const locks = getLocks();
-      if (!locks || typeof locks.request !== 'function') return Promise.reject(new Error(t('浏览器暂不支持安全保存，请更新 Chrome 后重试。')));
+      if (!locks || typeof locks.request !== 'function') return Promise.reject(new Error(t('浏览器暂不支持安全保存，请更新浏览器后重试。')));
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
       return Promise.resolve().then(() => locks.request(LOCK_NAME, { mode: 'exclusive', signal: controller.signal }, async () => {

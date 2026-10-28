@@ -45,7 +45,7 @@
   "壁纸缓存失败，已保留原背景，请稍后重试": "Couldn't cache the wallpaper. Your previous background is unchanged. Please try again.",
   "壁纸保存失败，已保留原背景，请稍后重试": "Couldn't save the wallpaper. Your previous background is unchanged. Please try again.",
   "其他标签页已修改此内容，请刷新后重试。": "Another tab changed this content. Refresh and try again.",
-  "浏览器暂不支持安全保存，请更新 Chrome 后重试。": "This browser does not support safe saving. Update Chrome and try again.",
+  "浏览器暂不支持安全保存，请更新浏览器后重试。": "This browser does not support safe saving. Update your browser and try again.",
   "保存等待超时，请重试。": "Saving timed out. Please try again.",
   "保存暂不可用，请重新打开标签页。": "Saving is unavailable. Reopen this tab.",
   "背景保存失败，请重试": "Could not save the background. Please try again.",
