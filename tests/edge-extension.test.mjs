@@ -25,6 +25,17 @@ let context, manager, managerCDP;
 const errors = [];
 function record(stage) { evidence.stages.push(stage); console.log(`Edge: ${stage}`); }
 const native = (...args) => execFileSync('xdotool', args, { encoding: 'utf8', timeout: 10000 });
+function nativeSnapshot(stage) {
+  execFileSync('scrot', [path.join(artifacts, `edge-native-${stage}.png`)], { timeout: 10000 });
+  const windows = native('search', '--onlyvisible', '--name', '.').trim().split('\n');
+  const snapshot = { focused: native('getwindowfocus').trim(), windows: windows.map(id => ({
+    id, name: native('getwindowname', id).trim(), geometry: native('getwindowgeometry', '--shell', id).trim()
+  })) };
+  fs.writeFileSync(path.join(artifacts, `edge-native-${stage}.json`), JSON.stringify(snapshot, null, 2));
+}
+function chooserVisible(id) {
+  return native('search', '--onlyvisible', '--name', '.').trim().split('\n').includes(id);
+}
 // Edge's manager renders controls in closed shadow roots. Public accessibility
 // and layout inspection locate the same visible control a user would click.
 // No script changes browser settings, calls private APIs, or bypasses dialogs.
@@ -91,12 +102,24 @@ try {
   const chooser = native('search', '--sync', '--onlyvisible', '--name', '[Ss]elect.*([Ee]xtension|[Ff]older|[Dd]irectory)|[Oo]pen.*[Dd]irectory').trim().split('\n').at(-1);
   assert.match(chooser, /^\d+$/, 'native extension directory picker');
   native('windowfocus', '--sync', chooser);
+  nativeSnapshot('01-before-path');
   native('key', '--clearmodifiers', 'ctrl+l');
   native('type', '--clearmodifiers', '--delay', '1', extension + '/');
+  nativeSnapshot('02-path-entered');
   native('key', '--clearmodifiers', 'Return');
   await delay(500); // GTK directory navigation, not application readiness.
-  native('key', '--clearmodifiers', 'Return');
-  record('selected extracted ZIP through Edge Load unpacked');
+  nativeSnapshot('03-after-first-enter');
+  // Never send an acceptance keystroke to the browser after the chooser closes.
+  if (chooserVisible(chooser)) {
+    native('windowfocus', '--sync', chooser);
+    native('key', '--clearmodifiers', 'Return');
+  }
+  await delay(500);
+  nativeSnapshot('04-after-accept');
+  const closeDeadline = Date.now() + 5000;
+  while (chooserVisible(chooser) && Date.now() < closeDeadline) await delay(100);
+  assert.equal(chooserVisible(chooser), false, 'directory chooser must close after selection');
+  record('directory picker closed after selecting extracted ZIP');
   const worker = context.serviceWorkers().find(w => w.url().endsWith('/background.js'))
     || await context.waitForEvent('serviceworker', { predicate: w => w.url().endsWith('/background.js'), timeout: 20000 });
   const id = new URL(worker.url()).host;
@@ -162,6 +185,7 @@ try {
   console.log('Genuine Edge packaged compatibility passed. This is not Store certification or the full Chromium regression suite.');
 } catch (error) {
   evidence.status = 'failed'; evidence.error = String(error.stack || error);
+  try { nativeSnapshot('failure'); } catch { /* Preserve original test failure. */ }
   try {
     const windows = native('search', '--onlyvisible', '--name', '.').trim().split('\n');
     fs.writeFileSync(path.join(artifacts, 'edge-native-windows.json'), JSON.stringify(windows.map(id => ({ id, name: native('getwindowname', id) })), null, 2));

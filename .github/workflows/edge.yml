@@ -28,7 +28,7 @@ jobs:
         timeout-minutes: 15
         run: |
           npx playwright install --with-deps msedge
-          sudo apt-get install --no-install-recommends -y xvfb xdotool
+          sudo apt-get install --no-install-recommends -y xvfb xdotool scrot
       - name: Test real Edge through developer sideload UI
         timeout-minutes: 4
         run: xvfb-run -a node tests/edge-extension.test.mjs
