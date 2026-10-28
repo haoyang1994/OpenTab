@@ -105,17 +105,21 @@ try {
   nativeSnapshot('01-before-path');
   native('key', '--clearmodifiers', 'ctrl+l');
   native('type', '--clearmodifiers', '--delay', '1', extension + '/');
+  // Allow GTK's path completion to settle before explicitly clicking Open.
+  await delay(1000);
   nativeSnapshot('02-path-entered');
-  native('key', '--clearmodifiers', 'Return');
-  await delay(500); // GTK directory navigation, not application readiness.
-  nativeSnapshot('03-after-first-enter');
-  // Never send an acceptance keystroke to the browser after the chooser closes.
-  if (chooserVisible(chooser)) {
-    native('windowfocus', '--sync', chooser);
-    native('key', '--clearmodifiers', 'Return');
-  }
+  // CI's captured native GTK picker is 1124x822: Open is centered 49px
+  // from its right edge and 23px from its bottom edge. Use the owned dialog's
+  // current geometry, not browser coordinates; never send ambiguous Enter.
+  const geometry = Object.fromEntries(native('getwindowgeometry', '--shell', chooser).trim().split('\n')
+    .map(line => line.split('=')));
+  assert.equal(Number(geometry.WIDTH), 1124, 'known native picker width; inspect screenshot if GTK layout changes');
+  assert.equal(Number(geometry.HEIGHT), 822, 'known native picker height; inspect screenshot if GTK layout changes');
+  assert.equal(chooserVisible(chooser), true, 'owned directory picker remains visible before Open');
+  native('mousemove', '--window', chooser, String(Number(geometry.WIDTH) - 49), String(Number(geometry.HEIGHT) - 23));
+  native('click', '1');
   await delay(500);
-  nativeSnapshot('04-after-accept');
+  nativeSnapshot('03-after-open-click');
   const closeDeadline = Date.now() + 5000;
   while (chooserVisible(chooser) && Date.now() < closeDeadline) await delay(100);
   assert.equal(chooserVisible(chooser), false, 'directory chooser must close after selection');
@@ -193,6 +197,15 @@ try {
   if (managerCDP) {
     try { fs.writeFileSync(path.join(artifacts, 'edge-manager-ax.json'), JSON.stringify(await managerCDP.send('Accessibility.getFullAXTree'), null, 2)); }
     catch { /* Preserve original browser failure. */ }
+  }
+  if (managerCDP) {
+    try {
+      fs.writeFileSync(path.join(artifacts, 'edge-targets.json'), JSON.stringify(await managerCDP.send('Target.getTargets'), null, 2));
+      await manager.reload({ waitUntil: 'load', timeout: 10000 });
+      await delay(500);
+      fs.writeFileSync(path.join(artifacts, 'edge-manager-reloaded-ax.json'), JSON.stringify(await managerCDP.send('Accessibility.getFullAXTree'), null, 2));
+      await manager.screenshot({ path: path.join(artifacts, 'edge-manager-reloaded.png') });
+    } catch { /* Preserve original install or worker failure. */ }
   }
   if (context) {
     for (const [index, page] of context.pages().entries()) {
