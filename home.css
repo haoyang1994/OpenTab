@@ -1502,6 +1502,10 @@ body.theme-light #icon-drop-indicator {
 }
 
 .settings-panel.hidden {
+  /* Keep the fixed sliding shell, but do not lay out hundreds of invisible
+     settings controls on every new tab. Removing .hidden restores the subtree
+     synchronously before settings navigation reads its geometry. */
+  content-visibility: hidden;
   visibility: hidden;
   transform: translateX(calc(100% + 24px));
   opacity: 0;
