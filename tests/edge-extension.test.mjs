@@ -101,7 +101,7 @@ try {
   // Wait for its visible window and focus that exact owned dialog before typing.
   const chooser = native('search', '--sync', '--onlyvisible', '--name', '[Ss]elect.*([Ee]xtension|[Ff]older|[Dd]irectory)|[Oo]pen.*[Dd]irectory').trim().split('\n').at(-1);
   assert.match(chooser, /^\d+$/, 'native extension directory picker');
-  native('windowfocus', '--sync', chooser);
+  native('windowactivate', '--sync', chooser);
   nativeSnapshot('01-before-path');
   native('key', '--clearmodifiers', 'ctrl+l');
   native('type', '--clearmodifiers', '--delay', '1', extension + '/');
@@ -120,6 +120,16 @@ try {
   native('click', '1');
   await delay(500);
   nativeSnapshot('03-after-open-click');
+  // GTK's completion popup consumes the first click (observed in CI capture).
+  // Only repeat for this still-visible owned chooser, never a browser/prompt.
+  if (chooserVisible(chooser)) {
+    assert.equal(native('getwindowname', chooser).trim(), 'Select the extension directory.', 'same native directory chooser');
+    native('windowactivate', '--sync', chooser);
+    native('mousemove', '--window', chooser, String(Number(geometry.WIDTH) - 49), String(Number(geometry.HEIGHT) - 23));
+    native('click', '1');
+    await delay(500);
+    nativeSnapshot('04-after-open-confirm');
+  }
   const closeDeadline = Date.now() + 5000;
   while (chooserVisible(chooser) && Date.now() < closeDeadline) await delay(100);
   assert.equal(chooserVisible(chooser), false, 'directory chooser must close after selection');

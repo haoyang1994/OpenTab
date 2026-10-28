@@ -28,12 +28,13 @@ jobs:
         timeout-minutes: 15
         run: |
           npx playwright install --with-deps msedge
-          sudo apt-get install --no-install-recommends -y xvfb xdotool scrot
+          sudo apt-get install --no-install-recommends -y xvfb xdotool scrot openbox
       - name: Test real Edge through developer sideload UI
         timeout-minutes: 4
         env:
           DEBUG: pw:browser
-        run: xvfb-run -a node tests/edge-extension.test.mjs
+          OPENTAB_E2E_OWNED_DISPLAY: "1"
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" bash scripts/run-native-desktop.sh node tests/edge-extension.test.mjs
       - name: Upload Edge verification evidence
         if: always()
         uses: actions/upload-artifact@v4
