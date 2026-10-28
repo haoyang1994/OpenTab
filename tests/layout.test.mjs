@@ -12,6 +12,16 @@ const OpenTabSettingsNav = require('../settings-nav.js');
 const OpenTabSync = require('../sync.js');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+{
+  const css = fs.readFileSync(path.join(root, 'home.css'), 'utf8');
+  const closed = css.match(/\.settings-panel\.hidden\s*\{([^}]+)\}/)?.[1];
+  assert.match(closed, /content-visibility:\s*hidden/, 'closed settings skip descendant layout');
+  assert.match(closed, /(?:^|[;\n])\s*visibility:\s*hidden/, 'closed controls remain inaccessible');
+  assert.doesNotMatch(closed, /display:\s*none/, 'the fixed shell keeps its slide transition');
+  const open = css.match(/\.settings-panel\s*\{([^}]+)\}/)?.[1];
+  assert.doesNotMatch(open, /content-visibility:\s*hidden/, 'open settings restore normal layout');
+}
+
 assert.deepEqual(OpenTabLayout.normalize({}), OpenTabLayout.DEFAULTS);
 assert.equal(OpenTabLayout.normalize({ layoutIconSize: 12 }).layoutIconSize, 48);
 assert.equal(OpenTabLayout.normalize({ layoutIconSize: 200 }).layoutIconSize, 96);

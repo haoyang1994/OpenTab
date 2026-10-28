@@ -27,8 +27,8 @@ jobs:
       - run: node tests/startup-probe-unit.test.mjs
       - run: npx playwright install --with-deps chromium
         timeout-minutes: 12
-      - name: Prepare pinned pre-Edge baseline
-        run: git worktree add "$RUNNER_TEMP/opentab-baseline" 7c43d4c4fbab3a32866c02988991059c28c27bea
+      - name: Prepare pinned pre-fix baseline
+        run: git worktree add "$RUNNER_TEMP/opentab-baseline" d9c335cd12703551f4b477bf12a7107822d42b5e
       - name: Collect fixed matched experiment, not retries
         timeout-minutes: 6
         env:
