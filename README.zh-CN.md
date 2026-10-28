@@ -2,7 +2,7 @@
 
 # OpenTab
 
-Chrome Manifest V3 新标签页，iPad 风格毛玻璃界面。开源、可审计。
+Chrome 与 Microsoft Edge Manifest V3 新标签页，iPad 风格毛玻璃界面。开源、可审计。
 
 [English](README.md) | **简体中文**
 
@@ -96,7 +96,7 @@ OpenTab 覆盖 `chrome://newtab`，提供本地可定制的主页：时钟、快
 - 天气默认关闭：在「设置 → 天气」开启并保存城市，可切换 °C / °F 或手动刷新。不读取设备定位；30 分钟内复用缓存，服务异常时保留最多 24 小时的上次天气。天气偏好与缓存仅留在本机，不进入同步或 JSON 备份。
 - 侧边抽屉待办和进度条
 - 完整工作区的 JSON 备份导出 / 导入，以及本地快照；手动保存的紧凑快照会省略上传 / 本地图标数据，不能代替完整导出
-- 可导入 Chrome 书签、常用网站，以及 Infinity / WeTab / iTab 备份（`bookmarks` / `topSites` 为可选权限，点击按钮时才申请）
+- 可导入浏览器书签、常用网站，以及 Infinity / WeTab / iTab 备份（`bookmarks` / `topSites` 为可选权限，点击按钮时才申请）
 - 可选的浏览器同步：同步快捷方式、分组和允许同步的设置；启用场景后还同步场景信息、分组归属及四项场景布局（不同步背景、上传素材、待办、历史或标签页选择）；另一台设备已有数据时会询问「用云端 / 用本机」。设置里显示本地存储用量
 
 ### 设置与布局
@@ -142,12 +142,14 @@ SSH 连接经过你自己启动的**本地** WebSocket 网关（`ssh-gateway.mjs
 
 ## 安装
 
+Chrome 与 Microsoft Edge 使用同一份扩展文件和权限。Edge 中打开 `edge://extensions/`，启用开发者模式并加载解压后的目录；若浏览器提示确认新标签页更改，请明确允许。详见 [Edge 兼容说明](docs/EDGE.md#简体中文)。
+
 ### 开发者模式加载已解压扩展（当前支持的方式）
 
 克隆后即可直接加载，**不需要 `npm install`**。日历（flatpickr）和 SSH 终端（xterm）从仓库里的 [`vendor/`](vendor/README.md) 加载，各库的 LICENSE 文件也在对应目录中。
 
 1. 克隆本仓库。
-2. 打开 Chrome，访问 `chrome://extensions/`。
+2. 在 Chrome 打开 `chrome://extensions/`，或在 Microsoft Edge 打开 `edge://extensions/`。
 3. 打开右上角「开发者模式」。
 4. 点击「加载已解压的扩展程序」，选择仓库根目录。
 5. 打开新标签页。

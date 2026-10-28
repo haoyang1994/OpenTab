@@ -2,7 +2,7 @@
 
 # OpenTab
 
-A Chrome Manifest V3 new tab page with an iPad-style glass UI. Open source and auditable.
+A Chrome and Microsoft Edge Manifest V3 new tab page with an iPad-style glass UI. Open source and auditable.
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -17,7 +17,7 @@ A Chrome Manifest V3 new tab page with an iPad-style glass UI. Open source and a
 
 ## Introduction
 
-OpenTab replaces `chrome://newtab` with a local, customizable homepage: clock, shortcuts, search, weather, and a few developer tools. Homepage data is stored locally, with optional Chrome sync.
+OpenTab replaces the browser’s new tab page (`chrome://newtab` / `edge://newtab`) with a local, customizable homepage: clock, shortcuts, search, weather, and a few developer tools. Homepage data is stored locally, with optional browser sync.
 
 First paint applies the saved theme, clock, and wallpaper from a local boot mirror so placeholder copy never flashes. First install uses a bundled `default.webp` and does not call Bing until you choose Bing wallpaper.
 
@@ -100,10 +100,10 @@ See the [scene guide](docs/SCENE-SPACES.md#english) for sync boundaries, recover
 - Optional weather: off by default. Enable it and save a city in Settings → Weather; choose °C / °F or refresh manually. No device location is read. Fresh weather is cached for 30 minutes, with up to 24-hour-old data retained during an outage. Weather preferences and cache stay local, outside sync and JSON backups.
 - Side-drawer todos with a progress bar
 - JSON backup export/import for the full workspace, plus local snapshots; compact manual snapshots omit uploaded/local icon data and are not a substitute for a full export
-- Import Chrome bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
+- Import browser bookmarks, most-visited sites, and Infinity / WeTab / iTab backups (bookmark/topSites permissions are optional and requested only when you click)
 - Multi-tab workspace saves preserve unrelated item changes and reject conflicting edits; see [persistence and undo rules](docs/PERSISTENCE.md).
 - Hide the to-do button from layout settings without deleting tasks; show it again whenever needed. Click outside the settings sidebar to dismiss it without activating the page underneath.
-- Optional Chrome sync for shortcuts, folders, and eligible settings; scenes add metadata, group ownership, and their four layout settings (not backgrounds, uploads, to-dos, history, or tab selection); turning it on when another device already has data asks **Use cloud copy** / **Use local copy**. Settings shows local storage usage
+- Optional browser sync for shortcuts, folders, and eligible settings; scenes add metadata, group ownership, and their four layout settings (not backgrounds, uploads, to-dos, history, or tab selection); turning it on when another device already has data asks **Use cloud copy** / **Use local copy**. Settings shows local storage usage
 
 ### Settings and layout
 
@@ -131,7 +131,7 @@ The frames contain Google / GitHub marks, which remain trademarks of their owner
 
 ## Privacy
 
-- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional Chrome sync copies shortcuts, folders, and eligible settings. When scenes are enabled, it also copies scene metadata, group ownership, and the four scene layout settings in an isolated v2 namespace; backgrounds, uploaded/local icon data, todos, search history, tab selection, and SSH secrets stay local. Bing wallpaper cache metadata stays in `chrome.storage.local` (it is not synced and is omitted from JSON backups). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
+- Preferences, shortcuts, todos, snapshots, and search history are stored in `chrome.storage.local` on this browser profile. Optional browser sync copies shortcuts, folders, and eligible settings. When scenes are enabled, it also copies scene metadata, group ownership, and the four scene layout settings in an isolated v2 namespace; backgrounds, uploaded/local icon data, todos, search history, tab selection, and SSH secrets stay local. Bing wallpaper cache metadata stays in `chrome.storage.local` (it is not synced and is omitted from JSON backups). If this device already has shortcuts, enabling sync asks whether to keep local or cloud data and snapshots local before a cloud overwrite. Downloaded JSON backups omit search history by default.
 - The search box does not fetch suggestions or typeahead from any engine.
 - Bookmarks and most-visited sites are `optional_permissions`: Chrome does not prompt for them at install. OpenTab requests each one when you click the matching import button.
 - OpenTab does not include analytics, ads, or account login.
@@ -148,12 +148,14 @@ SSH connections go through a **local** WebSocket gateway you start yourself (`ss
 
 ## Install
 
+Chrome and Edge use the same extension files and permissions. See [Edge installation and compatibility](docs/EDGE.md) for new-tab confirmation, browser-local data, and test coverage.
+
 ### Load an unpacked extension (current supported method)
 
 Clone the repository and load it. **`npm install` is not required** to use the new tab page. Calendar (flatpickr) and the SSH terminal (xterm) load from [`vendor/`](vendor/README.md), which is committed with each library's LICENSE file.
 
 1. Clone this repository.
-2. Open Chrome and go to `chrome://extensions/`.
+2. Open `chrome://extensions/` in Chrome or `edge://extensions/` in Microsoft Edge.
 3. Enable **Developer mode**.
 4. Click **Load unpacked** and select the repository root.
 5. Open a new tab.

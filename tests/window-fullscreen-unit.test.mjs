@@ -228,6 +228,16 @@ const settings = read('settings-nav.js');
   await context.refreshWindowFullscreenShortcut(); assert.equal(output.textContent, shortcut, 'disable does not claim to clear Chrome binding');
   await nodes.get('manage-window-fullscreen-shortcut').handlers.click();
   assert.deepEqual(opened, [{ url: 'chrome://extensions/shortcuts' }]); assert.deepEqual(toasts, []);
+  for (const [userAgent, scheme] of [
+    ['Mozilla/5.0 Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.50', 'edge'],
+    ['Mozilla/5.0 Chrome/156.0.0.0 Safari/537.36', 'chrome'],
+    ['', 'chrome']
+  ]) {
+    context.navigator = { userAgent };
+    await nodes.get('manage-window-fullscreen-shortcut').handlers.click();
+    assert.deepEqual(opened.at(-1), { url: `${scheme}://extensions/shortcuts` });
+  }
+  assert.deepEqual(toasts, []);
   error = true; visibility[0](); await settle(); assert.equal(output.textContent, '不可用', 'API failure is not mislabeled as unassigned');
   error = false; shortcut = ''; focus[0](); await settle();
   assert.equal(output.textContent, '未设置'); assert.equal(output.attributes['data-i18n'], '未设置', 'clearing the Chrome binding restores the localized fallback');

@@ -774,7 +774,9 @@
     });
     const manageShortcut = $('manage-window-fullscreen-shortcut');
     if (manageShortcut) manageShortcut.addEventListener('click', async () => {
-      try { await chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }); }
+      // Edge retains the chrome.* extension API, but owns its settings URL.
+      const isEdge = typeof navigator !== 'undefined' && /\bEdg\//.test(navigator.userAgent || '');
+      try { await chrome.tabs.create({ url: `${isEdge ? 'edge' : 'chrome'}://extensions/shortcuts` }); }
       catch (_) { host.showToast?.(t('未能打开快捷键设置。')); }
     });
     const refreshShortcutOnReturn = () => {
