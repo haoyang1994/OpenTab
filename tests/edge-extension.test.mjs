@@ -88,7 +88,7 @@ try {
   await clickManagerControl(await managerControl('Load unpacked', ['button']));
   // The directory picker is a native GTK dialog, not an HTML file input.
   // Wait for its visible window and focus that exact owned dialog before typing.
-  const chooser = native('search', '--sync', '--onlyvisible', '--name', 'Select (Extension Directory|Folder)|Open Directory').trim().split('\n').at(-1);
+  const chooser = native('search', '--sync', '--onlyvisible', '--name', '[Ss]elect.*([Ee]xtension|[Ff]older|[Dd]irectory)|[Oo]pen.*[Dd]irectory').trim().split('\n').at(-1);
   assert.match(chooser, /^\d+$/, 'native extension directory picker');
   native('windowfocus', '--sync', chooser);
   native('key', '--clearmodifiers', 'ctrl+l');
@@ -162,6 +162,10 @@ try {
   console.log('Genuine Edge packaged compatibility passed. This is not Store certification or the full Chromium regression suite.');
 } catch (error) {
   evidence.status = 'failed'; evidence.error = String(error.stack || error);
+  try {
+    const windows = native('search', '--onlyvisible', '--name', '.').trim().split('\n');
+    fs.writeFileSync(path.join(artifacts, 'edge-native-windows.json'), JSON.stringify(windows.map(id => ({ id, name: native('getwindowname', id) })), null, 2));
+  } catch { /* Keep browser failure primary. */ }
   if (managerCDP) {
     try { fs.writeFileSync(path.join(artifacts, 'edge-manager-ax.json'), JSON.stringify(await managerCDP.send('Accessibility.getFullAXTree'), null, 2)); }
     catch { /* Preserve original browser failure. */ }
