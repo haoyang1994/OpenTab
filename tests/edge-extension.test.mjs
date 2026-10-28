@@ -21,10 +21,43 @@ fs.mkdirSync(artifacts, { recursive: true });
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 const zip = path.join(root, 'dist', `opentab-${manifest.version}.zip`);
 const evidence = { browser: 'Microsoft Edge', status: 'running', stages: [] };
-let context, manager;
+let context, manager, managerCDP;
 const errors = [];
 function record(stage) { evidence.stages.push(stage); console.log(`Edge: ${stage}`); }
 const native = (...args) => execFileSync('xdotool', args, { encoding: 'utf8', timeout: 10000 });
+// Edge's manager renders controls in closed shadow roots. Public accessibility
+// and layout inspection locate the same visible control a user would click.
+// No script changes browser settings, calls private APIs, or bypasses dialogs.
+async function managerControl(name, roles) {
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const tree = await managerCDP.send('Accessibility.getFullAXTree');
+    const matches = tree.nodes.filter(node => !node.ignored && node.name?.value === name
+      && roles.includes(node.role?.value) && node.backendDOMNodeId);
+    if (matches.length === 1) return matches[0];
+    assert.ok(matches.length < 2, `ambiguous Edge control: ${name}`);
+    await delay(100);
+  }
+  throw new Error(`Visible Edge control unavailable: ${name}`);
+}
+async function clickManagerControl(node) {
+  const { model } = await managerCDP.send('DOM.getBoxModel', { backendNodeId: node.backendDOMNodeId });
+  const q = model.border;
+  const x = (q[0] + q[2] + q[4] + q[6]) / 4, y = (q[1] + q[3] + q[5] + q[7]) / 4;
+  const viewport = manager.viewportSize();
+  assert.ok(model.width > 0 && model.height > 0 && x >= 0 && y >= 0
+    && x < viewport.width && y < viewport.height, 'Edge control must be visible in viewport');
+  await manager.mouse.click(x, y);
+}
+function collectPageErrors(page, label, id) {
+  page.on('pageerror', error => errors.push(`${label}: ${error.message}`));
+  page.on('console', message => {
+    if (message.type() === 'error' && unexpectedErrors([formatConsoleError(message)]).length) errors.push(`${label}: ${formatConsoleError(message)}`);
+  });
+  page.on('requestfailed', request => {
+    if (request.url().startsWith(`chrome-extension://${id}/`)) errors.push(`${label}: ${request.url()} ${request.failure()?.errorText}`);
+  });
+}
 async function ready(page) {
   await page.waitForFunction(() => globalThis.OpenTabSearch && document.querySelector('#homepage')?.inert === false
     && performance.getEntriesByName('opentab:initial-loader-end').length > 0, undefined, { timeout: 15000 });
@@ -42,17 +75,17 @@ try {
   await manager.goto('edge://extensions/');
   evidence.userAgent = await manager.evaluate(() => navigator.userAgent);
   assert.match(evidence.userAgent, /\bEdg\/[\d.]+/, 'test must run actual Edge');
-  evidence.version = evidence.userAgent.match(/\bEdg\/([\d.]+)/)[1];
+  managerCDP = await context.newCDPSession(manager);
+  evidence.browserVersion = await managerCDP.send('Browser.getVersion');
+  evidence.version = execFileSync('microsoft-edge', ['--version'], { encoding: 'utf8', timeout: 10000 }).trim();
+  assert.match(evidence.version, /^Microsoft Edge \d+\.\d+\.\d+\.\d+/, 'full official Edge executable version');
   record(`actual Edge ${evidence.version}`);
-  const developer = manager.getByRole('switch', { name: /Developer mode/i });
-  if (await developer.count()) {
-    if (await developer.getAttribute('aria-checked') !== 'true') await developer.click();
-  } else {
-    // Edge versions using a labeled native checkbox expose the same UI action.
-    const checkbox = manager.getByRole('checkbox', { name: /Developer mode/i });
-    await checkbox.check();
+  await managerCDP.send('Accessibility.enable');
+  const developer = await managerControl('Developer mode', ['switch', 'checkbox', 'toggleButton', 'button']);
+  if (developer.properties?.find(property => property.name === 'checked')?.value?.value !== 'true') {
+    await clickManagerControl(developer);
   }
-  await manager.getByRole('button', { name: /Load unpacked/i }).click();
+  await clickManagerControl(await managerControl('Load unpacked', ['button']));
   // The directory picker is a native GTK dialog, not an HTML file input.
   // Wait for its visible window and focus that exact owned dialog before typing.
   const chooser = native('search', '--sync', '--onlyvisible', '--name', 'Select (Extension Directory|Folder)|Open Directory').trim().split('\n').at(-1);
@@ -73,21 +106,17 @@ try {
   assert.equal(actualManifest.version, manifest.version);
   assert.deepEqual(actualManifest.permissions, manifest.permissions);
   assert.deepEqual(actualManifest.optional_permissions, manifest.optional_permissions);
-  assert.equal(await worker.evaluate(() => chrome.permissions.contains({ permissions: ['bookmarks', 'topSites'] })), false,
-    'optional permissions are not pre-granted by test setup');
+  for (const permission of ['bookmarks', 'topSites']) {
+    assert.equal(await worker.evaluate(value => chrome.permissions.contains({ permissions: [value] }), permission), false,
+      `${permission} permission is not pre-granted by test setup`);
+  }
   record('MV3 background and unchanged permissions');
   // Isolate web services while preserving extension-resource failures as errors.
   await context.route(/^https?:\/\//, route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   let home;
   for (const file of ['home.html', 'popup.html', 'tool.html', 'ssh_terminal.html']) {
     const page = await context.newPage();
-    page.on('pageerror', error => errors.push(`${file}: ${error.message}`));
-    page.on('console', message => {
-      if (message.type() === 'error' && unexpectedErrors([formatConsoleError(message)]).length) errors.push(`${file}: ${formatConsoleError(message)}`);
-    });
-    page.on('requestfailed', request => {
-      if (request.url().startsWith(`chrome-extension://${id}/`)) errors.push(`${file}: ${request.url()} ${request.failure()?.errorText}`);
-    });
+    collectPageErrors(page, file, id);
     const target = `chrome-extension://${id}/${file}`;
     const response = await page.goto(target, { waitUntil: 'load' });
     assertPackagedNavigation(response, await page.evaluate(() => ({ url: location.href, runtimeId: chrome.runtime.id, readyState: document.readyState })), target, id);
@@ -119,6 +148,7 @@ try {
   record('shortcut control opens Edge keyboard shortcuts');
   await shortcuts.close();
   const newtab = await context.newPage();
+  collectPageErrors(newtab, 'edge://newtab', id);
   await newtab.goto('edge://newtab/', { waitUntil: 'load' });
   // Do not silently enable a disabled extension or suppress an Edge warning.
   // An unaccepted NTP override fails with screenshots for explicit inspection.
@@ -132,6 +162,10 @@ try {
   console.log('Genuine Edge packaged compatibility passed. This is not Store certification or the full Chromium regression suite.');
 } catch (error) {
   evidence.status = 'failed'; evidence.error = String(error.stack || error);
+  if (managerCDP) {
+    try { fs.writeFileSync(path.join(artifacts, 'edge-manager-ax.json'), JSON.stringify(await managerCDP.send('Accessibility.getFullAXTree'), null, 2)); }
+    catch { /* Preserve original browser failure. */ }
+  }
   if (context) {
     for (const [index, page] of context.pages().entries()) {
       try {
