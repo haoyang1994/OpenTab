@@ -28,7 +28,9 @@ jobs:
         timeout-minutes: 15
         run: |
           npx playwright install --with-deps msedge
-          sudo apt-get install --no-install-recommends -y xvfb xdotool scrot openbox
+          sudo apt-get install --no-install-recommends -y xvfb xdotool xclip scrot openbox
+      - name: Test native picker input guard
+        run: node tests/edge-picker-unit.test.mjs
       - name: Test real Edge through developer sideload UI
         timeout-minutes: 4
         env:

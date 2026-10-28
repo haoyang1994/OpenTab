@@ -232,15 +232,28 @@ async function runSettingsLayoutE2E() {
 
     // Exercise rendering skipped by the closed panel, including interrupted
     // transitions and a viewport change before the subtree is restored.
+    await page.evaluate(() => OpenTabSettingsNav.openSection('search'));
+    await page.waitForFunction(() => OpenTabSettingsNav.getActiveId() === 'search'
+      && Math.abs(document.getElementById('search-settings-section').getBoundingClientRect().top
+        - document.getElementById('settings-content').getBoundingClientRect().top) < 2);
+    const savedSettingsScroll = await page.locator('#settings-content').evaluate(el => el.scrollTop);
+    assert.ok(savedSettingsScroll > 0, 'preservation fixture starts at a nonterminal section');
     await page.evaluate(() => OpenTabSettingsNav.close());
     await page.waitForFunction(() => {
       const el = document.getElementById('settings-panel');
       const x = new DOMMatrixReadOnly(getComputedStyle(el).transform).m41;
       return x > 1 && x < el.getBoundingClientRect().width + 24;
     }, null, { timeout: 2000 });
+    assert.equal(await page.evaluate(() => OpenTabSettingsNav.getActiveId()), 'search',
+      'skipping hidden content must not spuriously select the last navigation section');
     await page.evaluate(() => OpenTabSettingsNav.open());
+    await waitForSettingsSettled(page);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(await page.locator('#settings-panel').evaluate(el => getComputedStyle(el).contentVisibility), 'visible');
+    assert.equal(await page.evaluate(() => OpenTabSettingsNav.getActiveId()), 'search',
+      'same-viewport reopening preserves active settings navigation');
+    assert.ok(Math.abs(await page.locator('#settings-content').evaluate(el => el.scrollTop) - savedSettingsScroll) <= 1,
+      'same-viewport reopening preserves settings scroll position');
     await page.evaluate(() => OpenTabSettingsNav.close());
     await page.setViewportSize({ width: 700, height: 800 });
     await openSettings(page);

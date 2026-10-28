@@ -36,6 +36,59 @@ function nativeSnapshot(stage) {
 function chooserVisible(id) {
   return native('search', '--onlyvisible', '--name', '.').trim().split('\n').includes(id);
 }
+// xclip forks to serve X11 clipboard requests. Never inherit captured stdout
+// into that daemon: execFileSync would otherwise wait for its pipe to close.
+function setClipboard(value) {
+  execFileSync('xclip', ['-selection', 'clipboard', '-in'], {
+    input: value, stdio: ['pipe', 'ignore', 'ignore'], timeout: 2000
+  });
+}
+function readClipboard() {
+  return execFileSync('xclip', ['-selection', 'clipboard', '-out'], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000
+  });
+}
+function assertOwnedChooser(chooser) {
+  assert.equal(chooserVisible(chooser), true, 'owned directory picker remains visible');
+  assert.equal(native('getwindowname', chooser).trim(), 'Select the extension directory.', 'same native directory chooser');
+  assert.equal(native('getwindowfocus').trim(), chooser, 'native directory picker retains focus');
+}
+async function enterChooserPath(chooser, expected) {
+  // Ctrl+L can return before GTK creates/focuses its location entry. A fixed
+  // per-character typing delay lost the path prefix in CI. Paste atomically,
+  // then verify the actual selected entry before allowing any Open click.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    assertOwnedChooser(chooser);
+    native('key', '--clearmodifiers', 'ctrl+l');
+    await delay(250 * attempt);
+    assertOwnedChooser(chooser);
+    native('key', '--clearmodifiers', 'ctrl+a');
+    setClipboard(expected);
+    native('key', '--clearmodifiers', 'ctrl+v');
+    await delay(300);
+    assertOwnedChooser(chooser);
+    // A failed Ctrl+C must not read back our own pasted clipboard value.
+    const sentinel = `opentab-unverified-path-${attempt}`;
+    setClipboard(sentinel);
+    native('key', '--clearmodifiers', 'ctrl+a', 'ctrl+c');
+    let actual = sentinel;
+    const deadline = Date.now() + 1500;
+    while (actual === sentinel && Date.now() < deadline) {
+      await delay(100);
+      assertOwnedChooser(chooser);
+      actual = readClipboard();
+    }
+    evidence.stages.push({ stage: 'native path readback', attempt, expected, actual });
+    if (actual === expected) {
+      record(`native directory path verified on attempt ${attempt}`);
+      return;
+    }
+    nativeSnapshot(`path-mismatch-${attempt}`);
+    // Recovery is limited to the same still-visible chooser; never reopen or
+    // accept a different dialog, and never treat a clipboard mismatch as okay.
+  }
+  throw new Error('Native directory picker path did not match extracted ZIP directory after 3 attempts');
+}
 // Edge's manager renders controls in closed shadow roots. Public accessibility
 // and layout inspection locate the same visible control a user would click.
 // No script changes browser settings, calls private APIs, or bypasses dialogs.
@@ -103,8 +156,7 @@ try {
   assert.match(chooser, /^\d+$/, 'native extension directory picker');
   native('windowactivate', '--sync', chooser);
   nativeSnapshot('01-before-path');
-  native('key', '--clearmodifiers', 'ctrl+l');
-  native('type', '--clearmodifiers', '--delay', '1', extension + '/');
+  await enterChooserPath(chooser, extension + '/');
   // Allow GTK's path completion to settle before explicitly clicking Open.
   await delay(1000);
   nativeSnapshot('02-path-entered');
