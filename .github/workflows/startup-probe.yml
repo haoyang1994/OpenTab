@@ -1,0 +1,45 @@
+name: Matched startup diagnosis
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: startup-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startup-probe:
+    name: Matched baseline and candidate startup
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node tests/startup-probe-unit.test.mjs
+      - run: npx playwright install --with-deps chromium
+        timeout-minutes: 12
+      - name: Prepare pinned pre-Edge baseline
+        run: git worktree add "$RUNNER_TEMP/opentab-baseline" 7c43d4c4fbab3a32866c02988991059c28c27bea
+      - name: Collect fixed matched experiment, not retries
+        timeout-minutes: 6
+        env:
+          STARTUP_BASELINE_PATH: ${{ runner.temp }}/opentab-baseline
+          HEADLESS: 'false'
+          PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS: '1'
+        run: xvfb-run -a node tests/startup-probe.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: matched-startup-diagnosis
+          path: artifacts/startup-probe*
+          if-no-files-found: error
+          retention-days: 7
