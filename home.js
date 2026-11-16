@@ -1571,15 +1571,10 @@
 
   elements.todoAddBtn.addEventListener('click', handleAddTodo);
 
-  [elements.iconUrl, elements.iconCustomUrl, elements.sshGatewayUrl, elements.sshGatewayToken,
-    elements.sshHost, elements.sshPort, elements.sshUsername, elements.sshPassword,
-    elements.sshSocksHost, elements.sshSocksPort, elements.sshSocksUsername, elements.sshSocksPassword
-  ].forEach((input) => input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleSaveIcon();
-  }));
+  OpenTabIcons.bindSaveInputs(elements, handleSaveIcon);
 
   elements.todoInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') handleAddTodo();
+    if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) handleAddTodo();
   });
 
   if (window.OpenTabIcons) {

@@ -1215,7 +1215,7 @@
     const template = $('search-custom-template');
     if (template) {
       template.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) {
           event.preventDefault();
           saveCustomEngine();
         }

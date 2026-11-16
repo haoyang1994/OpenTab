@@ -151,6 +151,17 @@ function harness({ data = fixture(), scenes = true, identity = false } = {}) {
   assert.equal(h.state.currentFolderId, 'b-home', 'undoing the selected new group falls back to this scene Home');
 }
 {
+  const h = harness(); h.fire(h.$('add-group-btn'), 'click'); const input = h.$('new-group-input'); input.value = '中文';
+  for (const extra of [{ isComposing: true }, { keyCode: 229 }]) {
+    const event = h.fire(input, 'keydown', { key: 'Enter', ...extra });
+    assert.equal(event.defaultPrevented, undefined, 'IME can confirm its candidate');
+    assert.equal(h.$('new-group-input'), input, 'IME confirmation keeps the draft open');
+  }
+  await h.settle(); assert.equal(h.writes.length, 0, 'IME confirmation never saves a group');
+  h.fire(input, 'keydown', { key: 'Enter' }); await h.settle();
+  assert.equal(h.store.folders.at(-1).name, '中文', 'ordinary Enter still saves');
+}
+{
   const h = harness(); h.fire(h.$('add-group-btn'), 'click'); const input = h.$('new-group-input'); input.value = 'Stale';
   h.setView(A); h.fire(input, 'keydown', { key: 'Enter' }); await h.settle(); assert.equal(h.writes.length, 0);
 }

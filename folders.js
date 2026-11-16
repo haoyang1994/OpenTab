@@ -1061,6 +1061,7 @@
       selectGroup(folder.id, true);
     };
     input.addEventListener('keydown', (event) => {
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === 'Enter') {
         event.preventDefault();
         commit(true);
@@ -1106,6 +1107,7 @@
       host.refreshIconViews();
     };
     input.addEventListener('keydown', (event) => {
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === 'Enter') {
         event.preventDefault();
         finish(true);
@@ -1202,6 +1204,7 @@
     if (ui.titleInput) {
       ui.titleInput.addEventListener('change', saveOpenFolderName);
       ui.titleInput.addEventListener('keydown', (event) => {
+        if (event.isComposing || event.keyCode === 229) return;
         if (event.key === 'Enter') {
           event.preventDefault();
           ui.titleInput.blur();

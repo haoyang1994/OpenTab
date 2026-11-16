@@ -411,7 +411,7 @@
   });
 
   filePathInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && socket && socket.readyState === WebSocket.OPEN) {
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229 && socket && socket.readyState === WebSocket.OPEN) {
       const newPath = filePathInput.value.trim();
       if (newPath) {
         sendPacket({ type: 'ls', path: newPath });

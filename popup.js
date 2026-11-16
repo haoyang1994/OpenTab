@@ -265,7 +265,7 @@
   elements.saveBtn.addEventListener('click', saveCurrentTab);
   elements.siteName.addEventListener('input', () => elements.siteName.removeAttribute('aria-invalid'));
   elements.siteName.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') saveCurrentTab();
+    if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) saveCurrentTab();
   });
   elements.folderSelect.addEventListener('change', () => {
     if (state.saving) return;

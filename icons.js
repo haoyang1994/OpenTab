@@ -992,6 +992,15 @@
     return '';
   }
 
+  function bindSaveInputs(elements, save) {
+    [elements.iconUrl, elements.iconCustomUrl, elements.sshGatewayUrl, elements.sshGatewayToken,
+      elements.sshHost, elements.sshPort, elements.sshUsername, elements.sshPassword,
+      elements.sshSocksHost, elements.sshSocksPort, elements.sshSocksUsername, elements.sshSocksPassword
+    ].forEach((input) => input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) save();
+    }));
+  }
+
   function init(nextHost) {
     host = Object.assign(host, nextHost || {});
     if (typeof document !== 'undefined') bindChanger();
@@ -1034,6 +1043,7 @@
     placeMenu,
     handleEscape,
     gridIsReady,
+    bindSaveInputs,
     init
   };
 }));
