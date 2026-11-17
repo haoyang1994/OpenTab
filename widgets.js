@@ -77,7 +77,7 @@
       message(failure(error)); return false;
     } finally { busy(false); flushChanges(); }
   }
-  function cleanCard(card) { card.cancelPress?.(); try { card.renderer?.cleanup(card.disposable); } catch (_) { /* A broken local renderer cannot prevent recovery. */ } card.remove(); }
+  function cleanCard(card) { motion.get(card)?.cancel(); motion.delete(card); shifts.delete(card); card.cancelPress?.(); try { card.renderer?.cleanup(card.disposable); } catch (_) { /* A broken local renderer cannot prevent recovery. */ } card.remove(); }
   function ctx(widget, def, body, form) {
     return { id: widget.id, data: M.copy(widget.data), def, body, form, el, t,
       button, field: (label, value, type, options, target = form) => field(target, label, value, type, options),
@@ -173,7 +173,9 @@
     const sorted = projected.entries.slice().sort((a, b) => a.y - b.y || a.x - b.x), active = document.activeElement;
     let anchor = grid.firstElementChild;
     const order = node => {
-      if (node !== anchor) { if (typeof grid.moveBefore === 'function' && node.parentElement === grid) grid.moveBefore(node, anchor); else grid.insertBefore(node, anchor); }
+      // Reinsert the live node so its composited content is invalidated after a move.
+      // Renderer instances and clock intervals remain attached to that same node.
+      if (node !== anchor) grid.insertBefore(node, anchor);
       anchor = node.nextElementSibling;
     };
     for (const entry of sorted) { const node = nodeFor(entry.id); if (!node) continue; place(node, entry); order(node); }
@@ -201,7 +203,9 @@
     if (reducedMotion() || from === to || !node.animate) return;
     const animation = node.animate([{ translate: from === 'none' ? '0px 0px' : from }, { translate: to || '0px 0px' }], { duration, easing: 'cubic-bezier(.2,.8,.2,1)', id: 'opentab-desktop-shift' });
     motion.set(node, animation);
-    animation.onfinish = () => { if (motion.get(node) === animation) motion.delete(node); };
+    const release = () => { if (motion.get(node) === animation) motion.delete(node); };
+    animation.onfinish = () => { release(); animation.cancel(); };
+    animation.oncancel = release;
   }
   function shift(node, dx, dy, animate = true) {
     if (!node || (!dx && !dy && !shifts.has(node))) return;

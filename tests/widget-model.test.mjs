@@ -80,3 +80,5 @@ for (const entry of fullPlan.entries) { const mask = ((1 << entry.w) - 1) << ent
 assert.equal(fullPlan.entries.length, full.entries.length);
 assert.equal(full.entries[0].y, 0, 'fragmentation fallback does not mutate the original');
 console.log(`Fragmented full-capacity displacement passed (${(performance.now() - fullBegin).toFixed(2)}ms).`);
+
+await import('./widget-runtime.test.mjs');

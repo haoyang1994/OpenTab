@@ -29,8 +29,13 @@
 #icons-container.desktop-grid > .icon-widget { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; align-self: stretch; }
 .desktop-grid .widget-card {
   position: relative; min-inline-size: 0; min-block-size: 0; display: flex; flex-direction: column;
-  background: var(--card-bg); color: var(--glass-text); border: 1px solid var(--card-border); border-radius: 16px;
+  isolation: isolate; color: var(--glass-text); border: 1px solid var(--card-border); border-radius: 16px;
   box-shadow: 0 10px 30px -24px var(--shadow-color); overflow-wrap: anywhere; container-type: inline-size;
+}
+/* Keep the filtered surface separate from live text while cards move and settle. */
+.desktop-grid .widget-card::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: inherit; background: var(--card-bg);
   backdrop-filter: blur(var(--ui-blur-strong)); -webkit-backdrop-filter: blur(var(--ui-blur-strong));
 }
 .widget-card header { display: flex; flex-wrap: nowrap; align-items: center; padding: 6px 6px 0 8px; gap: 2px; }
@@ -152,6 +157,7 @@ body.theme-light :is(.widget-dialog, .widget-menu) { --widget-danger: #b91c1c; }
 @media (forced-colors: active) {
   .widget-dialog, .widget-menu { --form-surface: Canvas; --form-field: Canvas; --form-text: CanvasText; --form-muted: CanvasText; --form-border: CanvasText; --text-primary: CanvasText; --text-secondary: CanvasText; }
   .desktop-grid .widget-card { background: Canvas; color: CanvasText; --text-primary: CanvasText; --text-secondary: CanvasText; --control-bg: ButtonFace; --control-hover: ButtonFace; --field-border: ButtonText; }
+  .desktop-grid .widget-card::before { background: Canvas; backdrop-filter: none; -webkit-backdrop-filter: none; }
   .widget-menu .widget-menu-delete, .widget-editor-row > button { color: ButtonText; }
   .desktop-drop-preview { border-color: Highlight; }
 }

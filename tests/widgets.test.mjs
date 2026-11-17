@@ -123,6 +123,59 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.deepEqual(await state(), siteLayout);
   console.log('widgets: native website drag and responsive persistence passed');
+
+
+  // Check painted clock digits, not only a visible card shell or saved coordinates.
+  const liveClock = { ...note('live-clock'), type: 'builtin.clock', h: 1, data: { timezone: 'Asia/Shanghai', hour12: false } };
+  const repeatSeed = seed([liveClock, note('neighbor', 2, 0),
+    { ...note('live-date', 4, 0), type: 'builtin.countdown', data: { date: '2026-12-31', label: '下一次旅行' } },
+    { ...note('live-tasks', 0, 2), type: 'builtin.checklist', data: { items: [{ id: 'keep', text: '整理计划', done: false }] } },
+    { ...note('live-links', 2, 2), type: 'builtin.links', data: { links: [{ label: '工作资料', url: 'https://example.com/' }] } }
+  ], [icon('repeat-site')]);
+  repeatSeed.background = { type: 'gradient', value: 'linear-gradient(135deg, #f8fafc, #e2e8f0)', source: 'gradient' };
+  await reset(repeatSeed);
+  const repeating = page.locator('.widget-card[data-widget-id="live-clock"]');
+  await repeating.evaluate(node => { window.repeatClockCard = node; window.repeatClockOutput = node.querySelector('time'); });
+  const unchangedContents = (await state()).widgets.map(widget => widget.data);
+  async function clockPainted() {
+    await page.waitForFunction(() => [...document.querySelectorAll('#icons-container > *')].every(node => !node.getAnimations().some(animation => animation.id === 'opentab-desktop-shift')));
+    assert.equal(await repeating.evaluate(node => node === window.repeatClockCard && node.querySelector('time') === window.repeatClockOutput), true, 'moves retain the same clock renderer');
+    assert.match(await repeating.locator('time').textContent(), /\d{2}:\d{2}:\d{2}/);
+    const image = await repeating.locator('time').screenshot();
+    const ink = await page.evaluate(async base64 => {
+      const image = new Image(); image.src = 'data:image/png;base64,' + base64; await image.decode();
+      const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+      const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data; let count = 0;
+      for (let i = 0; i < pixels.length; i += 4) if (pixels[i] < 100 && pixels[i + 1] < 100 && pixels[i + 2] < 120 && pixels[i + 3] > 0) count++;
+      return count;
+    }, image.toString('base64'));
+    assert.ok(ink > 30, `clock digits remain painted after repeated moves (${ink} foreground pixels)`);
+    for (const widget of (await state()).widgets) {
+      assert.equal(await page.locator(`.widget-card[data-widget-id="${widget.id}"] .widget-handle`).isVisible(), true);
+      assert.ok((await page.locator(`.widget-card[data-widget-id="${widget.id}"] .widget-body`).textContent()).trim().length > 0);
+    }
+  }
+  for (let turn = 0; turn < 24; turn++) {
+    await handle('live-clock').scrollIntoViewIfNeeded();
+    const previous = (await state()).widgets.find(widget => widget.id === 'live-clock'), x = ((turn + 1) % 3) * 2;
+    await pointerDrag('live-clock', (x - previous.x) * step, 0);
+    await saved(value => value.widgets.find(widget => widget.id === 'live-clock').x === x);
+    if (turn % 4 === 3) await clockPainted();
+  }
+  assert.deepEqual((await state()).widgets.map(widget => widget.data), unchangedContents);
+  const clockTime = await repeating.locator('time').getAttribute('datetime');
+  await page.waitForFunction(before => document.querySelector('[data-widget-id="live-clock"] time').dateTime !== before, clockTime);
+  const repeatedLayout = await state();
+  await pointerDrag('live-clock', step * 2, 0, true); assert.deepEqual(await state(), repeatedLayout);
+  await handle('live-clock').scrollIntoViewIfNeeded(); const outside = await grab('live-clock');
+  await page.mouse.move(-10, outside.y, { steps: 8 }); await page.mouse.up(); assert.deepEqual(await state(), repeatedLayout);
+  await clockPainted(); await page.screenshot({ path: path.join(artifacts, 'clock-repeated-drag.png') });
+  await page.reload(); await page.waitForFunction(() => document.querySelector('#icons-container')?.dataset.widgetsReady === 'true');
+  assert.deepEqual(await state(), repeatedLayout);
+  await repeating.evaluate(node => { window.repeatClockCard = node; window.repeatClockOutput = node.querySelector('time'); });
+  await clockPainted();
+  console.log('widgets: 24 clock drags, occupied displacement, painted digits, ongoing ticks, cancellation, boundary, reload and other component contents passed');
   await reset(seed([note(), { ...note('blocker', 3, 0), data: { text: '资料与安排\n拖动时自动让位。' } }]));
   const occupiedState = await state(), blocker = page.locator('.widget-card[data-widget-id="blocker"]'), blockerStart = await blocker.boundingBox(), grabPoint = await grab('note');
   await page.mouse.move(grabPoint.x + step * 2, grabPoint.y, { steps: 8 });
