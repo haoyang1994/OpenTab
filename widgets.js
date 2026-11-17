@@ -8,12 +8,15 @@
   let context, desktop, projected, libraryContext, settingsContext, undoRecord, settingsDraft = false, registrationDraft = false, layoutDraft = false;
   const cards = new Map();
   let deferredChanges = {};
+  let menu, menuTrigger, libraryTrigger, editorTrigger, libraryPages;
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   function button(text, action) { const node = el('button', t(text)); node.type = 'button'; if (action) node.addEventListener('click', action); return node; }
   function field(form, labelText, value, type = 'text', options = {}) {
     const input = el(type === 'textarea' ? 'textarea' : 'input'), label = el('label', t(labelText));
     if (type !== 'textarea') input.type = type;
-    input.id = `widget-field-${crypto.randomUUID()}`; label.htmlFor = input.id; input.value = value; Object.assign(input, options); form.append(label, input); return input;
+    input.id = `widget-field-${crypto.randomUUID()}`; label.htmlFor = input.id; input.value = value; Object.assign(input, options);
+    const group = el('div', undefined, type === 'checkbox' ? 'widget-field widget-field-check' : 'widget-field');
+    group.append(label, input); form.append(group); return input;
   }
   const types = () => M.BUILTINS.concat(state.definitions);
   const defFor = widget => types().find(def => def.id === widget.type);
@@ -24,6 +27,7 @@
   const dirty = () => settingsDraft || registrationDraft || layoutDraft;
   function message(text) {
     status.textContent = text;
+    if (feedback) feedback.hidden = !blocked && !text && !undoRecord;
     if (settings?.open) settingsStatus.textContent = text;
     if (library?.open) libraryStatus.textContent = text;
   }
@@ -37,9 +41,9 @@
     pending = value;
     document.getElementById('widget-add').disabled = value || !loaded || blocked;
     for (const control of document.querySelectorAll('.widget-card button, .widget-card input, .widget-dialog button, .widget-dialog input, .widget-dialog textarea')) {
-      if (control.dataset.recovery || control.dataset.close) continue;
+      if (control.dataset.recovery) continue;
       const textInput = control.matches('textarea, input:not([type="checkbox"])');
-      control.disabled = value || (blocked && !textInput);
+      control.disabled = value || control.dataset.unavailable === 'true' || (blocked && !textInput && !control.dataset.close);
       if (textInput) control.readOnly = blocked || control.dataset.staticReadOnly === 'true';
     }
     recovery.hidden = !blocked; feedback.hidden = !blocked && !status.textContent && !undoRecord;
@@ -66,13 +70,13 @@
       raw = saved[KEY]; epoch = saved[EPOCH] || 0; state = M.parse(raw);
       g.OpenTabDesktop?.adoptWidgets(raw);
       if (!options.keepUndo) undoRecord = null;
-      render(); message(t('桌面已保存。')); return true;
+      render(); message(''); return true;
     } catch (error) {
       if (error?.code === 'WORKSPACE_CONFLICT') blocked = true;
       message(failure(error)); return false;
     } finally { busy(false); flushChanges(); }
   }
-  function cleanCard(card) { try { card.renderer?.cleanup(card.disposable); } catch (_) { /* A broken local renderer cannot prevent recovery. */ } card.remove(); }
+  function cleanCard(card) { card.cancelPress?.(); try { card.renderer?.cleanup(card.disposable); } catch (_) { /* A broken local renderer cannot prevent recovery. */ } card.remove(); }
   function ctx(widget, def, body, form) {
     return { id: widget.id, data: M.copy(widget.data), def, body, form, el, t,
       button, field: (label, value, type, options, target = form) => field(target, label, value, type, options),
@@ -82,17 +86,37 @@
         else render(true);
       } };
   }
+  function closeMenu(restore = false) {
+    if (!menu) return;
+    menu.hidden = true; menuTrigger?.setAttribute('aria-expanded', 'false');
+    if (restore && menuTrigger?.isConnected) menuTrigger.focus({ preventScroll: true });
+  }
+  function openMenu(id, trigger) {
+    if (pending || blocked) return;
+    closeMenu();
+    menuTrigger = trigger; menu.dataset.widgetId = id; menu.replaceChildren();
+    const edit = button('编辑', () => { closeMenu(); openSettings(id, null, trigger); });
+    const remove = button('删除', () => { closeMenu(); void removeWidget(id); });
+    remove.className = 'widget-menu-delete';
+    for (const control of [edit, remove]) control.setAttribute('role', 'menuitem');
+    menu.append(edit, remove); menu.hidden = false; trigger.setAttribute('aria-expanded', 'true');
+    const anchor = trigger.getBoundingClientRect(), rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(innerWidth - rect.width - 8, anchor.right - rect.width))}px`;
+    menu.style.top = `${Math.max(8, Math.min(innerHeight - rect.height - 8, anchor.bottom + 6))}px`;
+    edit.focus();
+  }
   function makeCard(widget) {
     const def = defFor(widget), renderer = def && M.renderer(def.kind), card = el('article', undefined, 'widget-card');
     card.dataset.widgetId = widget.id; card.dataset.kind = def?.kind || 'unknown'; card.signature = JSON.stringify([widget.type, widget.data, def]);
-    const header = el('header'), heading = el('h3', title(def));
-    const handle = button('移动', () => { message(t('拖动移动按钮，或聚焦后按方向键移动。')); }); handle.id = `widget-move-${widget.id}`; handle.className = 'widget-handle';
-    handle.setAttribute('aria-label', `${t('移动')} · ${title(def)}`);
-    const configure = button('设置', () => openSettings(widget.id)); configure.setAttribute('aria-label', `${t('设置')} · ${title(def)}`);
-    const remove = button('删除', () => { void removeWidget(widget.id); }); remove.className = 'widget-delete'; remove.setAttribute('aria-label', `${t('删除')} · ${title(def)}`);
-    const actions = el('div', undefined, 'widget-card-actions'); actions.append(configure, remove); header.append(heading, actions);
-    const body = el('div', undefined, 'widget-body');
-    card.append(header, body, handle); card.renderer = renderer;
+    const header = el('header'), heading = el('h3');
+    const handle = button(title(def)); handle.id = `widget-move-${widget.id}`; handle.className = 'widget-handle';
+    handle.title = t('拖动移动，方向键调整位置');
+    handle.setAttribute('aria-label', `${t('移动')} · ${title(def)}`); heading.append(handle);
+    const more = button('⋯', () => { if (!menu.hidden && menu.dataset.widgetId === widget.id) closeMenu(true); else openMenu(widget.id, more); }); more.className = 'widget-more'; more.id = `widget-more-${widget.id}`;
+    more.title = t('更多操作'); more.setAttribute('aria-label', `${t('更多操作')} · ${title(def)}`);
+    more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-controls', 'widget-menu'); more.setAttribute('aria-expanded', 'false');
+    header.append(heading, more);
+    const body = el('div', undefined, 'widget-body'); card.append(header, body); card.renderer = renderer;
     try {
       if (!renderer) {
         body.append(el('p', t('此类型暂不可用，可导出数据或重新注册对应定义。')));
@@ -100,14 +124,31 @@
       } else card.disposable = renderer.render(ctx(widget, def, body));
     } catch (_) { body.replaceChildren(el('p', t('组件显示失败，数据已保留，可在设置中导出。'))); }
     bindDrag(handle, card, `w:${widget.id}`);
-    card.addEventListener('contextmenu', event => { event.stopPropagation(); if (!event.target.closest('input, textarea, a')) { event.preventDefault(); openSettings(widget.id); } });
+    card.addEventListener('contextmenu', event => {
+      event.stopPropagation(); if (event.target.closest('input, textarea, a')) return;
+      event.preventDefault(); openMenu(widget.id, more);
+    });
+    card.addEventListener('keydown', event => {
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); event.stopPropagation(); openMenu(widget.id, more); }
+    });
+    let press;
+    const cancelPress = () => { if (press) clearTimeout(press.timer); press = null; };
+    card.addEventListener('pointerdown', event => {
+      cancelPress();
+      if (event.pointerType === 'mouse' || !event.isPrimary || event.target.closest('button, input, textarea, a')) return;
+      press = { x: event.clientX, y: event.clientY, timer: setTimeout(() => { press = null; openMenu(widget.id, more); }, 550) };
+    });
+    card.addEventListener('pointermove', event => { if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8) cancelPress(); });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) card.addEventListener(type, cancelPress);
+    card.cancelPress = cancelPress;
     return card;
   }
   function render(force = false) {
     if (!grid || !loaded || !context) return;
+    closeMenu();
     const visible = state.widgets.filter(item => item.groupId === context.groupId);
     const emptyHint = document.getElementById('icons-empty-hint');
-    if (emptyHint && visible.length) emptyHint.classList.add('hidden');
+    if (emptyHint) emptyHint.classList.toggle('hidden', visible.length > 0 || snapshot().icons.some(icon => (icon.folderId || 'folder-home') === context.groupId && !icon.parentId));
     for (const [id, card] of cards) if (!visible.some(item => item.id === id)) { cleanCard(card); cards.delete(id); }
     for (const widget of visible) {
       const old = cards.get(widget.id), signature = JSON.stringify([widget.type, widget.data, defFor(widget)]);
@@ -123,15 +164,22 @@
     if (!desktop || !grid?.clientWidth) return;
     const available = Math.max(1, Math.min(desktop.columns, Math.floor((grid.clientWidth + 12) / 112)));
     const narrow = available < desktop.columns;
+    if ((pointerDrag || iconDrag) && projected?.columns !== available) cancelDrag();
     grid.style.setProperty('--desktop-columns', available); grid.dataset.projected = String(narrow);
     projected = { columns: available, entries: narrow ? M.arrange(desktop.entries, available) : M.copy(desktop.entries) };
     const sorted = projected.entries.slice().sort((a, b) => a.y - b.y || a.x - b.x), active = document.activeElement;
-    for (const entry of sorted) { const node = nodeFor(entry.id); if (!node) continue; place(node, entry); if (typeof grid.moveBefore === 'function' && node.parentElement === grid) grid.moveBefore(node, null); else grid.append(node); }
+    let anchor = grid.firstElementChild;
+    const order = node => {
+      if (node !== anchor) { if (typeof grid.moveBefore === 'function' && node.parentElement === grid) grid.moveBefore(node, anchor); else grid.insertBefore(node, anchor); }
+      anchor = node.nextElementSibling;
+    };
+    for (const entry of sorted) { const node = nodeFor(entry.id); if (!node) continue; place(node, entry); order(node); }
     const add = grid.querySelector('#add-shortcut-tile');
-    if (add) { place(add, { ...M.free(projected.entries, 1, 1, available), w: 1, h: 1 }); grid.append(add); }
+    if (add) { place(add, { ...M.free(projected.entries, 1, 1, available), w: 1, h: 1 }); order(add); }
     if (active?.isConnected && active !== document.activeElement) active.focus({ preventScroll: true });
   }
-  function movedLayout(id, patch) {
+  function movedLayout(id, patch, reorder) {
+    if (id.startsWith('i:') && reorder) return M.reorderIcons(desktop, id, reorder.targetId, reorder.after);
     const layout = M.copy(desktop), entry = layout.entries.find(item => item.id === id); if (!entry) throw new Error('OCCUPIED');
     Object.assign(entry, patch);
     if (!Number.isInteger(entry.x) || !Number.isInteger(entry.y) || !Number.isInteger(entry.w) || !Number.isInteger(entry.h)
@@ -143,51 +191,84 @@
     }
     return layout;
   }
-  async function move(id, patch, focusId) {
-    try { const layout = movedLayout(id, patch); if (await change(next => M.saveDesktop(next, context.groupId, layout))) { (document.getElementById(focusId) || nodeFor(id))?.focus({ preventScroll: true }); message(t('布局已保存，空位保留。')); return true; } }
+  async function move(id, patch, focusId, reorder) {
+    try { const entry = desktop?.entries.find(item => item.id === id);
+      if (entry && Object.entries(patch).every(([key, value]) => entry[key] === value)) return true;
+      const layout = movedLayout(id, patch, reorder); if (await change(next => M.saveDesktop(next, context.groupId, layout))) { (document.getElementById(focusId) || nodeFor(id))?.focus({ preventScroll: true }); return true; } }
     catch (error) { message(failure(error)); } return false;
   }
-  function target(event, entry) {
+  function target(event, entry, offset = { x: 0, y: 0 }) {
     const rect = grid.getBoundingClientRect(), style = getComputedStyle(grid), gap = parseFloat(style.columnGap) || 12, row = parseFloat(style.gridAutoRows) || 120;
-    return { x: Math.max(0, Math.min(desktop.columns - entry.w, Math.floor((event.clientX - rect.left) / ((rect.width + gap) / desktop.columns)))), y: Math.max(0, Math.min(511, Math.floor((event.clientY - rect.top) / (row + gap)))) };
+    // Keep the original grab point. Never clamp an outside drop onto a valid cell.
+    if (event.clientX < rect.left || event.clientX >= rect.right || event.clientY < rect.top || event.clientY >= rect.bottom) return null;
+    return { x: Math.round((event.clientX - rect.left - offset.x) / ((rect.width + gap) / desktop.columns)), y: Math.round((event.clientY - rect.top - offset.y) / (row + gap)) };
   }
-  let ghost, pointerDrag, iconDrag;
+  let ghost, pointerDrag, iconDrag, scrollFrame = 0, pointerY = 0, updatePreview;
   function clearPreview() { ghost?.remove(); ghost = null; }
-  function preview(id, point) {
-    clearPreview(); const entry = desktop.entries.find(item => item.id === id); if (!entry) return false;
-    ghost = el('div', undefined, 'desktop-drop-preview'); ghost.setAttribute('aria-hidden', 'true'); place(ghost, { ...entry, ...point });
-    let valid = true; try { movedLayout(id, point); } catch (_) { valid = false; }
+  function beginDrag() {
+    closeMenu(); grid.style.minBlockSize = `${grid.getBoundingClientRect().height + 132}px`; grid.classList.add('desktop-drag-active');
+  }
+  function endDragView() {
+    clearPreview(); grid?.classList.remove('desktop-drag-active'); if (grid) grid.style.minBlockSize = '';
+    if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = 0; updatePreview = null;
+  }
+  function cancelDrag() {
+    pointerDrag = null; iconDrag = null;
+    for (const card of cards.values()) card.classList.remove('widget-dragging');
+    endDragView(); g.OpenTabDesktop?.endDrag();
+  }
+  function autoScroll(y, update) {
+    pointerY = y; updatePreview = update;
+    if (scrollFrame) return;
+    const tick = () => {
+      if (!pointerDrag && !iconDrag) { scrollFrame = 0; return; }
+      const scroller = document.getElementById('content') || document.scrollingElement;
+      const rect = scroller === document.scrollingElement ? { top: 0, bottom: innerHeight } : scroller.getBoundingClientRect();
+      const delta = pointerY < rect.top + 48 ? -Math.min(12, rect.top + 48 - pointerY) : pointerY > rect.bottom - 48 ? Math.min(12, pointerY - rect.bottom + 48) : 0;
+      if (delta) { scroller.scrollTop += delta; updatePreview?.(); }
+      scrollFrame = requestAnimationFrame(tick);
+    };
+    scrollFrame = requestAnimationFrame(tick);
+  }
+  function preview(id, point, reorder) {
+    clearPreview(); const entry = desktop.entries.find(item => item.id === id); if (!entry || !point) return false;
+    ghost = el('div', undefined, 'desktop-drop-preview'); ghost.setAttribute('aria-hidden', 'true');
+    // Invalid edge destinations must not create implicit columns or rows.
+    let valid = true, destination = point;
+    try { destination = movedLayout(id, point, reorder).entries.find(item => item.id === id); } catch (_) { valid = false; }
+    place(ghost, { ...entry, x: Math.max(0, Math.min(desktop.columns - entry.w, destination.x)), y: Math.max(0, Math.min(511, destination.y)) });
     ghost.dataset.valid = String(valid); ghost.textContent = t(valid ? '可放置' : '已占用'); grid.append(ghost); return valid;
   }
   function bindDrag(handle, card, id) {
     handle.addEventListener('keydown', event => {
       const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
       if (!delta || event.altKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault(); event.stopPropagation(); if (pending || blocked) return;
       const entry = desktop.entries.find(item => item.id === id); if (!entry) return;
-      const x = entry.x + delta[0], y = entry.y + delta[1]; if (x < 0 || y < 0 || x + entry.w > desktop.columns || y > 511) return;
-      event.preventDefault(); event.stopPropagation(); void move(id, { x, y }, handle.id);
+      void move(id, { x: entry.x + delta[0], y: entry.y + delta[1] }, handle.id);
     });
     handle.addEventListener('pointerdown', event => {
       if (event.button || !event.isPrimary || pending || blocked) return;
       if (projected.columns !== desktop.columns) { message(t('窄窗口请在设置中输入桌面坐标。')); return; }
       const entry = desktop.entries.find(item => item.id === id), rect = card.getBoundingClientRect();
-      pointerDrag = { id, context: { ...context }, entry, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, startX: event.clientX, startY: event.clientY, moved: false };
+      pointerDrag = { id, context: { ...context }, entry, offset: { x: event.clientX - rect.left, y: event.clientY - rect.top }, startX: event.clientX, startY: event.clientY, moved: false };
       handle.setPointerCapture(event.pointerId);
     });
-    const point = event => target({ clientX: event.clientX - pointerDrag.offsetX + 1, clientY: event.clientY - pointerDrag.offsetY + 1 }, pointerDrag.entry);
     handle.addEventListener('pointermove', event => {
       if (!pointerDrag || !handle.hasPointerCapture(event.pointerId)) return;
-      if (!sameContext(pointerDrag.context)) { pointerDrag = null; clearPreview(); return; }
+      if (!sameContext(pointerDrag.context)) { cancelDrag(); return; }
       if (!pointerDrag.moved && Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY) < 5) return;
-      pointerDrag.moved = true; card.classList.add('widget-dragging'); preview(id, point(event));
+      if (!pointerDrag.moved) { pointerDrag.moved = true; beginDrag(); }
+      card.classList.add('widget-dragging');
+      const update = () => { if (pointerDrag) preview(id, target(event, pointerDrag.entry, pointerDrag.offset)); };
+      update(); autoScroll(event.clientY, update);
     });
     handle.addEventListener('pointerup', event => {
       if (!pointerDrag) return;
-      const drag = pointerDrag, destination = point(event); pointerDrag = null; clearPreview(); card.classList.remove('widget-dragging');
-      if (drag.moved && sameContext(drag.context)) void move(id, destination, handle.id);
+      const drag = pointerDrag, destination = target(event, drag.entry, drag.offset); cancelDrag();
+      if (drag.moved && destination && sameContext(drag.context)) void move(id, destination, handle.id);
     });
-    for (const type of ['pointercancel', 'lostpointercapture']) handle.addEventListener(type, () => { pointerDrag = null; clearPreview(); card.classList.remove('widget-dragging'); });
-    handle.addEventListener('keydown', event => { if (event.key === 'Escape') { pointerDrag = null; clearPreview(); card.classList.remove('widget-dragging'); } });
+    for (const type of ['pointercancel', 'lostpointercapture']) handle.addEventListener(type, () => { if (pointerDrag?.id === id) cancelDrag(); });
   }
   async function removeWidget(id) {
     const widget = state.widgets.find(item => item.id === id), expected = { ...context }; if (!widget) return;
@@ -204,43 +285,75 @@
       next.widgets.push(receipt.widget);
     }, receipt.context, { keepUndo: true })) { undoRecord = null; message(t('组件已恢复。')); busy(false); }
   }
-  function openSettings(id) {
-    if (settingsDraft) { message(t('设置草稿已保留，请先保存或取消。')); if (!settings.open) settings.showModal(); return; }
-    const widget = state.widgets.find(item => item.id === id); if (!widget || blocked || pending) return;
-    settingsContext = { ...context }; settings.replaceChildren(); const def = defFor(widget), renderer = def && M.renderer(def.kind);
-    const heading = el('h2', `${t('设置')} · ${title(def)}`); heading.id = 'widget-settings-title';
-    const form = el('form', undefined, 'widget-form');
-    const layout = el('fieldset'), legend = el('legend', t('尺寸与位置')); layout.append(legend); form.append(layout);
-    const presets = el('div', undefined, 'widget-size-presets'); layout.append(presets);
-    const w = field(layout, '占用列数', widget.w, 'number', { min: 1, max: desktop.columns, required: true });
-    const h = field(layout, '占用行数', widget.h, 'number', { min: 1, max: 12, required: true });
-    for (const [width, height] of renderer?.sizes || M.SIZES) { const preset = button(`${width}×${height}`, () => { w.value = width; h.value = height; settingsDraft = true; }); preset.disabled = width > desktop.columns; presets.append(preset); }
-    const x = field(layout, '起始列', widget.x + 1, 'number', { min: 1, max: desktop.columns, required: true });
-    const y = field(layout, '起始行', widget.y + 1, 'number', { min: 1, max: 512, required: true });
-    const content = el('fieldset'); content.append(el('legend', t('内容'))); form.append(content);
+  function closeSettings() {
+    if (pending) return;
+    settingsDraft = false; settings.close(); if (!blocked) message('');
+    (editorTrigger?.isConnected ? editorTrigger : document.getElementById('widget-add'))?.focus({ preventScroll: true });
+  }
+  function openSettings(id, definition = null, trigger = document.activeElement) {
+    if (settings.open || pending || blocked) return;
+    const adding = !!definition, def = definition || defFor(state.widgets.find(item => item.id === id) || {});
+    const layoutNow = desktop;
+    let widget = state.widgets.find(item => item.id === id);
+    if (adding) {
+      if (def.size.w > desktop.columns) { message(t('请先增加桌面列数，再添加此组件。')); return; }
+      try { widget = { id: crypto.randomUUID(), type: def.id, groupId: context.groupId, ...M.free(layoutNow.entries, def.size.w, def.size.h, layoutNow.columns), ...def.size, data: M.copy(def.defaults) }; }
+      catch (error) { message(failure(error)); return; }
+      id = widget.id;
+    }
+    if (!widget) return;
+    editorTrigger = trigger; settingsContext = { ...context }; settingsDraft = false; settings.replaceChildren();
+    const renderer = def && M.renderer(def.kind), heading = el('h2', `${t(adding ? '添加' : '编辑')} · ${title(def)}`); heading.id = 'widget-settings-title';
+    const header = el('div', undefined, 'widget-dialog-header'), close = button('×', closeSettings); close.dataset.close = 'true'; close.setAttribute('aria-label', t('关闭')); header.append(heading, close);
+    const form = el('form', undefined, 'widget-form'), content = el('div', undefined, 'widget-content-editor'); form.append(content);
     let read;
     try { if (renderer) read = renderer.edit(ctx(widget, def, null, content)); }
     catch (_) { content.append(el('p', t('此类型暂不可编辑，数据已保留。'))); }
     if (!read) { const text = field(content, '组件恢复数据', JSON.stringify(widget.data, null, 2), 'textarea'); text.readOnly = true; text.dataset.staticReadOnly = 'true'; }
+    const details = el('details', undefined, 'widget-layout-details'), layout = el('div', undefined, 'widget-layout-fields');
+    details.append(el('summary', t('尺寸与位置')), layout); form.append(details);
+    const presets = el('div', undefined, 'widget-size-presets'); layout.append(presets);
+    const w = field(layout, '占用列数', widget.w, 'number', { min: 1, max: desktop.columns, required: true });
+    const h = field(layout, '占用行数', widget.h, 'number', { min: 1, max: 12, required: true });
+    const syncPresets = () => { for (const control of presets.children) control.setAttribute('aria-pressed', String(control.dataset.w === w.value && control.dataset.h === h.value)); };
+    for (const [width, height] of renderer?.sizes || M.SIZES) {
+      const preset = button(`${width}×${height}`, () => { w.value = width; h.value = height; settingsDraft = true; syncPresets(); });
+      preset.dataset.w = width; preset.dataset.h = height; preset.dataset.unavailable = String(width > desktop.columns); presets.append(preset);
+    }
+    syncPresets(); w.addEventListener('input', syncPresets); h.addEventListener('input', syncPresets);
+    const x = field(layout, '起始列', widget.x + 1, 'number', { min: 1, max: desktop.columns, required: true });
+    const y = field(layout, '起始行', widget.y + 1, 'number', { min: 1, max: 512, required: true });
     settingsStatus = el('p', '', 'widget-status'); settingsStatus.setAttribute('role', 'status');
-    const save = button('保存内容与布局'); save.type = 'submit'; save.classList.add('btn-primary');
-    const cancel = button('取消并舍弃此设置草稿', () => { settingsDraft = false; settings.close(); }); cancel.dataset.close = 'true';
-    const actions = el('div', undefined, 'modal-buttons widget-dialog-actions'); actions.append(cancel, save);
-    form.append(actions); settings.append(heading, form, settingsStatus, exportButton());
+    const save = button(adding ? '添加' : '保存'); save.type = 'submit'; save.classList.add('btn-primary');
+    const cancel = button('取消', closeSettings); cancel.dataset.close = 'true';
+    const actions = el('div', undefined, 'widget-dialog-actions'); actions.append(cancel, save); form.append(settingsStatus, actions);
+    settings.append(header, form);
+    const recoveryDetails = el('details', undefined, 'widget-recovery-details'); recoveryDetails.append(el('summary', t('恢复数据')), exportButton()); settings.append(recoveryDetails);
     form.addEventListener('input', () => { settingsDraft = true; });
-    form.addEventListener('click', event => {
-      const control = event.target.closest('button');
-      if (control && control.type !== 'submit' && !control.dataset.close) settingsDraft = true;
-    });
+    form.addEventListener('click', event => { if (event.target.closest('button:not([type="submit"]):not([data-close])')) settingsDraft = true; });
     form.addEventListener('submit', async event => {
-      event.preventDefault();
+      event.preventDefault(); if (pending || blocked) return;
+      if (!form.checkValidity()) { details.open = true; form.reportValidity(); return; }
       try {
         const data = read ? M.data(def.kind, read(), def) : widget.data;
-        const layout = movedLayout(`w:${id}`, { w: Number(w.value), h: Number(h.value), x: Number(x.value) - 1, y: Number(y.value) - 1 });
-        if (await change(next => { M.saveDesktop(next, settingsContext.groupId, layout); next.widgets.find(item => item.id === id).data = data; }, settingsContext)) { settingsDraft = false; settings.close(); document.getElementById(`widget-move-${id}`)?.focus(); }
-      } catch (error) { message(failure(error)); }
+        const patch = { w: Number(w.value), h: Number(h.value), x: Number(x.value) - 1, y: Number(y.value) - 1 };
+        let layout;
+        if (!adding) layout = movedLayout(`w:${id}`, patch);
+        else {
+          const entry = { ...widget, ...patch };
+          if (![patch.w, patch.h, patch.x, patch.y].every(Number.isInteger) || patch.w < 1 || patch.h < 1 || patch.h > 12 || patch.x < 0 || patch.y < 0 || patch.y > 511 || patch.x + patch.w > desktop.columns || desktop.entries.some(other => M.overlap(entry, other))) throw new Error('OCCUPIED');
+          layout = desktop;
+        }
+        if (renderer && !renderer.customSizes && !renderer.sizes.some(([width, height]) => width === patch.w && height === patch.h)) throw new TypeError('INVALID_WIDGET_DATA');
+        if (await change(next => {
+          M.saveDesktop(next, settingsContext.groupId, layout);
+          if (adding) next.widgets.push({ ...widget, ...patch, data }); else next.widgets.find(item => item.id === id).data = data;
+        }, settingsContext)) { settingsDraft = false; settings.close(); document.getElementById(`widget-more-${id}`)?.focus({ preventScroll: true }); }
+      } catch (error) { details.open = true; message(failure(error)); }
     });
-    settings.showModal(); busy(false);
+    // Invalid controls inside a collapsed layout section still need to be focusable.
+    form.addEventListener('invalid', event => { if (details.contains(event.target)) details.open = true; }, true);
+    settings.showModal(); busy(false); (content.querySelector('textarea, input, button') || save).focus();
   }
   const example = { id: 'my.project', title: '项目进展', kind: 'composite', size: { w: 2, h: 2 },
     fields: [{ key: 'title', label: '项目', type: 'text' }, { key: 'count', label: '已完成', type: 'number' }, { key: 'items', label: '待办', type: 'list' }, { key: 'due', label: '截止日', type: 'date' }, { key: 'progress', label: '进度', type: 'progress' }, { key: 'link', label: '项目链接', type: 'link' }],
@@ -272,7 +385,8 @@
       catch (_) { body.textContent = t('预览暂不可用，定义已保留。'); }
       if (renderer) renderer.cleanup(disposable); body.inert = true;
       const footer = el('footer', undefined, 'widget-library-footer');
-      const add = button('添加', () => { void addInstance(def); }); add.className = 'widget-library-add'; add.setAttribute('aria-label', `${t('添加')} · ${title(def)}`);
+      const add = button('添加', () => addInstance(def));
+      add.dataset.unavailable = String(!renderer || def.size.w > (desktop?.columns || 6)); add.disabled = add.dataset.unavailable === 'true'; add.className = 'widget-library-add'; add.setAttribute('aria-label', `${t('添加')} · ${title(def)}`);
       footer.append(el('span', `${def.size.w} × ${def.size.h}`, 'widget-library-size'), add);
       if (!def.id.startsWith('builtin.') && !def.id.startsWith('local.')) footer.append(button('注销定义', async () => {
         if (state.widgets.some(widget => widget.type === def.id)) { message(t('请先移除该类型在所有分组中的实例。')); return; }
@@ -288,21 +402,17 @@
       })); previews.append(recoveryCard);
     }
   }
-  async function addInstance(def) {
-    const id = crypto.randomUUID();
-    if (await change(next => {
-      if (!M.renderer(def.kind)) throw new TypeError('INVALID_WIDGET_DATA');
-      const layout = M.desktop(next, libraryContext.groupId, snapshot().icons, snapshot().columns || 6);
-      const point = M.free(layout.entries, def.size.w, def.size.h, layout.columns);
-      M.saveDesktop(next, libraryContext.groupId, layout);
-      next.widgets.push({ id, type: def.id, groupId: libraryContext.groupId, ...point, ...def.size, data: M.copy(def.defaults) });
-    }, libraryContext)) { library.close(); document.getElementById(`widget-move-${id}`)?.focus(); }
+  function addInstance(def) {
+    if (pending || blocked || !sameContext(libraryContext) || !M.renderer(def.kind)) return;
+    if (def.size.w > desktop.columns) { message(t('请先增加桌面列数，再添加此组件。')); return; }
+    library.close(); openSettings(null, def, document.getElementById('widget-add'));
   }
   function openLibrary() {
-    if (!loaded || blocked || pending || !getContext() || g.OpenTabDesktop?.isBlocked()) return;
-    libraryContext = { ...getContext() }; renderLibrary();
+    if (library.open || settings.open || !loaded || blocked || pending || !getContext() || g.OpenTabDesktop?.isBlocked()) return;
+    libraryTrigger = document.activeElement; closeMenu(); libraryContext = { ...getContext() };
+    librarySearch.value = ''; libraryPages?.[0]?.click(); renderLibrary();
     if (!layoutDraft) document.getElementById('desktop-column-count').value = desktop?.columns || 6;
-    libraryStatus.textContent = ''; library.showModal(); busy(false);
+    libraryStatus.textContent = ''; library.showModal(); busy(false); librarySearch.focus();
   }
   function exportButton() { const control = button('导出恢复数据与草稿', exportDraft); control.dataset.recovery = 'true'; return control; }
   function exportDraft() {
@@ -344,19 +454,32 @@
   }
   function attach(container) {
     grid = container; context = getContext();
-    clearPreview(); pointerDrag = null; iconDrag = null;
+    closeMenu(); cancelDrag();
     if (!context) return;
     try { render(); } catch (error) { blocked = true; message(failure(error)); busy(false); }
   }
-  function createDialog(id, headingText) { const dialog = el('dialog', undefined, 'modal-content widget-dialog'); dialog.id = id; dialog.setAttribute('aria-labelledby', `${id}-title`); const heading = el('h2', t(headingText)); heading.id = `${id}-title`; dialog.append(heading); dialog.addEventListener('contextmenu', event => event.stopPropagation()); document.body.append(dialog); return dialog; }
+  function createDialog(id, headingText) { const dialog = el('dialog', undefined, 'modal-content widget-dialog'); dialog.id = id; dialog.setAttribute('aria-labelledby', `${id}-title`); const heading = el('h2', t(headingText)); heading.id = `${id}-title`; dialog.append(heading); dialog.addEventListener('contextmenu', event => event.stopPropagation()); dialog.addEventListener('keydown', event => { if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) event.preventDefault(); }); document.body.append(dialog); return dialog; }
   async function init() {
     await g.OpenTabI18n.ready;
     grid = document.getElementById('icons-container'); grid.classList.add('desktop-grid');
     feedback = document.getElementById('desktop-widget-feedback'); status = el('p', '', 'widget-status'); status.setAttribute('role', 'status');
     recovery = el('div'); const reload = button('舍弃设置和注册草稿并重新读取', () => { settingsDraft = false; registrationDraft = false; layoutDraft = false; settings.close(); library.close(); void load(true); }); reload.dataset.recovery = 'true';
     recovery.append(exportButton(), reload); undoButton = button('撤销删除', () => { void undo(); }); feedback.append(status, undoButton, recovery);
+    menu = el('div', undefined, 'widget-menu'); menu.id = 'widget-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', t('小组件操作')); menu.hidden = true; document.body.append(menu);
+    document.addEventListener('pointerdown', event => { if (!menu.contains(event.target) && !event.target.closest('.widget-more')) closeMenu(); }, true);
+    menu.addEventListener('keydown', event => {
+      const controls = [...menu.querySelectorAll('button')], index = controls.indexOf(document.activeElement);
+      if (event.key === 'Escape' || event.key === 'Tab') { event.stopPropagation(); closeMenu(true); if (event.key === 'Escape') event.preventDefault(); }
+      else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); controls[event.key === 'Home' ? 0 : event.key === 'End' ? controls.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : controls.length - 1)) % controls.length]?.focus(); }
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && (pointerDrag || iconDrag)) { event.preventDefault(); event.stopPropagation(); cancelDrag(); } }, true);
+    g.addEventListener('blur', () => { closeMenu(); cancelDrag(); });
+    g.addEventListener('resize', () => closeMenu());
+    document.addEventListener('scroll', event => { if (!menu.contains(event.target)) closeMenu(); }, true);
     library = createDialog('widget-dialog', '组件库');
-    const close = button('关闭', () => library.close()); close.dataset.close = 'true';
+    const closeLibrary = () => { if (pending) return; registrationDraft = false; layoutDraft = false; registerInput.value = JSON.stringify(example, null, 2); library.close(); if (!blocked) message(''); (libraryTrigger?.isConnected ? libraryTrigger : document.getElementById('widget-add'))?.focus({ preventScroll: true }); };
+    const close = button('×', closeLibrary); close.setAttribute('aria-label', t('关闭'));
+    library.addEventListener('cancel', event => { event.preventDefault(); closeLibrary(); }); close.dataset.close = 'true';
     const libraryHeader = el('div', undefined, 'widget-dialog-header'); libraryHeader.append(library.firstElementChild, close); library.append(libraryHeader);
     const libraryShell = el('div', undefined, 'widget-library-shell');
     const navigation = el('nav', undefined, 'widget-library-nav'); navigation.setAttribute('aria-label', t('组件库导航'));
@@ -364,12 +487,12 @@
     const catalog = el('section', undefined, 'widget-library-page');
     const layoutPage = el('section', undefined, 'widget-library-page');
     const customPage = el('section', undefined, 'widget-library-page');
-    const pageButtons = [];
+    const pageButtons = []; libraryPages = [];
     for (const [label, page] of [[t('小组件'), catalog], [t('桌面布局'), layoutPage], [t('自定义组件'), customPage]]) {
       const tab = button(label, () => { for (const [control, target] of pageButtons) { const active = target === page; target.hidden = !active; control.setAttribute('aria-pressed', String(active)); } });
-      tab.setAttribute('aria-pressed', String(page === catalog)); page.hidden = page !== catalog; pageButtons.push([tab, page]); navigation.append(tab);
+      tab.setAttribute('aria-pressed', String(page === catalog)); page.hidden = page !== catalog; pageButtons.push([tab, page]); libraryPages.push(tab); navigation.append(tab);
     }
-    const catalogHeader = el('div', undefined, 'widget-catalog-header'); catalogHeader.append(el('h3', t('小组件')));
+    const catalogHeader = el('div', undefined, 'widget-catalog-header');
     librarySearch = el('input', undefined, 'widget-library-search'); librarySearch.type = 'search'; librarySearch.placeholder = t('搜索小组件'); librarySearch.setAttribute('aria-label', t('搜索小组件'));
     librarySearch.addEventListener('input', renderLibrary); catalogHeader.append(librarySearch);
     previews = el('div', undefined, 'widget-library'); catalog.append(catalogHeader, previews);
@@ -405,38 +528,53 @@
     details.append(form); customPage.append(el('h3', t('自定义组件')), details, exportButton());
     libraryStatus = el('p', '', 'widget-status'); libraryStatus.setAttribute('role', 'status'); libraryHeader.after(libraryStatus);
     settings = createDialog('widget-settings', '设置'); settings.setAttribute('aria-labelledby', 'widget-settings-title');
-    settings.addEventListener('cancel', () => { /* Escape closes the window but preserves its draft DOM. */ });
+    settings.addEventListener('cancel', event => { event.preventDefault(); closeSettings(); });
     document.getElementById('widget-add').addEventListener('click', openLibrary);
     grid.addEventListener('contextmenu', event => {
       if (event.target.closest('.widget-card, .icon-widget, input, textarea, a')) return;
       event.preventDefault(); event.stopPropagation(); openLibrary();
     });
-    grid.addEventListener('dragstart', event => { const node = event.target.closest('.icon-widget[data-id]'); if (node) iconDrag = { id: `i:${node.dataset.id}`, context: { ...context } }; }, true);
+    const iconIntent = event => {
+      const node = event.target.closest('.icon-widget[data-id]'); if (!node) return undefined;
+      const rect = node.getBoundingClientRect(); return { targetId: `i:${node.dataset.id}`, after: event.clientX > rect.left + rect.width / 2 };
+    };
+    grid.addEventListener('dragstart', event => {
+      const node = event.target.closest('.icon-widget[data-id]'); if (!node) return;
+      if (pending || blocked || projected.columns !== desktop.columns) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+      const rect = node.getBoundingClientRect();
+      iconDrag = { id: `i:${node.dataset.id}`, context: { ...context }, offset: { x: event.clientX - rect.left, y: event.clientY - rect.top } }; beginDrag();
+    }, true);
     grid.addEventListener('dragover', event => {
       if (!iconDrag) return;
-      if (pending || blocked || projected.columns !== desktop.columns) { event.preventDefault(); event.stopImmediatePropagation(); clearPreview(); return; }
-      // Existing folder hover/merge behavior still owns drops onto website/folder tiles.
-      if (event.target.closest('.icon-widget[data-id]') && !event.shiftKey) { clearPreview(); return; }
+      if (pending || blocked || projected.columns !== desktop.columns || !sameContext(iconDrag.context)) { event.preventDefault(); event.stopImmediatePropagation(); cancelDrag(); return; }
       const entry = desktop.entries.find(item => item.id === iconDrag.id); if (!entry) return;
-      event.preventDefault(); event.stopImmediatePropagation(); g.OpenTabFolders?.clearMergeHover(); g.OpenTabDesktop?.hideDropIndicator(); preview(iconDrag.id, target(event, entry));
+      event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      const update = () => { if (iconDrag) preview(iconDrag.id, target(event, entry, iconDrag.offset), iconIntent(event)); };
+      update(); autoScroll(event.clientY, update);
+      // Hover can arm a folder merge. Only an explicit drop commits it.
+      if (event.target.closest('.icon-widget[data-id]') && !event.shiftKey) return;
+      event.stopImmediatePropagation(); g.OpenTabFolders?.clearMergeHover(); g.OpenTabDesktop?.hideDropIndicator();
     }, true);
     grid.addEventListener('drop', event => {
       if (!iconDrag) return;
-      if (pending || blocked || projected.columns !== desktop.columns) { event.preventDefault(); event.stopImmediatePropagation(); iconDrag = null; clearPreview(); g.OpenTabDesktop?.endDrag(); return; }
-      // Folder hover merging remains in the original dragover handler; a drop
-      // before that timer fires is a normal occupied-cell rejection.
-      const drag = iconDrag, entry = desktop.entries.find(item => item.id === drag.id); iconDrag = null; clearPreview();
-      // Extraction from an open icon folder remains an existing folder action.
-      if (!entry) return;
-      event.preventDefault(); event.stopImmediatePropagation(); g.OpenTabDesktop?.endDrag();
-      if (entry && sameContext(drag.context)) void move(drag.id, target(event, entry));
+      const drag = iconDrag, entry = desktop.entries.find(item => item.id === drag.id);
+      const destination = entry && target(event, entry, drag.offset);
+      if (!entry) { cancelDrag(); return; } // Folder extraction uses its existing path.
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (pending || blocked || projected.columns !== desktop.columns || !sameContext(drag.context)) { cancelDrag(); return; }
+      if (!event.shiftKey && event.target.closest('.icon-widget[data-id]') && g.OpenTabFolders?.handleGridDrop(event, drag.id.slice(2))) { cancelDrag(); return; }
+      const reorder = iconIntent(event); cancelDrag(); if (destination) void move(drag.id, destination, undefined, reorder);
     }, true);
-    grid.addEventListener('dragend', () => { iconDrag = null; clearPreview(); });
+    grid.addEventListener('dragleave', event => { if (!grid.contains(event.relatedTarget)) { clearPreview(); g.OpenTabFolders?.clearMergeHover(); } });
+    document.addEventListener('dragend', cancelDrag);
+    document.addEventListener('drop', () => { if (iconDrag) cancelDrag(); });
     grid.addEventListener('keydown', event => {
       if (!event.altKey || event.ctrlKey || event.metaKey || !event.target.matches('.icon-widget[data-id]')) return;
       const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return;
       const id = `i:${event.target.dataset.id}`, entry = desktop.entries.find(item => item.id === id); if (!entry) return;
-      event.preventDefault(); event.stopImmediatePropagation(); void move(id, { x: entry.x + delta[0], y: entry.y + delta[1] });
+      event.preventDefault(); event.stopImmediatePropagation();
+      const point = { x: entry.x + delta[0], y: entry.y + delta[1] }, occupant = desktop.entries.find(item => item.id !== id && item.x === point.x && item.y === point.y && item.id.startsWith('i:'));
+      void move(id, point, undefined, occupant ? { targetId: occupant.id, after: delta[0] > 0 || delta[1] > 0 } : undefined);
     }, true);
     g.chrome.storage.onChanged.addListener(receiveChanges);
     context = getContext(); await load(true); context = getContext(); render();

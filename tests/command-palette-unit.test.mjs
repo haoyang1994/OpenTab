@@ -380,7 +380,7 @@ for (const mutation of ['remove', 'name', 'id']) {
   const save = new Promise((resolve) => { settle = resolve; });
   const state = { currentFolderId: 'home', folders: [{ id: 'home' }, { id: 'work' }] };
   let rendered = 0;
-  const homeContext = vm.createContext({ state, sceneRuntime: null, getFolderById: (id) => state.folders.find((group) => group.id === id),
+  const homeContext = vm.createContext({ state, window: {}, sceneRuntime: null, getFolderById: (id) => state.folders.find((group) => group.id === id),
     saveState: () => save, refreshIconViews: () => { rendered++; } });
   vm.runInContext(extract(homeSource, 'selectFolder', 'addIcon'), homeContext);
   const folderContext = vm.createContext({ state: () => state, closeOverlay() {}, host: { selectFolder: homeContext.selectFolder },

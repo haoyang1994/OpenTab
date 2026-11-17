@@ -49,6 +49,7 @@ run_headed() {
     tests/accessibility.test.mjs
     tests/i18n.test.mjs
     tests/workspace.test.mjs
+    tests/widgets.test.mjs
     tests/extension.test.mjs
     tests/search.test.mjs
     tests/first-run.test.mjs

@@ -85,6 +85,7 @@ jobs:
           name: browser-verification-${{ matrix.e2e_group }}
           path: |
             artifacts/*.png
+            test-results/widgets/*.png
             artifacts/accessibility-contrast.json
             artifacts/accessibility-chooser.json
             artifacts/wallpaper-readability.json

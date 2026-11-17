@@ -289,7 +289,7 @@ async function waitForGrid(page) {
   await page.waitForSelector('#add-shortcut-tile', { timeout: 10000 });
   await page.waitForSelector('#group-tabs .group-tab', { timeout: 10000 });
   await page.waitForFunction(
-    () => performance.getEntriesByName('opentab:grid-ready').length > 0,
+    () => performance.getEntriesByName('opentab:grid-ready').length > 0 && document.querySelector('#icons-container')?.dataset.widgetsReady === 'true',
     null,
     { timeout: 10000 }
   );
@@ -471,7 +471,8 @@ async function html5Drag(page, fromId, toSelector, where = 'left', fromRoot = '#
     const dst = document.querySelector(toSelector);
     if (!src || !dst) throw new Error(`drag nodes missing ${fromId} -> ${toSelector}`);
     const dt = new DataTransfer();
-    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const sourceRect = src.getBoundingClientRect();
+    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: sourceRect.left + sourceRect.width / 2, clientY: sourceRect.top + sourceRect.height / 2 }));
     const rect = dst.getBoundingClientRect();
     const clientX = where === 'left' ? rect.left + 4 : where === 'right' ? rect.right - 4 : rect.left + rect.width / 2;
     const clientY = rect.top + rect.height / 2;
@@ -488,7 +489,8 @@ async function html5DragHover(page, fromId, toId, hoverMs = 650) {
     const dst = document.querySelector(`#icons-container .icon-widget[data-id="${CSS.escape(toId)}"]`);
     if (!src || !dst) throw new Error(`hover nodes missing ${fromId} -> ${toId}`);
     const dt = new DataTransfer();
-    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const sourceRect = src.getBoundingClientRect();
+    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: sourceRect.left + sourceRect.width / 2, clientY: sourceRect.top + sourceRect.height / 2 }));
     const rect = dst.getBoundingClientRect();
     const opts = {
       bubbles: true,
@@ -499,6 +501,7 @@ async function html5DragHover(page, fromId, toId, hoverMs = 650) {
     };
     dst.dispatchEvent(new DragEvent('dragover', opts));
     await new Promise((resolve) => setTimeout(resolve, hoverMs));
+    dst.dispatchEvent(new DragEvent('drop', opts));
     src.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
   }, { fromId, toId, hoverMs });
 }
@@ -890,11 +893,11 @@ async function runExtensionE2E() {
     await page.waitForTimeout(100);
     assert.deepEqual(await desktopOrder(page), ['c', 'a', 'b'], 'T3: C moved left of A');
     const idsAfterDrag = await storageIconIds(page);
-    assert.deepEqual(idsAfterDrag, ['c', 'x1', 'a', 'b'], 'T3: X1 keeps array slot');
+    assert.deepEqual(idsAfterDrag, ['a', 'x1', 'b', 'c'], 'T3: spatial sorting preserves icon records and other-group array slots');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForGrid(page);
     assert.deepEqual(await desktopOrder(page), ['c', 'a', 'b'], 'T3: order persists');
-    assert.deepEqual(await storageIconIds(page), ['c', 'x1', 'a', 'b']);
+    assert.deepEqual(await storageIconIds(page), ['a', 'x1', 'b', 'c']);
     await html5Drag(page, 'c', '#add-shortcut-tile', 'left');
     await page.waitForTimeout(100);
     assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c'], 'T3: drop on + moves to end');
@@ -1026,7 +1029,8 @@ async function runExtensionE2E() {
       const dst = document.querySelector(`#group-tabs [data-group-id="${CSS.escape('folder-x')}"]`);
       if (!src || !dst) throw new Error('icon or group tab missing');
       const dt = new DataTransfer();
-      src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const sourceRect = src.getBoundingClientRect();
+      src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: sourceRect.left + sourceRect.width / 2, clientY: sourceRect.top + sourceRect.height / 2 }));
       const rect = dst.getBoundingClientRect();
       const opts = {
         bubbles: true,

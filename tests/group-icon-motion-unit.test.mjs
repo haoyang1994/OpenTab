@@ -25,7 +25,7 @@ function harness({ scenes = false, reduced = false, deferred = false, supportsAn
   const motion = { matches: reduced, addEventListener: (_, fn) => motionEvents.add(fn), removeEventListener: (_, fn) => motionEvents.delete(fn) };
   const overlay = { classList: { add() {}, remove() {}, contains: () => false } };
   const grid = { children: [], style: {}, addEventListener() {}, querySelectorAll(selector) {
-    assert.equal(selector, '.icon-widget[data-id]'); return this.children.filter(node => node.dataset.id);
+    assert.ok(['.icon-widget[data-id]', '.icon-widget, .add-shortcut-tile'].includes(selector)); return this.children.filter(node => node.dataset.id || selector === '.icon-widget, .add-shortcut-tile');
   } };
   let zen = false;
   const document = { body: { classList: { contains: value => value === 'zen-mode' && zen } }, getElementById: id => id === 'folder-overlay' ? overlay : null, addEventListener: (type, fn) => events.set(type, fn) };
@@ -144,9 +144,11 @@ for (const race of ['different-scene', 'round-trip', 'archived', 'ownership']) {
   assert.ok(renderer.includes('animateGroupIcons'), 'home desktop renderer wires the real post-mount hook');
   const h = harness(), marks = [];
   Object.defineProperty(h.grid, 'innerHTML', { set(value) { assert.equal(value, ''); this.children = []; } });
-  h.grid.appendChild = node => h.grid.children.push(node);
+  h.grid.contains = () => false;
+  h.grid.appendChild = node => { h.grid.children.push(node); node.remove = () => { h.grid.children = h.grid.children.filter(item => item !== node); }; };
+  for (const node of h.grid.children) node.remove = () => { h.grid.children = h.grid.children.filter(item => item !== node); };
   const context = {
-    state: h.state, elements: { iconsContainer: h.grid }, iconSwitchToken: 0,
+    state: h.state, elements: { iconsContainer: h.grid }, iconSwitchToken: 0, document: { activeElement: null },
     getIconsForFolder: () => h.api.visibleIcons(), bindDesktopGridEvents() {},
     createIconWidget: h.createNode, createAddShortcutTile: () => h.createNode(),
     window: { OpenTabFolders: h.api }, performance: { mark: value => marks.push({ value, count: h.animations.length }) },

@@ -63,5 +63,11 @@ globalThis.OpenTabI18n?.register({
   '搜索小组件': 'Search widgets', '没有找到小组件': 'No widgets found',
   '记录灵感，留住重要的小事。': 'Capture ideas and little things that matter.',
   '整理今天的计划': 'Plan the day', '留一点时间给自己': 'Make time for yourself',
-  '常用网站': 'Favorite sites', '工作资料': 'Work resources', '下一次旅行': 'Next trip'
+  '常用网站': 'Top sites', '工作资料': 'Work resources', '下一次旅行': 'Next trip'
+});
+
+globalThis.OpenTabI18n?.register({
+  '更多操作': 'More actions', '小组件操作': 'Widget actions', '编辑': 'Edit',
+  '恢复数据': 'Recovery data', '拖动移动，方向键调整位置': 'Drag to move, or use arrow keys',
+  '请先增加桌面列数，再添加此组件。': 'Increase the desktop column count before adding this widget.'
 });

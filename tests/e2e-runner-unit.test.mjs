@@ -20,6 +20,7 @@ const suites = [
   'tests/accessibility.test.mjs',
   'tests/i18n.test.mjs',
   'tests/workspace.test.mjs',
+  'tests/widgets.test.mjs',
   'tests/extension.test.mjs',
   'tests/search.test.mjs',
   'tests/first-run.test.mjs',
@@ -30,9 +31,9 @@ const groups = {
   scenes: ['tests/scenes.test.mjs'],
   core: suites.filter(suite => suite !== 'tests/scenes.test.mjs'),
 };
-assert.equal(suites.length, 16, 'the canonical native gate contains all 16 expected suites');
-assert.equal(new Set(suites).size, 16, 'canonical suites are unique');
-assert.equal(groups.core.length, 15);
+assert.equal(suites.length, 17, 'the canonical native gate contains all 17 expected suites');
+assert.equal(new Set(suites).size, 17, 'canonical suites are unique');
+assert.equal(groups.core.length, 16);
 assert.deepEqual([...groups.scenes, ...groups.core], suites, 'CI groups form the exact ordered, exhaustive canonical suite list');
 assert.equal(groups.scenes.some(suite => groups.core.includes(suite)), false, 'CI groups never overlap');
 
@@ -390,7 +391,7 @@ try {
     assertCalls([]);
     assert.match(missing.stdout, /xvfb-run is not installed/);
   }
-  console.log('E2E runner tests passed: exact 16-suite partitions, strict CI/package gate, ordered aggregation, exit codes, output, cancellation, and xvfb prerequisites');
+  console.log('E2E runner tests passed: exact 17-suite partitions, strict CI/package gate, ordered aggregation, exit codes, output, cancellation, and xvfb prerequisites');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

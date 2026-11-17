@@ -87,6 +87,7 @@
 
   let host = null;
   let mergeTimer = 0;
+  let mergeReady = false;
   let mergeTargetId = null;
   let mergeSourceId = null;
   let lastWheelAt = 0;
@@ -320,8 +321,9 @@
     }
     mergeTargetId = null;
     mergeSourceId = null;
+    mergeReady = false;
     document.querySelectorAll('.folder-merge-target').forEach((node) => {
-      node.classList.remove('folder-merge-target');
+      node.classList.remove('folder-merge-target', 'folder-merge-ready');
     });
   }
 
@@ -333,12 +335,8 @@
     const target = document.querySelector(iconSelector(targetId));
     if (target) target.classList.add('folder-merge-target');
     mergeTimer = setTimeout(() => {
-      const src = mergeSourceId;
-      const dst = mergeTargetId;
-      mergeTimer = 0;
-      clearMergeHover();
-      host.endDesktopDrag();
-      mergeIcons(src, dst);
+      mergeTimer = 0; mergeReady = true;
+      target?.classList.add('folder-merge-ready');
     }, MERGE_HOVER_MS);
   }
 
@@ -370,6 +368,10 @@
   function handleGridDrop(event, iconId) {
     const icon = find(iconId);
     if (!icon) return false;
+    const target = event.target.closest('.icon-widget[data-id]');
+    if (mergeReady && mergeSourceId === iconId && target?.dataset.id === mergeTargetId && !event.shiftKey) {
+      const targetId = mergeTargetId; clearMergeHover(); mergeIcons(iconId, targetId); return true;
+    }
     const destRoot = event.currentTarget;
     const destParent = destRoot && destRoot.id === 'folder-icons-container' ? (openFolderId || '') : '';
     const srcParent = icon.parentId || '';
