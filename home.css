@@ -1136,16 +1136,15 @@ body.theme-light .icon-name {
 
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: 28px;
+  right: 24px;
+  bottom: 90px;
   z-index: 3200;
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 220px;
-  max-width: min(480px, 92vw);
-  padding: 12px 16px;
-  transform: translateX(-50%);
+  min-width: 0;
+  max-width: min(340px, calc(100vw - 48px));
+  padding: 10px 12px;
   border: 1px solid var(--panel-border);
   border-radius: 14px;
   background: var(--panel-bg);

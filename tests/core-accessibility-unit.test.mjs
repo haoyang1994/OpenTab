@@ -156,3 +156,33 @@ for (const selector of ['.settings-panel.hidden', '#todo-widget.hidden', '.timez
 console.log('Core accessibility unit tests passed');
 
 await import('./wallpaper-readability-unit.mjs');
+
+// Success must stay quiet without removing safe undo or necessary errors.
+{
+  const classes = new Set(['hidden']), timers = new Map(); let timerId = 0, current = true, blocked = false, calls = 0;
+  const toast = { dataset: {}, children: [], classList: { add: value => classes.add(value), remove: value => classes.delete(value) }, replaceChildren() { this.children = []; }, append(...nodes) { this.children.push(...nodes); } };
+  const ctx = { document: { querySelector: () => blocked ? {} : null, createTextNode: text => ({ textContent: text }), createElement: () => ({ attrs: {}, setAttribute(key, value) { this.attrs[key] = value; } }) },
+    setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout: id => timers.delete(id) };
+  vm.createContext(ctx); vm.runInContext(source, ctx);
+  const api = ctx.OpenTabAccessibility.createFeedback({ toast, getWorkspace: () => ({ captureIntent: () => ({}), isIntentCurrent: () => current }), t: text => text });
+  api.showError('已恢复', { kind: 'success' }); assert.equal(classes.has('hidden'), true); assert.equal(toast.children.length, 0);
+  api.showError('已删除', { actionLabel: '撤销', onAction: () => { calls++; } });
+  assert.equal(classes.has('hidden'), true, 'undo availability never creates a success notice'); assert.equal(api.canUndo(), true);
+  const key = (extra = {}) => { let prevented = false; api.handleKeydown({ key: 'z', ctrlKey: true, target: { closest: () => null }, preventDefault() { prevented = true; }, ...extra }); return prevented; };
+  assert.equal(key({ target: { closest: () => ({}) } }), false, 'native text undo is preserved');
+  blocked = true; assert.equal(key(), false, 'dialogs and drags retain their keyboard handling'); blocked = false;
+  assert.equal(key({ isComposing: true }), false); assert.equal(key(), true); await new Promise(setImmediate); assert.equal(calls, 1);
+  assert.equal(await api.undo(), false, 'repeated undo cannot replay an inverse');
+  api.offerUndo(() => { calls++; }); current = false; assert.equal(key(), false, 'stale views cannot undo'); current = true;
+  api.showError('读取失败'); assert.equal(classes.has('hidden'), false);
+  api.showError('', { source: 'widgets' }); assert.equal(classes.has('hidden'), false, 'a quiet widget refresh cannot erase another source error');
+  api.showError('位置无效', { source: 'widgets' }); assert.equal(toast.children[0].textContent, '位置无效');
+  const dismiss = toast.children[1]; assert.equal(dismiss.attrs['aria-label'], '关闭'); dismiss.onclick(); assert.equal(classes.has('hidden'), true);
+  api.showError('保存失败', { source: 'widgets' }); api.showError('', { source: 'widgets' }); assert.equal(classes.has('hidden'), true);
+  let resolveUndo; const flight = new Promise(resolve => { resolveUndo = resolve; });
+  api.offerUndo(() => { calls++; return flight; }); const first = api.undo(); assert.equal(await api.undo(), false); resolveUndo(true); await first; assert.equal(calls, 2);
+  api.showError('表单已有错误', { kind: 'inline' }); assert.equal(classes.has('hidden'), true, 'inline errors are not duplicated globally');
+  assert.equal(fs.readFileSync(new URL('home.html', root), 'utf8').includes('desktop-widget-feedback'), false);
+  for (const name of ['sync.js', 'import.js']) assert.equal(fs.readFileSync(new URL(name, root), 'utf8').includes("document.getElementById('toast')"), false, `${name} does not construct its own success notice`);
+}
+console.log('Quiet feedback passed: silent successes, guarded keyboard undo, single-flight inverse, native text/IME/modal handling, scoped errors and dismissal.');

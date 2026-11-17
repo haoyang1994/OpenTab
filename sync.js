@@ -936,38 +936,21 @@
       if (Object.keys(patch).length) await write(patch);
       return { ...local, ...patch };
     }) : await workspace.commit(undo.after, undo.before, local => localProtocol(local) === 1);
-    setSyncStatus(t('已撤销云端替换，保留了之后的其他修改。'), false);
+    setSyncStatus('', false);
     notifyApplied();
     return saved;
   }
 
-  function showSyncUndoToast(undo) {
-    if (typeof document === 'undefined' || !undo || undo.undoable === false) return;
-    const toast = document.getElementById('toast');
-    if (!toast) return;
-    toast.textContent = t('已用云端数据替换本机。');
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = t('撤销');
-    btn.onclick = async () => {
-      if (btn.disabled) return;
-      btn.disabled = true;
-      try {
-        await undoRemotePayload(undo);
-        toast.classList.add('hidden');
-      } catch (error) {
-        const message = error && error.code === 'WORKSPACE_CONFLICT'
+  function offerSyncUndo(undo) {
+    if (!undo || undo.undoable === false) return;
+    globalThis.OpenTabDesktop?.offerUndo?.(async () => {
+      try { await undoRemotePayload(undo); return true; }
+      catch (error) {
+        const message = error?.code === 'WORKSPACE_CONFLICT'
           ? t('同步后相关内容已被修改，无法安全撤销。现有数据未改动。') : t('撤销失败，请重试。');
-        setSyncStatus(message, true);
-        toast.textContent = message;
-        toast.appendChild(btn);
-        toast.classList.remove('hidden');
-        btn.disabled = false;
+        setSyncStatus(message, true); globalThis.OpenTabDesktop?.showError?.(message); return false;
       }
-    };
-    toast.appendChild(btn);
-    toast.classList.remove('hidden');
-    setTimeout(() => { toast.classList.add('hidden'); }, 8000);
+    }, () => true, null);
   }
 
   async function resolveSyncChoice(choice) {
@@ -987,15 +970,15 @@
             ? t('已使用云端数据，新增设置无法直接撤销。需要恢复场景和网站时，请在“备份与恢复”中选择“恢复最近快照”；新增设置请手动调整。')
             : t('已使用云端数据，新增设置无法直接撤销。'), false);
         } else {
-          setSyncStatus(t('已用云端数据替换本机快捷方式，可撤销。'), false);
-          showSyncUndoToast(undo);
+          setSyncStatus('', false);
+          offerSyncUndo(undo);
         }
       }
       await refreshUsage();
       return { ok: true, pulled: !!pulled, snapshotId: snapshot && snapshot.id, undoable: !!undo && undo.undoable !== false };
     }
     const pushed = await pushLocalToSync();
-    if (pushed.ok) setSyncStatus(t('已用本机数据覆盖云端。'), false);
+    if (pushed.ok) setSyncStatus('', false);
     await refreshUsage();
     return { ok: !!pushed.ok, pushed: true };
   }
@@ -1099,7 +1082,7 @@
     if (checkbox) checkbox.checked = enabled;
     if (!enabled) {
       hideSyncConflict();
-      setSyncStatus(t('已关闭浏览器同步，数据只保存在本机。'), false);
+      setSyncStatus('', false);
       await refreshUsage();
       return { ok: true, enabled: false };
     }
@@ -1112,7 +1095,7 @@
     }
     if (version === 2) {
       const pushed = await pushLocalToSync();
-      if (pushed.ok) setSyncStatus(t('已开启浏览器同步（仅快捷方式、分组和设置）。'), false);
+      if (pushed.ok) setSyncStatus('', false);
       return { ok: pushed.ok, enabled, pushed };
     }
     const localCount = Array.isArray(local.icons) ? local.icons.length : 0;
@@ -1121,7 +1104,7 @@
     if (remoteFromOther && remoteHasIcons && localCount === 0) {
       const pulled = await applyRemotePayload(remote);
       if (pulled) {
-        setSyncStatus(t('已从浏览器同步恢复快捷方式、分组和设置。'), false);
+        setSyncStatus('', false);
         await refreshUsage();
         return { ok: true, enabled: true, pulled: true };
       }
@@ -1133,7 +1116,7 @@
       return { ok: true, enabled: true, conflict: true, localCount, remoteCount: remote.icons.length };
     }
     const pushed = await pushLocalToSync();
-    if (pushed.ok) setSyncStatus(t('已开启浏览器同步（仅快捷方式、分组和设置）。'), false);
+    if (pushed.ok) setSyncStatus('', false);
     return { ok: pushed.ok, enabled, pushed };
   }
 
@@ -1161,7 +1144,7 @@
             if (!(version === 2 ? sceneChanged : changes[META_KEY])) return;
             const payload = await readRemotePayload(local);
             if (payload && await applyRemotePayload(payload, { automatic: true })) {
-              setSyncStatus(t('已从浏览器同步恢复快捷方式、分组和设置。'), false);
+              setSyncStatus('', false);
             }
           }).catch(() => setSyncStatus(t('读取或保存云端数据失败，请重试。'), true));
         }

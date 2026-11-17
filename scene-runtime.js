@@ -60,7 +60,7 @@
       }
       return false;
     }
-    function notify(message) { try { showToast(t(message)); } catch (_) {} }
+    function notify(message, options) { try { showToast(t(message), options); } catch (_) {} }
     function make(tag, className, text) {
       const node = mount.ownerDocument.createElement(tag);
       node.className = className;
@@ -77,7 +77,7 @@
       deferredView = true;
       try {
         if (typeof onViewDeferred === 'function') onViewDeferred();
-        else notify('场景已保存，请完成或取消当前编辑后重新选择。');
+        else notify('场景已保存，请完成或取消当前编辑后重新选择。', { kind: 'success' });
       } catch (_) { /* A notification cannot change a durable result. */ }
     }
     function setReady(ready) { if (!disposed) try { onLoadStatus(ready === true); } catch (_) {} }
@@ -131,7 +131,7 @@
       if (discardButton) discardButton.hidden = !dirty;
       if (status) status.textContent = t(message);
       if (recovery && !recovery.open) recovery.showModal?.();
-      notify(message);
+      notify(message, { kind: 'inline' });
     }
     function ensureEntry() {
       if (disposed || !mount?.ownerDocument || entry || controller) return;

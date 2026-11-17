@@ -81,7 +81,7 @@
     } else if (result.failed?.length) {
       byId('group-launch-status').textContent = t('已打开 {opened} 个网站，{failed} 个未能打开。重试只会打开仍选中的网站。', { opened: mode.opened.size, failed: result.failed.length });
     } else if (result.ok) {
-      byId('group-launch-status').textContent = t('已在后台打开 {count} 个网站。', { count: mode.opened.size });
+      byId('group-launch-status').textContent = '';
     } else {
       byId('group-launch-status').textContent = t('未能验证分组，未打开新网站。请重试。');
     }

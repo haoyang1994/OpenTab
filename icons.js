@@ -851,7 +851,7 @@
             if (!(await persist(true)) || changerIntent !== submitted) return;
           }
           refreshChangerPreview(findIcon(action.id));
-          setChangerStatus(ok ? t('已重新抓取图标') : t(MSG_REFETCH_BLOCKED));
+          setChangerStatus(ok ? '' : t(MSG_REFETCH_BLOCKED));
         } catch (error) {
           const current = currentChanger(action);
           if (current) { setChangerStatus(t(MSG_REFETCH_BLOCKED)); refreshChangerPreview(current); }
@@ -878,7 +878,7 @@
           const submitted = changerIntent;
           if (!(await persist(true)) || changerIntent !== submitted) return;
           refreshChangerPreview(findIcon(action.id));
-          if (typeof host.showToast === 'function') host.showToast(t('已使用本地图片'));
+          if (typeof host.showToast === 'function') host.showToast(t('已使用本地图片'), { kind: 'success' });
         } catch (error) {
           if (typeof host.showToast === 'function') host.showToast(t('图片读取失败'));
         }
@@ -897,7 +897,7 @@
         const submitted = changerIntent;
         if (!(await persist(true)) || changerIntent !== submitted) return;
         refreshChangerPreview(findIcon(action.id));
-        if (typeof host.showToast === 'function') host.showToast(t('已使用首字母占位'));
+        if (typeof host.showToast === 'function') host.showToast(t('已使用首字母占位'), { kind: 'success' });
       });
     }
   }

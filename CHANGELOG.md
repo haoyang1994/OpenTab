@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preview websites in the current group and its folders before explicitly opening up to 20 selected background tabs. Preserve distinct URL paths, queries and fragments; reject unsafe schemes and credential URLs; revalidate local and durable sources, prevent duplicate submissions, and retry only failed tabs. No new permissions or background launch.
 
 ### Changed
+- Remove desktop success/undo notices across widget, website, folder, scene, import, sync and popup actions. Keep guarded keyboard undo and recovery controls, with errors confined to their form or a compact dismissible alert.
+- Make occupied desktop cells yield naturally during dragging. Preview nearby widget/icon displacement live, keep grabbed widgets under the pointer, animate settling/cancellation, and preserve folder merge intent, reduced motion and atomic layout persistence.
 - Simplify widgets with a content-first, atomic add/edit form and accessible More, right-click and long-press actions. Cancel and Escape discard drafts consistently; deletion remains undoable.
 - Correct widget and website drag placement, previews, cancellation and saved layout recovery. Reserve existing icon slots, commit folder merges only on drop, and remove persistent layout-success notifications while retaining error feedback.
 - Move selected websites directly between active scenes through the existing destination chooser, including from Home. Show full destination paths and selected counts, keep the source view, preserve records and ordering, and offer guarded Undo without weakening unrelated scene isolation.

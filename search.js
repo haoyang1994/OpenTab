@@ -760,7 +760,7 @@
         current.name = name.slice(0, 40);
         current.template = template;
       }
-      setCustomStatus(t('已保存自定义引擎。'));
+      setCustomStatus('');
     } else {
       if (searchState.customSearchEngines.length >= MAX_CUSTOM_ENGINES) {
         setCustomStatus(t('最多添加 {count} 个自定义引擎。', { count: MAX_CUSTOM_ENGINES }), true);
@@ -771,7 +771,7 @@
         name: name.slice(0, 40),
         template
       });
-      setCustomStatus(t('已添加自定义引擎。'));
+      setCustomStatus('');
     }
     persist();
     resetCustomForm();
@@ -785,7 +785,7 @@
     if (searchState.searchEngine === id) searchState.searchEngine = 'google';
     if (editingCustomId === id) resetCustomForm();
     persist();
-    setCustomStatus(t('已删除自定义引擎。'));
+    setCustomStatus('');
     renderCustomEngineButtons();
     renderDefaultEngineSelect();
     renderCustomList();
@@ -1207,7 +1207,7 @@
         persist();
         historyHighlight = -1;
         renderHistory();
-        setCustomStatus(t('已清除搜索历史。'));
+        setCustomStatus('');
       });
     }
     const save = $('search-custom-save');

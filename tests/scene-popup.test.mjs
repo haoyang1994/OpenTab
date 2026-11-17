@@ -122,8 +122,8 @@ function harness(initial = seed(), { schema = Schema, tab = { url: 'https://exam
   assert.deepEqual(h.store.icons.slice(0, -1), initial.icons, 'append retains every other scene, archived item and opaque field');
   for (const [key, value] of Object.entries(initial)) if (key !== 'icons') assert.deepEqual(h.store[key], value, `preserve ${key}`);
   assert.deepEqual(Object.keys(h.writes[0]), ['icons'], 'schema 2 never rewrites or filters canonical groups');
-  assert.equal(h.timers.length, 1); assert.equal(h.closed, 0); assert.equal(h.button.disabled, true);
-  await h.click(); h.enter(); await tick(); assert.equal(h.writes.length, 1, 'successful save cannot double-submit during close delay');
+  assert.equal(h.timers.length, 0); assert.equal(h.closed, 1); assert.equal(h.status.textContent, '', 'successful save closes quietly'); assert.equal(h.button.disabled, true);
+  await h.click(); h.enter(); await tick(); assert.equal(h.writes.length, 1, 'successful save cannot double-submit after closing');
 }
 
 for (const [changes, expected] of [
@@ -215,7 +215,7 @@ for (const [reason, mutate] of staleCases) {
   await h.click(); h.enter(); await tick();
   assert.equal(h.attemptedWrites, 1); assert.equal(h.writes.length, 0); assert.equal(h.timers.length, 0);
   assert.equal(h.input.disabled, true); assert.equal(h.select.disabled, true);
-  release(); await pending; assert.equal(h.writes.length, 1); assert.equal(h.timers.length, 1);
+  release(); await pending; assert.equal(h.writes.length, 1); assert.equal(h.timers.length, 0); assert.equal(h.closed, 1);
 }
 
 // Unknown, partial, damaged or unsupported graphs fail closed on opening and

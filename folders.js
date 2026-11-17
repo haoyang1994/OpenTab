@@ -261,11 +261,11 @@
       onAction: async () => {
         if (!current()) return false;
         try { restore(OpenTabWorkspace.merge(after, before, snapshot())); }
-        catch (_) { host.showToast(t('内容已变化，无法撤销。')); return; }
+        catch (_) { host.showToast(t('内容已变化，无法撤销。')); return false; }
         closeOverlay(true);
         const saved = host.saveState(undefined, undefined, undoGuard);
         host.refreshIconViews();
-        if (await saved) host.showToast(t('已恢复'), { duration: 1500 });
+        return await saved;
       },
       duration: 6000
     });
@@ -1283,6 +1283,7 @@
     visibleIcons,
     visibleGroups,
     decorateWidget,
+    getMergePreview: () => mergeReady ? { sourceId: mergeSourceId, targetId: mergeTargetId } : null,
     handleGridDragOver,
     handleGridDrop,
     handleGridClick,

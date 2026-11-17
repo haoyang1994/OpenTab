@@ -49,7 +49,7 @@ try {
   async function edit(id) { await more(id).click(); await page.getByRole('menuitem', { name: '编辑', exact: true }).click(); }
   const submit = () => page.locator('#widget-settings button[type="submit"]');
   async function add(kind) { await page.click('#widget-add'); await page.locator(`.widget-library-card[data-kind="${kind}"] .widget-library-add`).click(); }
-  async function grab(id) { const rect = await handle(id).boundingBox(); await page.mouse.move(rect.x + 20, rect.y + 12); await page.mouse.down(); return { x: rect.x + 20, y: rect.y + 12 }; }
+  async function grab(id) { await page.waitForFunction(id => !document.getElementById(`widget-move-${id}`).closest('.widget-card').getAnimations().some(animation => animation.id === 'opentab-desktop-shift'), id); const rect = await handle(id).boundingBox(); await page.mouse.move(rect.x + 20, rect.y + 12); await page.mouse.down(); return { x: rect.x + 20, y: rect.y + 12 }; }
   async function pointerDrag(id, dx, dy, cancel = false) {
     const point = await grab(id); await page.mouse.move(point.x + dx, point.y + dy, { steps: 8 });
     if (cancel) await page.keyboard.press('Escape'); await page.mouse.up();
@@ -80,7 +80,11 @@ try {
   assert.equal(await more(id).evaluate(node => node === document.activeElement), true, 'menu restores focus');
   await more(id).click(); await page.screenshot({ path: path.join(artifacts, 'actions-light.png') });
   await page.getByRole('menuitem', { name: '删除', exact: true }).click(); await saved(value => value.widgets.length === 0);
-  await page.getByRole('button', { name: '撤销删除', exact: true }).click(); await saved(value => value.widgets.length === 1);
+  assert.equal(await page.locator('#desktop-widget-feedback').count(), 0, 'the desktop notification panel is removed');
+  assert.equal(await page.locator('#toast').isVisible(), false, 'delete is silent');
+  await page.screenshot({ path: path.join(artifacts, 'delete-without-notice.png') });
+  await page.keyboard.press('ControlOrMeta+z'); await saved(value => value.widgets.length === 1);
+  assert.equal(await page.locator('#toast').isVisible(), false, 'undo is silent');
   console.log('widgets: atomic add/edit/cancel, repeated submit, accessible action menu, delete and undo passed');
 
   await reset(seed([note()]));
@@ -89,15 +93,15 @@ try {
   assert.deepEqual(await state(), initial, 'Escape cancels drag without a write');
   assert.equal(await page.locator('.desktop-drop-preview').count(), 0);
   await pointerDrag('note', step * 2, 0); await saved(value => value.widgets[0].x === 2);
-  assert.equal(await page.locator('#desktop-widget-feedback').isVisible(), false, 'successful moves have no persistent notification');
+  assert.equal(await page.locator('#toast').isVisible(), false, 'successful moves have no notification');
   const moved = await state(); await page.reload(); await page.waitForFunction(() => document.querySelector('#icons-container')?.dataset.widgetsReady === 'true');
   assert.deepEqual(await state(), moved, 'dragged positions survive reload');
   await pointerDrag('note', -step * 2, 0); await saved(value => value.widgets[0].x === 0);
   await pointerDrag('note', step * 2, -132); assert.equal((await state()).widgets[0].x, 0, 'outside drop cannot snap into grid');
   await handle('note').focus(); await page.keyboard.press('ArrowRight'); await saved(value => value.widgets[0].x === 1);
   await handle('note').focus(); await page.keyboard.press('ArrowUp'); assert.equal((await state()).widgets[0].y, 0, 'top boundary rejected');
-  await page.waitForFunction(() => document.querySelector('#desktop-widget-feedback')?.textContent.includes('已占用'));
-  assert.equal(await page.locator('#desktop-widget-feedback').isVisible(), true, 'occupied/boundary feedback remains visible');
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('超出桌面边界'));
+  assert.equal(await page.locator('#toast').isVisible(), true, 'boundary errors remain available in a compact floating alert');
   console.log('widgets: pointer preview/drop, Escape, outside bounds, keyboard movement and reload passed');
 
   // A native website drag uses its original grab point and the same saved grid.
@@ -119,16 +123,71 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.deepEqual(await state(), siteLayout);
   console.log('widgets: native website drag and responsive persistence passed');
-  await reset(seed([note(), note('blocker', 3, 0)]));
-  const occupiedState = await state(), grabPoint = await grab('note');
+  await reset(seed([note(), { ...note('blocker', 3, 0), data: { text: '资料与安排\n拖动时自动让位。' } }]));
+  const occupiedState = await state(), blocker = page.locator('.widget-card[data-widget-id="blocker"]'), blockerStart = await blocker.boundingBox(), grabPoint = await grab('note');
   await page.mouse.move(grabPoint.x + step * 2, grabPoint.y, { steps: 8 });
-  assert.equal(await page.locator('.desktop-drop-preview').getAttribute('data-valid'), 'false', 'preview identifies the same occupied target as drop');
-  await page.screenshot({ path: path.join(artifacts, 'drag-occupied.png') });
-  await page.mouse.up(); assert.deepEqual(await state(), occupiedState, 'occupied drops preserve the original layout');
-  const cancelPoint = await grab('note'); await page.mouse.move(cancelPoint.x, cancelPoint.y + 132, { steps: 8 });
+  assert.equal(await page.locator('.desktop-drop-preview').getAttribute('data-valid'), 'true', 'occupied widgets make room instead of rejecting the drop');
+  await page.waitForFunction(({ left, step }) => document.querySelector('.widget-card[data-widget-id="blocker"]').getBoundingClientRect().left > left + step * .8, { left: blockerStart.x, step });
+  assert.deepEqual(await state(), occupiedState, 'live displacement does not write before release');
+  const follower = await page.locator('.widget-card[data-widget-id="note"]').boundingBox();
+  assert.ok(Math.abs(follower.x - (grabPoint.x + step * 2 - 30)) < 20, 'grabbed card follows the pointer continuously');
+  await page.screenshot({ path: path.join(artifacts, 'drag-displacement.png') });
+  await page.mouse.up(); await saved(value => value.widgets.find(widget => widget.id === 'note').x === 2 && value.widgets.find(widget => widget.id === 'blocker').x === 4);
+  const displaced = await state(); await page.reload(); await page.waitForFunction(() => document.querySelector('#icons-container')?.dataset.widgetsReady === 'true');
+  assert.deepEqual(await state(), displaced, 'displaced neighbors and the grabbed item both survive reload');
+  const cancelPoint = await grab('note'); await page.mouse.move(cancelPoint.x + step, cancelPoint.y, { steps: 8 });
   await handle('note').dispatchEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', isPrimary: true }); await page.mouse.up();
-  assert.deepEqual(await state(), occupiedState, 'pointer cancellation never commits');
+  assert.deepEqual(await state(), displaced, 'pointer cancellation restores every displaced item');
   assert.equal(await page.locator('.desktop-drop-preview').count(), 0);
+  await page.waitForFunction(() => [...document.querySelectorAll('#icons-container > *')].every(node => !node.getAnimations().some(animation => animation.id === 'opentab-desktop-shift')));
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const stillPoint = await grab('note'); await page.mouse.move(stillPoint.x + step, stillPoint.y, { steps: 4 });
+  assert.equal(await page.locator('#icons-container').evaluate(node => [...node.children].some(child => child.getAnimations().some(animation => animation.id === 'opentab-desktop-shift'))), false, 'reduced motion previews do not animate');
+  await page.keyboard.press('Escape'); await page.mouse.up(); await page.emulateMedia({ reducedMotion: 'no-preference' });
+  assert.deepEqual(await state(), displaced);
+
+  async function nativeMoveToWidget(id) {
+    const source = await page.locator(`.icon-widget[data-id="${id}"]`).boundingBox(), destination = await page.locator('.widget-card[data-widget-id="note"]').boundingBox();
+    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2); await page.mouse.down();
+    await page.mouse.move(destination.x + step / 2, destination.y + 60, { steps: 12 });
+    await page.waitForFunction(() => document.querySelector('.widget-card[data-widget-id="note"]').style.translate !== '');
+    await page.mouse.up();
+    await saved((value, id) => value.widgets[0].x === 1 && value.widgets[0].y === 0 && value.pages[0].icons.some(icon => icon.id === id && icon.x === 0 && icon.y === 0), id);
+  }
+  await reset(seed([note()], [icon('a'), icon('b')]));
+  await nativeMoveToWidget('a');
+  assert.equal(await page.locator('.icon-folder').count(), 0, 'dragging onto a widget cannot merge sites');
+  await reset(seed([note()], [{ ...icon('pack'), type: 'folder', name: '资料', url: '' }, { ...icon('child'), parentId: 'pack' }, icon('b')]));
+  await nativeMoveToWidget('pack');
+  assert.equal(await page.evaluate(async () => (await chrome.storage.local.get('icons')).icons.find(icon => icon.id === 'child').parentId), 'pack', 'a displaced icon folder retains its children');
+  await reset(seed([note(), note('blocker', 3, 0)]));
+  const beforeFailedDrop = await state();
+  await page.evaluate(() => { const area = chrome.storage.local, original = area.set.bind(area); let fail = true; area.set = (patch, callback) => { if (fail && Object.hasOwn(patch, 'widgetWorkspace')) { fail = false; throw new Error('simulated drag save failure'); } return original(patch, callback); }; });
+  await pointerDrag('note', step * 2, 0);
+  await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('保存失败'));
+  assert.deepEqual(await state(), beforeFailedDrop, 'a failed commit restores the whole preview without writing displaced neighbors');
+  assert.equal(await page.locator('.desktop-drop-preview').count(), 0);
+  assert.equal(await page.locator('.desktop-drag-active').count(), 0);
+  const interrupted = await grab('note'); await page.mouse.move(interrupted.x + step * 2, interrupted.y, { steps: 8 });
+  await page.evaluate(async () => { const value = JSON.parse((await chrome.storage.local.get('widgetWorkspace')).widgetWorkspace); value.widgets[0].data.text = '外部更新'; await chrome.storage.local.set({ widgetWorkspace: JSON.stringify(value) }); });
+  await page.waitForFunction(() => document.querySelector('.widget-card[data-widget-id="note"] .widget-body').textContent.includes('外部更新'));
+  await page.mouse.up();
+  assert.equal((await state()).widgets[0].x, 0, 'external updates cancel an in-progress drag');
+  assert.equal((await state()).widgets[1].x, 3);
+  assert.equal(await page.locator('.desktop-drop-preview').count(), 0);
+  await reset(seed([note(), note('blocker', 3, 0)]));
+  const edgeGrab = await grab('note'), edgeGrid = await page.locator('#icons-container').boundingBox();
+  await page.mouse.move(edgeGrid.x + edgeGrid.width - 1, edgeGrab.y, { steps: 12 });
+  assert.equal(await page.locator('.desktop-drop-preview').evaluate(node => node.style.gridColumnStart), '5', 'the right edge fits the full widget inside the last columns');
+  await page.mouse.up(); await saved(value => value.widgets[0].x === 4);
+  const beforeResize = await state(), resizeGrab = await grab('note');
+  await page.mouse.move(resizeGrab.x - step, resizeGrab.y, { steps: 6 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.querySelector('#icons-container').dataset.projected === 'true');
+  await page.mouse.up(); assert.deepEqual(await state(), beforeResize, 'resizing during a drag cancels the full preview without saving');
+  assert.equal(await page.locator('.desktop-drop-preview').count(), 0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  console.log('widgets: live displacement, pointer following, cancellation, reduced motion, mixed widget/icon/folder moves and reload passed');
 
   await reset(seed()); await add('checklist');
   await page.getByRole('button', { name: '添加事项', exact: true }).click();
@@ -142,7 +201,7 @@ try {
   assert.equal(await page.locator('#widget-settings').isVisible(), true);
   assert.ok((await page.locator('#widget-settings .widget-status').textContent()).includes('无效'));
   await page.keyboard.press('Escape'); assert.equal((await state()).widgets.length, 1, 'invalid or cancelled links leave no orphan widget');
-  console.log('widgets: occupied preview/drop agreement, pointer cancellation, checklist keyboard flow and unsafe-link validation passed');
+  console.log('widgets: checklist keyboard flow and unsafe-link validation passed');
 
 
   await reset(seed([], [icon('a'), icon('b'), icon('c')]));
@@ -164,6 +223,22 @@ try {
   assert.deepEqual(await visualIds(), ['c', 'b', 'a']);
   assert.equal(await page.locator('.icon-widget[data-id="a"]').evaluate(node => node === document.activeElement), true);
   assert.deepEqual(await page.evaluate(async () => (await chrome.storage.local.get('icons')).icons.map(icon => icon.id)), ['a', 'b', 'c'], 'sorting does not rewrite source records');
+  await reset(seed([], [icon('a'), icon('b')]));
+  await page.evaluate(() => {
+    const source = document.querySelector('.icon-widget[data-id="a"]'), destination = document.querySelector('.icon-widget[data-id="b"]'), a = source.getBoundingClientRect(), b = destination.getBoundingClientRect(), dt = new DataTransfer();
+    source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: a.x + a.width / 2, clientY: a.y + a.height / 2 }));
+    const event = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: b.x + b.width / 2, clientY: b.y + b.height / 2 };
+    destination.dispatchEvent(new DragEvent('dragover', event)); destination.dispatchEvent(new DragEvent('drop', event)); source.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+  });
+  await saved(value => value.pages[0].icons.find(icon => icon.id === 'a')?.x === 1);
+  assert.deepEqual(await visualIds(), ['b', 'a'], 'a quick center drop moves into the occupied icon slot');
+  await page.locator('.icon-widget[data-id="a"]').click({ button: 'right' }); await page.click('#delete-icon-btn');
+  await page.waitForFunction(async () => !(await chrome.storage.local.get('icons')).icons.some(icon => icon.id === 'a'));
+  await page.waitForFunction(() => OpenTabDesktop.canUndo());
+  assert.equal(await page.locator('#toast').isVisible(), false, 'website delete has no success toast');
+  await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z');
+  await page.waitForFunction(async () => (await chrome.storage.local.get('icons')).icons.some(icon => icon.id === 'a'));
+  assert.equal(await page.locator('#toast').isVisible(), false, 'website restore has no success toast');
   console.log('widgets: icon insertion preview, visual sorting, Alt-arrow focus and refresh persistence passed');
 
   await reset(seed([note()], [icon('a'), icon('b')]));
@@ -193,6 +268,7 @@ try {
   await mergeGesture(false);
   assert.equal(await page.locator('.icon-folder').count(), 0, 'hover and Escape cannot merge icons');
   await mergeGesture(true); await page.waitForSelector('.icon-folder');
+  await page.waitForFunction(() => OpenTabDesktop.canUndo()); assert.equal(await page.locator('#toast').isVisible(), false, 'folder creation is silent');
   console.log('widgets: touch long press, scroll cancellation and explicit-drop folder merge passed');
   const display = [note(),
     { ...note('tasks', 2, 0), type: 'builtin.checklist', data: { items: [{ id: 'one', text: '完成今日计划', done: true }, { id: 'two', text: '准备下一个版本', done: false }] } },

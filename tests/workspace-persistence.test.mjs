@@ -725,16 +725,18 @@ for (const conflict of ['same-entity-edit', 'newer-replacement']) {
 {
   const h = memory(), state = base(), c = h.api.connect({ state }); c.seed(h.store);
   const source = fs.readFileSync(new URL('../home.js', import.meta.url), 'utf8');
-  let button, actions = 0, closed = false, text = '';
-  const toast = { textContent: '', classList: { add() {}, remove() {} }, appendChild(value) { button = value; } };
-  const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  workspace: c, elements: { toast }, document: { createElement: () => ({}) }, toastTimer: null, pendingUndo: null, clearTimeout() {}, setTimeout() {}, action: () => { actions++; } });
-  const start = source.indexOf('  function showToast(');
-  vm.runInContext(source.slice(start, source.indexOf('  function hideDropIndicator(', start)) + "\nshowToast('deleted', { actionLabel: 'Undo', onAction: action });", context);
-  const oldButton = button;
+  let actions = 0, closed = false, text = '';
+  const classes = new Set(['hidden']);
+  const toast = { dataset: {}, classList: { add: value => classes.add(value), remove: value => classes.delete(value) }, replaceChildren() {} };
+  const context = vm.createContext({ document: {}, clearTimeout() {}, setTimeout() {} });
+  vm.runInContext(fs.readFileSync(new URL('../lib/core-accessibility.js', import.meta.url), 'utf8'), context);
+  const feedback = context.OpenTabAccessibility.createFeedback({ toast, getWorkspace: () => c, t: text => text });
+  feedback.showError('deleted', { actionLabel: 'Undo', onAction: () => { actions++; } });
   await h.api.replace({ ...base(), icons: [{ id: 'replacement', folderId: 'folder-home' }] });
-  state.clockFormat = '12h'; await c.save(); oldButton.onclick();
-  assert.equal(actions, 0, 'actual home toast refuses stale undo after rebase');
-  assert.match(toast.textContent, /内容已变化/);
+  state.clockFormat = '12h'; await c.save();
+  assert.equal(await feedback.undo(), false);
+  assert.equal(actions, 0, 'actual quiet undo refuses a stale inverse after rebase');
+  assert.equal(classes.has('hidden'), true, 'stale keyboard undo does not resurrect a notice');
 
   const modalState = base(), modal = h.api.connect({ state: modalState }); modal.seed(h.store);
   const draft = modal.captureIntent({ icons: ['x'] }); modalState.icons[0].name = 'remote';
@@ -903,7 +905,7 @@ function homeIconEditor(h, state, editId = null) {
   const action = messages.at(-1).opts.onAction; messages.length = 0; entered = false;
   const undoing = action(); await until(() => entered);
   assert.equal(messages.length, 0, 'undo success is not announced before restore commits');
-  release(); await undoing; assert.match(messages.at(-1).text, /已恢复/);
+  release(); assert.equal(await undoing, true); assert.equal(messages.length, 0, 'durable restore stays silent');
   assert.deepEqual(h.store.icons.map((item) => item.id), ['x', 'y']);
 }
 {
@@ -918,7 +920,7 @@ function homeIconEditor(h, state, editId = null) {
   assert.equal(messages.length, 0, 'folder undo is not exposed before persistence'); release(); await saving;
   assert.equal(messages.length, 1); const action = messages[0].opts.onAction; messages.length = 0; entered = false;
   const undoing = action(); await until(() => entered); assert.equal(messages.length, 0);
-  release(); await undoing; assert.match(messages.at(-1).text, /已恢复/); assert.equal(h.store.icons[0].name, 'X');
+  release(); assert.equal(await undoing, true); assert.equal(messages.length, 0, 'durable restore stays silent'); assert.equal(h.store.icons[0].name, 'X');
 }
 
 await assert.rejects(until(() => false), /synchronization point/, 'a broken fixture fails instead of spinning forever');

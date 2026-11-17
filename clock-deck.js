@@ -323,7 +323,7 @@
       if (restore && index === 2 && !minimal() && (document.activeElement === document.body || document.activeElement === $('clock-todo-complete'))) {
         (!$('clock-todo-complete').hidden ? $('clock-todo-complete') : canOpenList() ? $('clock-todo-open') : dots[index]).focus();
       }
-      $('clock-todo-status').textContent = t(outcome === 'saved' ? '已完成' : outcome === 'stale' ? '待办已更新，请确认后再试。' : '未能保存，待办已恢复，请重试。');
+      $('clock-todo-status').textContent = outcome === 'saved' ? '' : t(outcome === 'stale' ? '待办已更新，请确认后再试。' : '未能保存，待办已恢复，请重试。');
     });
     $('clock-todo-open').addEventListener('click', () => { if (canOpenList()) adapter.openTodoList($('clock-todo-open')); });
     const observer = new MutationObserver(syncMode);

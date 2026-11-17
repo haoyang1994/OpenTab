@@ -4,11 +4,11 @@
   const BACKUP = 'opentab.widgetMigrationBackup';
   const t = (source, params) => g.OpenTabI18n.t(source, params);
   let state = M.parse(), raw, epoch = 0, pending = false, blocked = false, loaded = false;
-  let grid, status, feedback, library, settings, libraryStatus, settingsStatus, previews, registerInput, recovery, undoButton, librarySearch;
+  let grid, library, settings, libraryStatus, settingsStatus, previews, registerInput, recovery, undoButton, librarySearch;
   let context, desktop, projected, libraryContext, settingsContext, undoRecord, settingsDraft = false, registrationDraft = false, layoutDraft = false;
   const cards = new Map();
   let deferredChanges = {};
-  let menu, menuTrigger, libraryTrigger, editorTrigger, libraryPages;
+  let menu, menuTrigger, libraryTrigger, editorTrigger, libraryPages, lastMessage = '';
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   function button(text, action) { const node = el('button', t(text)); node.type = 'button'; if (action) node.addEventListener('click', action); return node; }
   function field(form, labelText, value, type = 'text', options = {}) {
@@ -26,28 +26,29 @@
   const snapshot = () => g.OpenTabDesktop?.getSnapshot() || { icons: [], folders: [] };
   const dirty = () => settingsDraft || registrationDraft || layoutDraft;
   function message(text) {
-    status.textContent = text;
-    if (feedback) feedback.hidden = !blocked && !text && !undoRecord;
+    lastMessage = text;
     if (settings?.open) settingsStatus.textContent = text;
-    if (library?.open) libraryStatus.textContent = text;
+    else if (library?.open) libraryStatus.textContent = text;
+    else g.OpenTabDesktop?.showError?.(text, 'widgets');
   }
   function failure(error) {
     if (error?.code === 'WORKSPACE_CONFLICT') return t('桌面已在其他位置变化。草稿已保留，请导出后重新读取。');
+    if (error?.message === 'OUT_OF_BOUNDS') return t('超出桌面边界，原布局已保留。');
     if (error?.message === 'OCCUPIED') return t('目标位置已占用，原布局保留。请选择空位。');
     if (error?.message === 'INVALID_WIDGET_DATA' || error instanceof SyntaxError) return t('组件数据无效，请检查尺寸、字段、日期、链接和容量。');
     return t('桌面读取或保存失败，草稿与原数据已保留。');
   }
   function busy(value) {
     pending = value;
-    document.getElementById('widget-add').disabled = value || !loaded || blocked;
+    document.getElementById('widget-add').disabled = value || (!loaded && !blocked);
     for (const control of document.querySelectorAll('.widget-card button, .widget-card input, .widget-dialog button, .widget-dialog input, .widget-dialog textarea')) {
       if (control.dataset.recovery) continue;
       const textInput = control.matches('textarea, input:not([type="checkbox"])');
       control.disabled = value || control.dataset.unavailable === 'true' || (blocked && !textInput && !control.dataset.close);
       if (textInput) control.readOnly = blocked || control.dataset.staticReadOnly === 'true';
     }
-    recovery.hidden = !blocked; feedback.hidden = !blocked && !status.textContent && !undoRecord;
-    undoButton.hidden = !undoRecord; undoButton.disabled = value || blocked;
+    recovery.hidden = !blocked;
+    undoButton.hidden = !undoRecord || undoRecord.raw !== raw || undoRecord.epoch !== epoch || !sameContext(undoRecord.context); undoButton.disabled = value || blocked;
   }
   function membership(icons, groupId) { return JSON.stringify(icons.filter(icon => (icon.folderId || 'folder-home') === groupId && !icon.parentId).map(icon => icon.id)); }
   function validTarget(latest, expected, expectedIcons) {
@@ -145,6 +146,7 @@
   }
   function render(force = false) {
     if (!grid || !loaded || !context) return;
+    const before = settleRects; settleRects = null; if (before) endDragView(false);
     closeMenu();
     const visible = state.widgets.filter(item => item.groupId === context.groupId);
     const emptyHint = document.getElementById('icons-empty-hint');
@@ -156,7 +158,7 @@
       const card = makeCard(widget); if (old) cleanCard(old); cards.set(widget.id, card); grid.append(card);
     }
     desktop = M.desktop(state, context.groupId, snapshot().icons, snapshot().columns || 6);
-    reflow(); busy(pending);
+    reflow(); settleFrom(before); busy(pending);
   }
   function nodeFor(id) { return id.startsWith('w:') ? cards.get(id.slice(2)) : grid.querySelector(`.icon-widget[data-id="${CSS.escape(id.slice(2))}"]`); }
   function place(node, entry) { node.style.gridColumn = `${entry.x + 1} / span ${entry.w}`; node.style.gridRow = `${entry.y + 1} / span ${entry.h}`; }
@@ -165,6 +167,7 @@
     const available = Math.max(1, Math.min(desktop.columns, Math.floor((grid.clientWidth + 12) / 112)));
     const narrow = available < desktop.columns;
     if ((pointerDrag || iconDrag) && projected?.columns !== available) cancelDrag();
+    else if (pointerDrag?.moved || iconDrag || dropPending) return;
     grid.style.setProperty('--desktop-columns', available); grid.dataset.projected = String(narrow);
     projected = { columns: available, entries: narrow ? M.arrange(desktop.entries, available) : M.copy(desktop.entries) };
     const sorted = projected.entries.slice().sort((a, b) => a.y - b.y || a.x - b.x), active = document.activeElement;
@@ -180,72 +183,140 @@
   }
   function movedLayout(id, patch, reorder) {
     if (id.startsWith('i:') && reorder) return M.reorderIcons(desktop, id, reorder.targetId, reorder.after);
-    const layout = M.copy(desktop), entry = layout.entries.find(item => item.id === id); if (!entry) throw new Error('OCCUPIED');
-    Object.assign(entry, patch);
-    if (!Number.isInteger(entry.x) || !Number.isInteger(entry.y) || !Number.isInteger(entry.w) || !Number.isInteger(entry.h)
-      || entry.x < 0 || entry.y < 0 || entry.y > 511 || entry.w < 1 || entry.h < 1 || entry.h > 12 || entry.x + entry.w > layout.columns
-      || layout.entries.some(other => other.id !== id && M.overlap(entry, other))) throw new Error('OCCUPIED');
+    const entry = desktop.entries.find(item => item.id === id); if (!entry) throw new Error('OCCUPIED');
+    const next = { ...entry, ...patch };
+    if (![next.x, next.y, next.w, next.h].every(Number.isInteger) || next.x < 0 || next.y < 0 || next.y > 511 || next.w < 1 || next.h < 1 || next.h > 12 || next.x + next.w > desktop.columns) throw new Error('OUT_OF_BOUNDS');
     if (id.startsWith('w:')) {
       const def = defFor(state.widgets.find(item => item.id === id.slice(2))), renderer = def && M.renderer(def.kind);
-      if (renderer && !renderer.customSizes && !renderer.sizes.some(([w, h]) => w === entry.w && h === entry.h)) throw new TypeError('INVALID_WIDGET_DATA');
+      if (renderer && !renderer.customSizes && !renderer.sizes.some(([w, h]) => w === next.w && h === next.h)) throw new TypeError('INVALID_WIDGET_DATA');
     }
-    return layout;
-  }
-  async function move(id, patch, focusId, reorder) {
-    try { const entry = desktop?.entries.find(item => item.id === id);
-      if (entry && Object.entries(patch).every(([key, value]) => entry[key] === value)) return true;
-      const layout = movedLayout(id, patch, reorder); if (await change(next => M.saveDesktop(next, context.groupId, layout))) { (document.getElementById(focusId) || nodeFor(id))?.focus({ preventScroll: true }); return true; } }
-    catch (error) { message(failure(error)); } return false;
-  }
-  function target(event, entry, offset = { x: 0, y: 0 }) {
-    const rect = grid.getBoundingClientRect(), style = getComputedStyle(grid), gap = parseFloat(style.columnGap) || 12, row = parseFloat(style.gridAutoRows) || 120;
-    // Keep the original grab point. Never clamp an outside drop onto a valid cell.
-    if (event.clientX < rect.left || event.clientX >= rect.right || event.clientY < rect.top || event.clientY >= rect.bottom) return null;
-    return { x: Math.round((event.clientX - rect.left - offset.x) / ((rect.width + gap) / desktop.columns)), y: Math.round((event.clientY - rect.top - offset.y) / (row + gap)) };
+    return M.moveLayout(desktop, id, patch);
   }
   let ghost, pointerDrag, iconDrag, scrollFrame = 0, pointerY = 0, updatePreview;
-  function clearPreview() { ghost?.remove(); ghost = null; }
-  function beginDrag() {
-    closeMenu(); grid.style.minBlockSize = `${grid.getBoundingClientRect().height + 132}px`; grid.classList.add('desktop-drag-active');
+  let previewLayout, previewKey = '', dragBaseHeight = 0, dragAvatar, settleRects, dropPending = false;
+  const shifts = new Map(), motion = new Map();
+  const reducedMotion = () => g.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function animateShift(node, from, to, duration = 170) {
+    motion.get(node)?.cancel(); motion.delete(node);
+    if (reducedMotion() || from === to || !node.animate) return;
+    const animation = node.animate([{ translate: from === 'none' ? '0px 0px' : from }, { translate: to || '0px 0px' }], { duration, easing: 'cubic-bezier(.2,.8,.2,1)', id: 'opentab-desktop-shift' });
+    motion.set(node, animation);
+    animation.onfinish = () => { if (motion.get(node) === animation) motion.delete(node); };
   }
-  function endDragView() {
-    clearPreview(); grid?.classList.remove('desktop-drag-active'); if (grid) grid.style.minBlockSize = '';
-    if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = 0; updatePreview = null;
+  function shift(node, dx, dy, animate = true) {
+    if (!node || (!dx && !dy && !shifts.has(node))) return;
+    const value = `${dx}px ${dy}px`; if (node.style.translate === value) return;
+    if (!shifts.has(node)) shifts.set(node, node.style.translate);
+    const from = animate ? getComputedStyle(node).translate : '';
+    motion.get(node)?.cancel(); motion.delete(node); node.style.translate = value;
+    node.classList.toggle('desktop-preview-shifted', !!(dx || dy));
+    if (animate) animateShift(node, from, value);
+  }
+  function restoreShifts(animate = true) {
+    for (const [node, value] of shifts) {
+      const from = animate ? getComputedStyle(node).translate : '';
+      motion.get(node)?.cancel(); motion.delete(node); node.style.translate = value;
+      node.classList.remove('desktop-preview-shifted');
+      if (animate && node.isConnected) animateShift(node, from, value);
+    }
+    shifts.clear();
+  }
+  function captureRects() {
+    const nodes = desktop.entries.map(entry => nodeFor(entry.id)); nodes.push(grid.querySelector('#add-shortcut-tile'));
+    return new Map(nodes.filter(Boolean).map(node => [node, node.getBoundingClientRect()]));
+  }
+  function settleFrom(rects) {
+    if (!rects || reducedMotion()) return;
+    for (const [node, before] of rects) if (node.isConnected) {
+      const after = node.getBoundingClientRect(), dx = before.left - after.left, dy = before.top - after.top;
+      if (Math.abs(dx) > .5 || Math.abs(dy) > .5) animateShift(node, `${dx}px ${dy}px`, '0px 0px', 190);
+    }
+  }
+  async function move(id, patch, focusId, reorder, prepared) {
+    try {
+      const layout = prepared || movedLayout(id, patch, reorder);
+      if (JSON.stringify(layout) === JSON.stringify(desktop)) { endDragView(true); return true; }
+      settleRects = captureRects();
+      if (await change(next => M.saveDesktop(next, context.groupId, layout))) {
+        (document.getElementById(focusId) || nodeFor(id))?.focus({ preventScroll: true }); return true;
+      }
+    } catch (error) { message(failure(error)); }
+    settleRects = null; endDragView(true); return false;
+  }
+  function metrics() {
+    const rect = grid.getBoundingClientRect(), style = getComputedStyle(grid), gap = parseFloat(style.columnGap) || 12;
+    return { rect, gap, stepX: (rect.width + gap) / desktop.columns, stepY: (parseFloat(style.gridAutoRows) || 120) + gap };
+  }
+  function target(event, entry, offset = { x: 0, y: 0 }) {
+    const { rect, stepX, stepY } = metrics();
+    if (event.clientX < rect.left || event.clientX >= rect.right || event.clientY < rect.top || event.clientY >= rect.bottom || event.clientY < 0 || event.clientY >= innerHeight) return null;
+    return { x: Math.max(0, Math.min(desktop.columns - entry.w, Math.round((event.clientX - rect.left - offset.x) / stepX))), y: Math.max(0, Math.min(511, Math.round((event.clientY - rect.top - offset.y) / stepY))) };
+  }
+  function clearPreview(animate = true) {
+    ghost?.remove(); ghost = null; previewLayout = null; previewKey = ''; restoreShifts(animate);
+  }
+  function beginDrag() {
+    closeMenu(); dragBaseHeight = grid.getBoundingClientRect().height;
+    grid.style.minBlockSize = `${dragBaseHeight + 132}px`; grid.classList.add('desktop-drag-active');
+  }
+  function stopScroll() { if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = 0; updatePreview = null; }
+  function endDragView(animate = true) {
+    clearPreview(animate); stopScroll(); dragAvatar?.remove(); dragAvatar = null; dropPending = false;
+    grid?.classList.remove('desktop-drag-active'); if (grid) grid.style.minBlockSize = '';
+    grid?.querySelectorAll('.widget-dragging, .desktop-native-dragging').forEach(node => node.classList.remove('widget-dragging', 'desktop-native-dragging'));
   }
   function cancelDrag() {
-    pointerDrag = null; iconDrag = null;
-    for (const card of cards.values()) card.classList.remove('widget-dragging');
-    endDragView(); g.OpenTabDesktop?.endDrag();
+    if (dropPending) return; // Escape cannot revoke a transaction already released.
+    pointerDrag = null; iconDrag = null; endDragView(true); g.OpenTabDesktop?.endDrag();
+  }
+  function releaseDrag() {
+    pointerDrag = null; iconDrag = null; dropPending = true; stopScroll(); dragAvatar?.remove(); dragAvatar = null; g.OpenTabDesktop?.endDrag();
   }
   function autoScroll(y, update) {
-    pointerY = y; updatePreview = update;
-    if (scrollFrame) return;
+    pointerY = y; updatePreview = update; if (scrollFrame) return;
     const tick = () => {
       if (!pointerDrag && !iconDrag) { scrollFrame = 0; return; }
       const scroller = document.getElementById('content') || document.scrollingElement;
       const rect = scroller === document.scrollingElement ? { top: 0, bottom: innerHeight } : scroller.getBoundingClientRect();
       const delta = pointerY < rect.top + 48 ? -Math.min(12, rect.top + 48 - pointerY) : pointerY > rect.bottom - 48 ? Math.min(12, pointerY - rect.bottom + 48) : 0;
-      if (delta) { scroller.scrollTop += delta; updatePreview?.(); }
-      scrollFrame = requestAnimationFrame(tick);
+      if (delta) scroller.scrollTop += delta;
+      updatePreview?.(); scrollFrame = requestAnimationFrame(tick);
     };
     scrollFrame = requestAnimationFrame(tick);
   }
   function preview(id, point, reorder) {
-    clearPreview(); const entry = desktop.entries.find(item => item.id === id); if (!entry || !point) return false;
-    ghost = el('div', undefined, 'desktop-drop-preview'); ghost.setAttribute('aria-hidden', 'true');
-    // Invalid edge destinations must not create implicit columns or rows.
-    let valid = true, destination = point;
-    try { destination = movedLayout(id, point, reorder).entries.find(item => item.id === id); } catch (_) { valid = false; }
-    place(ghost, { ...entry, x: Math.max(0, Math.min(desktop.columns - entry.w, destination.x)), y: Math.max(0, Math.min(511, destination.y)) });
-    ghost.dataset.valid = String(valid); ghost.textContent = t(valid ? '可放置' : '已占用'); grid.append(ghost); return valid;
+    if (!point) { clearPreview(); return null; }
+    const key = JSON.stringify([id, point, reorder]); if (key === previewKey) return previewLayout;
+    let layout;
+    try { layout = movedLayout(id, point, reorder); } catch (_) { clearPreview(); return null; }
+    previewKey = key; previewLayout = layout;
+    const { stepX, stepY, gap } = metrics();
+    const originals = new Map(desktop.entries.map(entry => [entry.id, entry]));
+    for (const entry of layout.entries) {
+      if (entry.id === id) continue;
+      const original = originals.get(entry.id);
+      shift(nodeFor(entry.id), (entry.x - original.x) * stepX, (entry.y - original.y) * stepY);
+    }
+    const add = grid.querySelector('#add-shortcut-tile');
+    if (add) {
+      const point = M.free(layout.entries, 1, 1, desktop.columns);
+      shift(add, (point.x - (parseInt(add.style.gridColumnStart, 10) - 1)) * stepX, (point.y - (parseInt(add.style.gridRowStart, 10) - 1)) * stepY);
+    }
+    if (!ghost) { ghost = el('div', undefined, 'desktop-drop-preview'); ghost.setAttribute('aria-hidden', 'true'); grid.append(ghost); }
+    place(ghost, layout.entries.find(entry => entry.id === id)); ghost.dataset.valid = 'true';
+    grid.style.minBlockSize = `${Math.max(dragBaseHeight + stepY, ...layout.entries.map(entry => (entry.y + entry.h) * stepY - gap + 16))}px`;
+    return layout;
+  }
+  function followPointer(event, drag) {
+    const { rect, stepX, stepY } = metrics();
+    shift(nodeFor(drag.id), event.clientX - drag.offset.x - rect.left - drag.entry.x * stepX, event.clientY - drag.offset.y - rect.top - drag.entry.y * stepY, false);
   }
   function bindDrag(handle, card, id) {
     handle.addEventListener('keydown', event => {
       const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
       if (!delta || event.altKey || event.ctrlKey || event.metaKey) return;
       event.preventDefault(); event.stopPropagation(); if (pending || blocked) return;
-      const entry = desktop.entries.find(item => item.id === id); if (!entry) return;
-      void move(id, { x: entry.x + delta[0], y: entry.y + delta[1] }, handle.id);
+      const entry = desktop.entries.find(item => item.id === id); if (entry) void move(id, { x: entry.x + delta[0], y: entry.y + delta[1] }, handle.id);
     });
     handle.addEventListener('pointerdown', event => {
       if (event.button || !event.isPrimary || pending || blocked) return;
@@ -258,15 +329,16 @@
       if (!pointerDrag || !handle.hasPointerCapture(event.pointerId)) return;
       if (!sameContext(pointerDrag.context)) { cancelDrag(); return; }
       if (!pointerDrag.moved && Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY) < 5) return;
-      if (!pointerDrag.moved) { pointerDrag.moved = true; beginDrag(); }
-      card.classList.add('widget-dragging');
-      const update = () => { if (pointerDrag) preview(id, target(event, pointerDrag.entry, pointerDrag.offset)); };
+      if (!pointerDrag.moved) { pointerDrag.moved = true; beginDrag(); card.classList.add('widget-dragging'); }
+      const update = () => { if (pointerDrag) { preview(id, target(event, pointerDrag.entry, pointerDrag.offset)); followPointer(event, pointerDrag); } };
       update(); autoScroll(event.clientY, update);
     });
     handle.addEventListener('pointerup', event => {
       if (!pointerDrag) return;
-      const drag = pointerDrag, destination = target(event, drag.entry, drag.offset); cancelDrag();
-      if (drag.moved && destination && sameContext(drag.context)) void move(id, destination, handle.id);
+      const drag = pointerDrag, destination = target(event, drag.entry, drag.offset);
+      if (!drag.moved || !destination || !sameContext(drag.context)) { cancelDrag(); return; }
+      const plan = preview(id, destination); if (!plan) { cancelDrag(); return; }
+      followPointer(event, drag); releaseDrag(); void move(id, destination, handle.id, undefined, plan);
     });
     for (const type of ['pointercancel', 'lostpointercapture']) handle.addEventListener(type, () => { if (pointerDrag?.id === id) cancelDrag(); });
   }
@@ -274,7 +346,9 @@
     const widget = state.widgets.find(item => item.id === id), expected = { ...context }; if (!widget) return;
     const previous = M.copy(widget);
     if (await change(next => { next.widgets = next.widgets.filter(item => item.id !== id); }, expected)) {
-      undoRecord = { widget: previous, context: expected, raw, epoch }; message(t('组件已删除，可撤销。')); busy(false); document.getElementById('widget-add').focus();
+      undoRecord = { widget: previous, context: expected, raw, epoch };
+      const receipt = undoRecord; g.OpenTabDesktop?.offerUndo?.(() => undo(), () => undoRecord === receipt && receipt.raw === raw && receipt.epoch === epoch && sameContext(receipt.context));
+      message(''); busy(false); document.getElementById('widget-add').focus();
     }
   }
   async function undo() {
@@ -283,7 +357,7 @@
       if (next.widgets.some(item => item.id === receipt.widget.id)) throw new Error('OCCUPIED');
       if (desktop.entries.some(item => M.overlap(receipt.widget, item))) throw new Error('OCCUPIED');
       next.widgets.push(receipt.widget);
-    }, receipt.context, { keepUndo: true })) { undoRecord = null; message(t('组件已恢复。')); busy(false); }
+    }, receipt.context, { keepUndo: true })) { undoRecord = null; message(''); busy(false); }
   }
   function closeSettings() {
     if (pending) return;
@@ -408,11 +482,11 @@
     library.close(); openSettings(null, def, document.getElementById('widget-add'));
   }
   function openLibrary() {
-    if (library.open || settings.open || !loaded || blocked || pending || !getContext() || g.OpenTabDesktop?.isBlocked()) return;
+    if (library.open || settings.open || (!loaded && !blocked) || pending || !getContext() || g.OpenTabDesktop?.isBlocked()) return;
     libraryTrigger = document.activeElement; closeMenu(); libraryContext = { ...getContext() };
     librarySearch.value = ''; libraryPages?.[0]?.click(); renderLibrary();
     if (!layoutDraft) document.getElementById('desktop-column-count').value = desktop?.columns || 6;
-    libraryStatus.textContent = ''; library.showModal(); busy(false); librarySearch.focus();
+    libraryStatus.textContent = blocked ? lastMessage : ''; g.OpenTabDesktop?.showError?.('', 'widgets'); library.showModal(); busy(false); (blocked ? recovery.querySelector('button') : librarySearch).focus();
   }
   function exportButton() { const control = button('导出恢复数据与草稿', exportDraft); control.dataset.recovery = 'true'; return control; }
   function exportDraft() {
@@ -445,6 +519,7 @@
     if (area !== 'local' || ![KEY, EPOCH, 'folders', 'icons', 'scenes'].some(key => changes[key])) return;
     if (pending) { Object.assign(deferredChanges, changes); return; }
     if (changes[KEY]?.newValue === raw && !changes[EPOCH] && !changes.folders && !changes.icons && !changes.scenes) return;
+    if (pointerDrag || iconDrag) cancelDrag();
     if (dirty() || settings.open || library.open) { blocked = true; message(t('桌面已在其他位置变化。草稿已保留，请导出后重新读取。')); busy(false); }
     else void load(true);
   }
@@ -462,9 +537,8 @@
   async function init() {
     await g.OpenTabI18n.ready;
     grid = document.getElementById('icons-container'); grid.classList.add('desktop-grid');
-    feedback = document.getElementById('desktop-widget-feedback'); status = el('p', '', 'widget-status'); status.setAttribute('role', 'status');
     recovery = el('div'); const reload = button('舍弃设置和注册草稿并重新读取', () => { settingsDraft = false; registrationDraft = false; layoutDraft = false; settings.close(); library.close(); void load(true); }); reload.dataset.recovery = 'true';
-    recovery.append(exportButton(), reload); undoButton = button('撤销删除', () => { void undo(); }); feedback.append(status, undoButton, recovery);
+    recovery.append(exportButton(), reload); undoButton = button('撤销删除', () => { void undo(); }); undoButton.setAttribute('aria-keyshortcuts', 'Control+Z Meta+Z');
     menu = el('div', undefined, 'widget-menu'); menu.id = 'widget-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', t('小组件操作')); menu.hidden = true; document.body.append(menu);
     document.addEventListener('pointerdown', event => { if (!menu.contains(event.target) && !event.target.closest('.widget-more')) closeMenu(); }, true);
     menu.addEventListener('keydown', event => {
@@ -480,7 +554,7 @@
     const closeLibrary = () => { if (pending) return; registrationDraft = false; layoutDraft = false; registerInput.value = JSON.stringify(example, null, 2); library.close(); if (!blocked) message(''); (libraryTrigger?.isConnected ? libraryTrigger : document.getElementById('widget-add'))?.focus({ preventScroll: true }); };
     const close = button('×', closeLibrary); close.setAttribute('aria-label', t('关闭'));
     library.addEventListener('cancel', event => { event.preventDefault(); closeLibrary(); }); close.dataset.close = 'true';
-    const libraryHeader = el('div', undefined, 'widget-dialog-header'); libraryHeader.append(library.firstElementChild, close); library.append(libraryHeader);
+    const libraryHeader = el('div', undefined, 'widget-dialog-header'), headerActions = el('div', undefined, 'widget-header-actions'); close.classList.add('widget-dialog-close'); headerActions.append(undoButton, close); libraryHeader.append(library.firstElementChild, headerActions); library.append(libraryHeader);
     const libraryShell = el('div', undefined, 'widget-library-shell');
     const navigation = el('nav', undefined, 'widget-library-nav'); navigation.setAttribute('aria-label', t('组件库导航'));
     const libraryMain = el('div', undefined, 'widget-library-main');
@@ -526,7 +600,7 @@
       event.preventDefault(); try { if (await registerDefinition(JSON.parse(registerInput.value), libraryContext)) { registrationDraft = false; renderLibrary(); } } catch (error) { message(failure(error)); }
     });
     details.append(form); customPage.append(el('h3', t('自定义组件')), details, exportButton());
-    libraryStatus = el('p', '', 'widget-status'); libraryStatus.setAttribute('role', 'status'); libraryHeader.after(libraryStatus);
+    libraryStatus = el('p', '', 'widget-status'); libraryStatus.setAttribute('role', 'status'); libraryHeader.after(libraryStatus, recovery);
     settings = createDialog('widget-settings', '设置'); settings.setAttribute('aria-labelledby', 'widget-settings-title');
     settings.addEventListener('cancel', event => { event.preventDefault(); closeSettings(); });
     document.getElementById('widget-add').addEventListener('click', openLibrary);
@@ -534,38 +608,65 @@
       if (event.target.closest('.widget-card, .icon-widget, input, textarea, a')) return;
       event.preventDefault(); event.stopPropagation(); openLibrary();
     });
-    const iconIntent = event => {
-      const node = event.target.closest('.icon-widget[data-id]'); if (!node) return undefined;
-      const rect = node.getBoundingClientRect(); return { targetId: `i:${node.dataset.id}`, after: event.clientX > rect.left + rect.width / 2 };
+    // Hit-test saved coordinates, not animated DOM boxes, so previews never chase
+    // their own moving targets or accidentally arm a folder underneath them.
+    const iconHit = event => {
+      const { rect, stepX, stepY, gap } = metrics(), x = (event.clientX - rect.left) / stepX, y = (event.clientY - rect.top) / stepY;
+      const entry = desktop.entries.find(item => x >= item.x && x < item.x + item.w - gap / stepX && y >= item.y && y < item.y + item.h - gap / stepY);
+      if (!entry?.id.startsWith('i:') || entry.id === iconDrag?.id) return null;
+      const center = x > entry.x + .25 && x < entry.x + .75 && y > entry.y + .2 && y < entry.y + .8;
+      const from = iconDrag.entry, forward = from.y < entry.y || from.y === entry.y && from.x < entry.x;
+      return { entry, node: nodeFor(entry.id), after: center ? forward : x > entry.x + .5, center };
+    };
+    const routed = (event, hit) => ({ target: hit.node, currentTarget: grid, shiftKey: event.shiftKey });
+    const nativePreview = () => {
+      if (!iconDrag?.point) return;
+      const event = iconDrag.point, hit = iconHit(event), merge = g.OpenTabFolders?.getMergePreview?.();
+      if (merge?.sourceId === iconDrag.id.slice(2) && merge.targetId === hit?.entry.id.slice(2) && hit.center && !event.shiftKey) { clearPreview(); return; }
+      const reorder = hit ? { targetId: hit.entry.id, after: hit.after } : undefined;
+      preview(iconDrag.id, target(event, iconDrag.entry, iconDrag.offset), reorder);
     };
     grid.addEventListener('dragstart', event => {
       const node = event.target.closest('.icon-widget[data-id]'); if (!node) return;
       if (pending || blocked || projected.columns !== desktop.columns) { event.preventDefault(); event.stopImmediatePropagation(); return; }
-      const rect = node.getBoundingClientRect();
-      iconDrag = { id: `i:${node.dataset.id}`, context: { ...context }, offset: { x: event.clientX - rect.left, y: event.clientY - rect.top } }; beginDrag();
+      const rect = node.getBoundingClientRect(), id = `i:${node.dataset.id}`;
+      iconDrag = { id, entry: desktop.entries.find(item => item.id === id), context: { ...context }, offset: { x: event.clientX - rect.left, y: event.clientY - rect.top } };
+      beginDrag();
+      dragAvatar = node.cloneNode(true); dragAvatar.removeAttribute('id'); dragAvatar.querySelectorAll('[id]').forEach(item => item.removeAttribute('id'));
+      dragAvatar.classList.add('desktop-drag-avatar'); dragAvatar.setAttribute('aria-hidden', 'true'); dragAvatar.inert = true;
+      Object.assign(dragAvatar.style, { width: `${rect.width}px`, height: `${rect.height}px` }); document.body.append(dragAvatar);
+      event.dataTransfer?.setDragImage(dragAvatar, iconDrag.offset.x, iconDrag.offset.y); node.classList.add('desktop-native-dragging');
     }, true);
     grid.addEventListener('dragover', event => {
       if (!iconDrag) return;
-      if (pending || blocked || projected.columns !== desktop.columns || !sameContext(iconDrag.context)) { event.preventDefault(); event.stopImmediatePropagation(); cancelDrag(); return; }
-      const entry = desktop.entries.find(item => item.id === iconDrag.id); if (!entry) return;
-      event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-      const update = () => { if (iconDrag) preview(iconDrag.id, target(event, entry, iconDrag.offset), iconIntent(event)); };
-      update(); autoScroll(event.clientY, update);
-      // Hover can arm a folder merge. Only an explicit drop commits it.
-      if (event.target.closest('.icon-widget[data-id]') && !event.shiftKey) return;
-      event.stopImmediatePropagation(); g.OpenTabFolders?.clearMergeHover(); g.OpenTabDesktop?.hideDropIndicator();
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (pending || blocked || projected.columns !== desktop.columns || !sameContext(iconDrag.context)) { cancelDrag(); return; }
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      iconDrag.point = { clientX: event.clientX, clientY: event.clientY, shiftKey: event.shiftKey };
+      const hit = iconHit(event); g.OpenTabFolders?.setActiveGrid(grid); g.OpenTabDesktop?.hideDropIndicator();
+      if (hit?.center && !event.shiftKey) g.OpenTabFolders?.handleGridDragOver(routed(event, hit), iconDrag.id.slice(2));
+      else g.OpenTabFolders?.clearMergeHover();
+      nativePreview(); autoScroll(event.clientY, nativePreview);
     }, true);
     grid.addEventListener('drop', event => {
       if (!iconDrag) return;
-      const drag = iconDrag, entry = desktop.entries.find(item => item.id === drag.id);
-      const destination = entry && target(event, entry, drag.offset);
-      if (!entry) { cancelDrag(); return; } // Folder extraction uses its existing path.
+      const drag = iconDrag, destination = drag.entry && target(event, drag.entry, drag.offset);
+      if (!drag.entry) { cancelDrag(); return; }
       event.preventDefault(); event.stopImmediatePropagation();
-      if (pending || blocked || projected.columns !== desktop.columns || !sameContext(drag.context)) { cancelDrag(); return; }
-      if (!event.shiftKey && event.target.closest('.icon-widget[data-id]') && g.OpenTabFolders?.handleGridDrop(event, drag.id.slice(2))) { cancelDrag(); return; }
-      const reorder = iconIntent(event); cancelDrag(); if (destination) void move(drag.id, destination, undefined, reorder);
+      if (pending || blocked || !destination || projected.columns !== desktop.columns || !sameContext(drag.context)) { cancelDrag(); return; }
+      const hit = iconHit(event);
+      if (hit?.center && !event.shiftKey && g.OpenTabFolders?.handleGridDrop(routed(event, hit), drag.id.slice(2))) { cancelDrag(); return; }
+      const reorder = hit ? { targetId: hit.entry.id, after: hit.after } : undefined;
+      const plan = preview(drag.id, destination, reorder); if (!plan) { cancelDrag(); return; }
+      const chosen = plan.entries.find(item => item.id === drag.id), { stepX, stepY } = metrics();
+      shift(nodeFor(drag.id), (chosen.x - drag.entry.x) * stepX, (chosen.y - drag.entry.y) * stepY, false);
+      nodeFor(drag.id)?.classList.remove('desktop-native-dragging'); releaseDrag(); void move(drag.id, destination, undefined, reorder, plan);
     }, true);
-    grid.addEventListener('dragleave', event => { if (!grid.contains(event.relatedTarget)) { clearPreview(); g.OpenTabFolders?.clearMergeHover(); } });
+    grid.addEventListener('dragleave', event => {
+      const rect = grid.getBoundingClientRect();
+      if (event.clientX >= rect.left && event.clientX < rect.right && event.clientY >= rect.top && event.clientY < rect.bottom) return;
+      if (iconDrag) iconDrag.point = null; clearPreview(); stopScroll(); g.OpenTabFolders?.clearMergeHover();
+    });
     document.addEventListener('dragend', cancelDrag);
     document.addEventListener('drop', () => { if (iconDrag) cancelDrag(); });
     grid.addEventListener('keydown', event => {
@@ -580,7 +681,7 @@
     context = getContext(); await load(true); context = getContext(); render();
     grid.dataset.widgetsReady = 'true';
     const observer = new ResizeObserver(reflow); observer.observe(grid);
-    g.addEventListener('pagehide', () => { observer.disconnect(); for (const card of cards.values()) cleanCard(card); }, { once: true });
+    g.addEventListener('pagehide', () => { observer.disconnect(); for (const animation of motion.values()) animation.cancel(); motion.clear(); dragAvatar?.remove(); for (const card of cards.values()) cleanCard(card); }, { once: true });
   }
   async function registerDefinition(value, expected = getContext()) {
     const def = M.definition(value);

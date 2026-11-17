@@ -72,7 +72,7 @@ const tick = () => new Promise(setImmediate);
   assert.equal(h.rows()[1].children[0].checked, true); assert.match(h.rows()[1].children[1].children[3].textContent, /重试/);
   h.event(el('all')); h.event(el('confirm')); assert.deepEqual(h.calls[1], [item('b').key], 'only failures may retry');
   h.finish({ ok: true, opened: [item('b').key], failed: [] }); await tick();
-  assert.equal(el('confirm').disabled, true); assert.equal(el('all').disabled, true); assert.match(el('status').textContent, /2/);
+  assert.equal(el('confirm').disabled, true); assert.equal(el('all').disabled, true); assert.equal(el('status').textContent, '', 'success does not add a completion notice');
   assert.equal(h.document.activeElement, el('cancel')); h.event(el('cancel')); assert.equal(h.api.isActive(), false);
 }
 {

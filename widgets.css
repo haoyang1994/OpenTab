@@ -1,26 +1,24 @@
 /* Widgets share the existing desktop and theme; dialogs use opaque form surfaces. */
-:is(.desktop-grid, .widget-feedback) {
+.desktop-grid {
   --text-primary: var(--glass-text); --text-secondary: var(--glass-muted);
   --control-bg: var(--glass-control-bg); --control-hover: var(--glass-control-hover);
   --field-bg: var(--glass-field-bg); --field-border: var(--card-border);
   inline-size: min(100%, var(--layout-max-width, 900px)); flex: none; margin-block: 24px; color: var(--text-primary);
 }
-:is(.desktop-grid, .widget-feedback)[hidden], .widget-feedback [hidden], .widget-dialog [hidden], .widget-menu[hidden] { display: none; }
+.desktop-grid[hidden], .widget-dialog [hidden], .widget-menu[hidden] { display: none; }
 #widget-add { inline-size: auto; block-size: auto; min-block-size: 32px; gap: 6px; padding: 6px 10px; font-size: 12.5px; white-space: nowrap; border-color: var(--nav-border); }
 #widget-add svg { flex: none; }
 #widget-add:focus-visible { outline: 2px solid var(--glass-text); outline-offset: 3px; }
-:is(.widget-card, .widget-feedback) button, .widget-dialog button {
+.widget-card button, .widget-dialog button {
   min-block-size: 36px; min-inline-size: 36px; padding: 7px 10px;
   border: 1px solid var(--field-border); border-radius: var(--radius-sm); background: var(--control-bg);
   color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
 }
-:is(.widget-card, .widget-feedback) button:hover, .widget-dialog button:hover { background: var(--control-hover); }
-:is(.desktop-grid, .widget-feedback) :focus-visible, .widget-dialog :focus-visible { outline: 2px solid var(--accent-1); outline-offset: 2px; }
-:is(.widget-card, .widget-feedback) button:disabled, .widget-dialog button:disabled { opacity: .5; cursor: not-allowed; }
+.widget-card button:hover, .widget-dialog button:hover { background: var(--control-hover); }
+.desktop-grid :focus-visible, .widget-dialog :focus-visible { outline: 2px solid var(--accent-1); outline-offset: 2px; }
+.widget-card button:disabled, .widget-dialog button:disabled { opacity: .5; cursor: not-allowed; }
 .widget-status { font-size: 13px; margin-block: 8px; overflow-wrap: anywhere; }
 .widget-status:empty { display: none; }
-.widget-feedback { inline-size: min(var(--layout-max-width), 94%); margin-inline: auto; }
-.widget-feedback:has(.widget-status:not(:empty)) { padding: 4px 14px 12px; margin-block-end: 12px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--glass-bg); }
 
 /* One grid, stable desktop coordinates, non-persistent narrow projection. */
 #icons-container.desktop-grid, body.layout-fixed-cols #icons-container.desktop-grid {
@@ -45,7 +43,6 @@
 .widget-handle::before { content: '⠿'; opacity: .5; font-size: 15px; flex: none; }
 .desktop-grid .widget-card .widget-more { min-inline-size: 30px; block-size: 30px; padding: 0; background: transparent; border-color: transparent; font-size: 22px; line-height: 1; flex: none; }
 .desktop-grid .widget-card :is(.widget-more, .widget-handle):hover { background: var(--control-hover); }
-.widget-dragging { z-index: 50; opacity: .55; }
 .desktop-grid .widget-dragging .widget-handle { cursor: grabbing; }
 .widget-body { flex: 1; min-block-size: 0; padding: 8px 12px 12px; overflow: auto; overscroll-behavior: contain; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .widget-body p { margin-block: 4px; }
@@ -64,9 +61,8 @@
 .widget-block-label { color: var(--text-secondary); font-size: 12px; }
 .widget-block-number { font-size: 24px; font-variant-numeric: tabular-nums; }
 .widget-block progress { max-inline-size: 100%; flex: 1; min-inline-size: 40px; }
-.desktop-drop-preview { pointer-events: none; z-index: 40; min-inline-size: 0; box-sizing: border-box; align-content: center; text-align: center; padding: 6px; font-size: 12px; border: 2px dashed #16a34a; border-radius: 16px; color: var(--form-text); background: var(--form-surface); box-shadow: inset 0 0 0 4px rgb(22 163 74 / .1); }
-.desktop-drop-preview[data-valid="false"] { border: 3px double #dc2626; box-shadow: inset 0 0 0 4px rgb(220 38 38 / .08); }
-.desktop-drag-active { border-radius: 16px; outline: 1px dashed var(--card-border); outline-offset: 5px; }
+.desktop-drop-preview { pointer-events: none; z-index: 40; min-inline-size: 0; box-sizing: border-box; align-content: center; text-align: center; padding: 6px; font-size: 12px; border: 2px solid color-mix(in srgb, var(--accent-1) 55%, transparent); border-radius: 16px; background: color-mix(in srgb, var(--accent-1) 9%, transparent); }
+.desktop-drag-active { border-radius: 16px; }
 .icon-widget.folder-merge-ready { outline: 2px solid var(--accent-1); outline-offset: 4px; }
 
 /* The only persistent card action is More. Destructive actions live in its menu. */
@@ -157,5 +153,16 @@ body.theme-light :is(.widget-dialog, .widget-menu) { --widget-danger: #b91c1c; }
   .widget-dialog, .widget-menu { --form-surface: Canvas; --form-field: Canvas; --form-text: CanvasText; --form-muted: CanvasText; --form-border: CanvasText; --text-primary: CanvasText; --text-secondary: CanvasText; }
   .desktop-grid .widget-card { background: Canvas; color: CanvasText; --text-primary: CanvasText; --text-secondary: CanvasText; --control-bg: ButtonFace; --control-hover: ButtonFace; --field-border: ButtonText; }
   .widget-menu .widget-menu-delete, .widget-editor-row > button { color: ButtonText; }
-  .desktop-drop-preview { border-color: Highlight; } .desktop-drop-preview[data-valid="false"] { border-color: Mark; }
+  .desktop-drop-preview { border-color: Highlight; }
 }
+
+/* Preview changes only translations; the saved grid and hit targets stay stable. */
+.desktop-grid.desktop-drag-active > :is(.desktop-preview-shifted, .widget-dragging) { will-change: translate; }
+.desktop-grid .widget-card.widget-dragging { opacity: .96; z-index: 60; pointer-events: none; box-shadow: 0 20px 40px -14px rgb(15 23 42 / .4); }
+.desktop-grid .desktop-preview-shifted { position: relative; z-index: 2; }
+.desktop-grid .desktop-native-dragging { opacity: .15 !important; }
+.desktop-drag-avatar { position: fixed !important; inset: -10000px auto auto -10000px !important; margin: 0 !important; opacity: .95 !important; pointer-events: none; z-index: -1; }
+@media (prefers-reduced-motion: reduce) { .desktop-grid.desktop-drag-active > :is(.desktop-preview-shifted, .widget-dragging) { will-change: auto; } }
+
+.widget-header-actions { display: flex; align-items: center; gap: 8px; }
+.widget-dialog-header .widget-dialog-close { flex: none; font-size: 24px; font-weight: 400; padding: 0; inline-size: 36px; block-size: 36px; background: transparent; border-color: transparent; }

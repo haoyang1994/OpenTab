@@ -243,8 +243,8 @@
         // projection. Groups, profiles, other scenes and device hints stay put.
         await write(mode === 2 ? { icons } : { icons, folders });
       });
-      setStatus(t('已添加到 OpenTab。'));
-      setTimeout(() => window.close(), 550);
+      setStatus('');
+      window.close();
     } catch (error) {
       if (error.code === 'POPUP_TARGET_CHANGED') {
         // Refresh the choices, but require an explicit new selection. Keep the

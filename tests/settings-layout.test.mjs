@@ -382,8 +382,8 @@ async function runSettingsLayoutE2E() {
     await page.waitForSelector('#inline-dialog:not(.hidden)');
     await page.locator('#inline-dialog-actions button', { hasText: '恢复默认' }).click();
     await page.waitForFunction(() => document.getElementById('inline-dialog').classList.contains('hidden'));
-    await page.waitForSelector('#toast:not(.hidden)');
-    assert.match((await page.locator('#toast').textContent()) || '', /撤销/);
+    await page.waitForFunction(() => OpenTabDesktop.canUndo());
+    assert.equal(await page.locator('#toast').isVisible(), false, 'restoring defaults is silent');
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--layout-icon-size').trim() === '56px');
     assert.deepEqual(
       await page.$$eval('#icons-container .icon-widget[data-id]', (els) => els.map((el) => el.dataset.id)),
@@ -391,7 +391,7 @@ async function runSettingsLayoutE2E() {
       'AC4 restore does not touch shortcuts'
     );
     await page.click('#close-settings');
-    await page.locator('#toast button').click();
+    await page.locator('#settings-btn').focus(); await page.keyboard.press('ControlOrMeta+z');
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--layout-icon-size').trim() === '80px');
     console.log('AC4 section restore + undo passed');
     await openSettings(page);

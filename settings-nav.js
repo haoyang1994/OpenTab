@@ -606,7 +606,7 @@
               if (host.showToast) host.showToast(t('相关设置已变化，无法安全撤销。'));
               return false;
             }
-            if (host.showToast) host.showToast(t('已恢复'), { duration: 1500 });
+            if (host.showToast) host.showToast(t('已恢复'), { kind: 'success' });
             return true;
           },
           duration: 6000

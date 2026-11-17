@@ -211,8 +211,6 @@
   let draggingIconId = null;
   let dragPointerY = 0;
   let dragScrollRaf = 0;
-  let toastTimer = 0;
-  let pendingUndo = null;
   const { rememberFocus, restoreFocus } = OpenTabAccessibility.createFocus();
   let gridEventsBound = false;
   const ICON_DND_TYPE = 'application/x-opentab-icon';
@@ -301,29 +299,7 @@
     navigateTo(href);
   }
 
-  function showToast(text, options) {
-    const toast = elements.toast;
-    if (!toast) return;
-    const opts = options || {};
-    toast.textContent = text;
-    if (opts.actionLabel && opts.onAction) {
-      const actionIntent = opts.intent || workspace.captureIntent();
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = opts.actionLabel;
-      btn.onclick = () => {
-        clearTimeout(toastTimer);
-        toast.classList.add('hidden');
-        pendingUndo = null;
-        if (!workspace.isIntentCurrent(actionIntent)) { showToast(t('内容已变化，无法执行旧操作。')); return; }
-        opts.onAction();
-      };
-      toast.appendChild(btn);
-    }
-    toast.classList.remove('hidden');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toast.classList.add('hidden'); pendingUndo = null; }, opts.duration || 6000);
-  }
+  const { offerUndo, canUndo, undo: undoLastAction, handleKeydown: handleUndo, showError: showToast } = OpenTabAccessibility.createFeedback({ toast: elements.toast, getWorkspace: () => workspace, t });
 
   function hideDropIndicator() {
     if (elements.dropIndicator) elements.dropIndicator.style.display = 'none';
@@ -1088,7 +1064,7 @@
     state.icons = next;
     const saved = persistOrRollback(before);
     refreshIconViews();
-    if (await saved) showToast(t('已恢复'), { duration: 1500 });
+    return await saved;
   }
 
   async function deleteIcon(iconId) {
@@ -1098,7 +1074,6 @@
     const snapshot = { icon: { ...state.icons[index] }, index };
     const before = state.icons.slice();
     state.icons = before.filter((icon) => icon.id !== iconId);
-    pendingUndo = snapshot;
     const intent = workspace.captureIntent(), saved = persistOrRollback(before);
     refreshIconViews();
     if (!(await saved) || !workspace.isIntentCurrent(intent)) return;
@@ -1519,6 +1494,7 @@
   });
 
   document.addEventListener('keydown', handleEscape);
+  document.addEventListener('keydown', handleUndo);
   document.addEventListener('dragover', (event) => { if (draggingIconId) event.preventDefault(); });
   document.addEventListener('drop', (event) => { if (draggingIconId) { event.preventDefault(); endDesktopDrag(); } });
 
@@ -1711,7 +1687,7 @@
       canDiscard: () => OpenTabSceneHome.canDiscard({ isSaving: iconSaveGate.has(iconDraftIntent), todoAddPending }),
       closeAddIconModal, elements
     }),
-    onViewDeferred() { showToast(t('场景已保存，请完成或取消当前编辑后重新选择。')); },
+    onViewDeferred() { /* The scene manager retains its inline state; no global success notice. */ },
     beforeSwitch: () => (window.OpenTabWidgets?.canSwitch() !== false) && OpenTabSceneHome.canSwitch({ isSaving: iconSaveGate.has(iconDraftIntent), todoAddPending, elements }),
     onInvalidate() {
       OpenTabBingCache.invalidatePending(); OpenTabSiteSelection.cancel(false);
@@ -1728,6 +1704,7 @@
   // Context bridge: widgets retain their own entity model and use the shared
   // atomic coordinator. Website/folder actions continue to use their existing host.
   window.OpenTabDesktop = Object.freeze({
+    offerUndo, canUndo, undo: undoLastAction, showError: (text, source) => showToast(text, { source }),
     getContext: () => ({ groupId: state.currentFolderId, sceneId: sceneRuntime?.getView()?.sceneId || 'scene-default', generation: sceneRuntime?.getView()?.generation || 0 }),
     getSnapshot: () => ({ icons: state.icons, folders: state.folders, columns: window.OpenTabLayout?.get()?.layoutColumns >= 4 ? OpenTabLayout.get().layoutColumns : 6 }),
     isBlocked: () => sceneReadOnly || sceneInteractionBusy,

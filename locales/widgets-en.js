@@ -71,3 +71,5 @@ globalThis.OpenTabI18n?.register({
   '恢复数据': 'Recovery data', '拖动移动，方向键调整位置': 'Drag to move, or use arrow keys',
   '请先增加桌面列数，再添加此组件。': 'Increase the desktop column count before adding this widget.'
 });
+
+globalThis.OpenTabI18n?.register({ '超出桌面边界，原布局已保留。': 'Outside the desktop bounds. Your layout is unchanged.' });

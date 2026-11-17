@@ -984,12 +984,11 @@ async function runExtensionE2E() {
     await page.locator('#icons-container .icon-widget[data-id="b"]').click({ button: 'right' });
     await page.waitForSelector('#icon-context-menu:not(.hidden)');
     await page.click('#delete-icon-btn');
-    await page.waitForSelector('#toast:not(.hidden)');
-    const toastText = (await page.locator('#toast').textContent()) || '';
-    assert.ok(toastText.includes('撤销'), 'T6: toast offers undo');
+    await page.waitForFunction(() => OpenTabDesktop.canUndo());
+    assert.equal(await page.locator('#toast').isVisible(), false, 'T6: deletion is silent');
     assert.ok(!(await desktopOrder(page)).includes('b'), 'T6: B removed from grid');
-    await page.screenshot({ path: path.join(ARTIFACTS, 't6-delete-undo-toast.png') });
-    await page.locator('#toast button').click();
+    await page.screenshot({ path: path.join(ARTIFACTS, 't6-delete-quiet.png') });
+    await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z');
     await page.waitForTimeout(200);
     assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c'], 'T6: undo restores B');
     await page.locator('#icons-container .icon-widget[data-id="b"]').click({ button: 'right' });
@@ -1320,10 +1319,10 @@ async function runExtensionE2E() {
     const folderId = ac1Desktop.find((id) => id !== 'c');
     const folderName = await page.locator(`${widgetSelector(folderId)} .icon-name`).textContent();
     assert.equal((folderName || '').trim(), '文件夹', 'AC1: default folder name');
-    await page.waitForSelector('#toast:not(.hidden)');
-    assert.ok(((await page.locator('#toast').textContent()) || '').includes('撤销'), 'AC1: undo toast');
+    await page.waitForFunction(() => OpenTabDesktop.canUndo());
+    assert.equal(await page.locator('#toast').isVisible(), false, 'AC1: merge is silent');
     await page.screenshot({ path: path.join(ARTIFACTS, 'ac1-folder-merge.png') });
-    await page.locator('#toast button').click();
+    await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z');
     await page.waitForTimeout(200);
     assert.deepEqual(await desktopOrder(page), ['a', 'b', 'c'], 'AC1: undo restores A and B');
     await resetHome(page, {
@@ -1507,8 +1506,8 @@ async function runExtensionE2E() {
     await page.locator(groupSelector(HOME)).click();
     await page.waitForTimeout(200);
     assert.ok((await desktopOrder(page)).includes('a'), 'AC4: move-to-default keeps icon');
-    await page.waitForSelector('#toast:not(.hidden)');
-    await page.locator('#toast button').click();
+    await page.waitForFunction(() => OpenTabDesktop.canUndo());
+    await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z');
     await page.waitForTimeout(200);
     assert.ok(
       await page.evaluate(() => [...document.querySelectorAll('.group-tab')].some((tab) => tab.textContent.includes('改名组'))),
@@ -2054,8 +2053,7 @@ async function runExtensionE2E() {
       const ids = (result.icons || []).map((icon) => icon.id);
       return ids.includes('cloud-1') && (result.backupSnapshots || []).length > 0;
     }, null, { timeout: 8000 });
-    await page.waitForSelector('#toast:not(.hidden)');
-    assert.match((await page.locator('#toast').textContent()) || '', /云端/);
+    assert.equal(await page.locator('#toast').isVisible(), false, 'sync replacement is silent');
     console.log('BUG-023 sync conflict choice passed');
 
     assert.ok(Array.isArray(localManifest.optional_permissions), 'AC7: optional_permissions present');

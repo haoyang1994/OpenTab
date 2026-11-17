@@ -517,12 +517,12 @@
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
-    updateBackupStatus(t('已下载备份文件。'), false);
+    updateBackupStatus('', false);
   }
 
   async function handleSaveSnapshot() {
     await saveSnapshotRecord('manual');
-    updateBackupStatus(t('已保存快照。'), false);
+    updateBackupStatus('', false);
   }
 
   async function handleRestoreLatestSnapshot() {
@@ -543,26 +543,13 @@
       ? importResultMessage(notice.iconCount, notice.groupCount) : t(notice.text);
   }
 
-  function showImportToast(notice) {
-    if (typeof document === 'undefined' || !notice || !notice.text) return;
-    const toast = document.getElementById('toast');
-    if (!toast) return;
-    toast.textContent = noticeMessage(notice);
-    if (notice.canUndo) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = t('撤销');
-      btn.onclick = () => {
-        toast.classList.add('hidden');
-        undoLastImport().catch((error) => {
-          toast.textContent = undoFailureMessage(error);
-          toast.classList.remove('hidden');
-        });
-      };
-      toast.appendChild(btn);
-    }
-    toast.classList.remove('hidden');
-    setTimeout(() => { toast.classList.add('hidden'); }, notice.canUndo ? 8000 : 5000);
+  function offerImportUndo(notice) {
+    if (!notice) return;
+    if (notice.error) { globalThis.OpenTabDesktop?.showError?.(noticeMessage(notice)); return; }
+    if (notice.canUndo) globalThis.OpenTabDesktop?.offerUndo?.(async () => {
+      try { return (await undoLastImport()).ok; }
+      catch (error) { globalThis.OpenTabDesktop?.showError?.(undoFailureMessage(error)); return false; }
+    }, () => true, null);
   }
 
   function bindBackupUi() {
@@ -1127,7 +1114,7 @@
       return notice;
     }).then((notice) => {
       if (!notice) return null;
-      if (notice.text) setStatus(noticeMessage(notice), !!notice.error);
+      if (notice.text) setStatus(notice.error ? noticeMessage(notice) : '', !!notice.error);
       if (typeof callback === 'function') callback(notice);
       return notice;
     });
@@ -1310,7 +1297,7 @@
       setStatus(result.message, true);
       return result;
     }
-    setStatus(t('已撤销上次导入。'), false);
+    setStatus('', false);
     refreshUndoButton();
     reloadPage(result.navigation);
     return result;
@@ -1427,7 +1414,7 @@
     if (settingsBtn) {
       settingsBtn.addEventListener('click', () => { refreshUndoButton(); });
     }
-    consumeNotice((notice) => { showImportToast(notice); }).catch(() => setStatus(t('读取导入状态失败，请重试。'), true));
+    consumeNotice((notice) => { offerImportUndo(notice); }).catch(() => setStatus(t('读取导入状态失败，请重试。'), true));
     refreshUndoButton();
   }
 

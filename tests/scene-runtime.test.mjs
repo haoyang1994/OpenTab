@@ -588,7 +588,7 @@ for (const active of [false, true]) {
   let addOpened = 0;
   Object.assign(a.g, { document: doc, window: a.g, elements, state: a.state,
     CustomEvent: class { constructor(type) { this.type = type; } }, Event: class { constructor(type) { this.type = type; } },
-    endDesktopDrag() {}, restoreFocus() {}, hideIconContextMenu() {}, rememberFocus() {}, openAddIconModal() { addOpened++; },
+    endDesktopDrag() {}, restoreFocus() {}, handleUndo() {}, hideIconContextMenu() {}, rememberFocus() {}, openAddIconModal() { addOpened++; },
     closeAddIconModal() {}, toggleTimezoneSelector() {}, toggleCalendar() {},
     OpenTabIcons: { handleEscape: () => false, closeChanger() {} }, OpenTabSiteList: { isBusy: () => false },
     OpenTabSiteSelection: { init() {}, isPending: () => false, cancel() {} }, OpenTabSettingsNav: { handleEscape: () => false, close() {} }
