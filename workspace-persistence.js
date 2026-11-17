@@ -10,7 +10,7 @@
   const EPOCH_KEY = 'opentab.workspaceEpoch';
   const SCHEMA_KEY = 'opentab.sceneSchemaVersion';
   const ENTITIES = ['icons', 'folders', 'todos', 'scenes', 'sceneProfiles'];
-  const SCENE_GRAPH_KEYS = [SCHEMA_KEY, ...ENTITIES];
+  const SCENE_GRAPH_KEYS = [SCHEMA_KEY, ...ENTITIES, 'widgetWorkspace'];
   const SCENE_VIEW_KEYS = ['currentFolderId', 'background', 'bingIndex'];
   function sceneSchema() { return root.OpenTabSceneSchema || (node ? require('./scene-schema.js') : null); }
   function validateSceneState(value) {
@@ -20,7 +20,7 @@
     if (!schema) throw Object.assign(new Error('Scene data requires a compatible OpenTab version. Data is unchanged.'), { code: 'SCENE_SCHEMA_UNAVAILABLE' });
     schema.validate(value);
   }
-  const KEYS = ['icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'windowFullscreenShortcutEnabled', 'timezone', 'timezoneMode', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode', SCHEMA_KEY, 'scenes', 'sceneProfiles', 'lastOpenedSceneId', 'todoButtonVisible', EPOCH_KEY];
+  const KEYS = ['widgetWorkspace', 'icons', 'folders', 'currentFolderId', 'todos', 'todoPanelOpen', 'background', 'clockFormat', 'showSeconds', 'uiOpacity', 'uiBlur', 'iconFrameEnabled', 'openInNewTab', 'windowFullscreenShortcutEnabled', 'timezone', 'timezoneMode', 'bingIndex', 'themeMode', 'accentHue', 'particlesEnabled', 'gradientFlow', 'minimalMode', SCHEMA_KEY, 'scenes', 'sceneProfiles', 'lastOpenedSceneId', 'todoButtonVisible', EPOCH_KEY];
   const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   function stable(value) {
     if (Array.isArray(value)) return value.map(stable);
@@ -72,7 +72,7 @@
   }
   function merge(base = {}, next = {}, latest = {}) {
     const result = clone(latest);
-    const graphChanged = ENTITIES.some((key) => Object.hasOwn(next, key) && !equal(base[key], next[key]));
+    const graphChanged = [...ENTITIES, 'widgetWorkspace'].some((key) => Object.hasOwn(next, key) && !equal(base[key], next[key]));
     if (graphChanged && (base[EPOCH_KEY] || 0) !== (latest[EPOCH_KEY] || 0)) throw conflict();
     for (const key of Object.keys(next)) {
       if (key === EPOCH_KEY || equal(base[key], next[key])) continue;
@@ -161,6 +161,36 @@
           validateSceneState(snapshot);
           const next = { ...snapshot, ...payload };
           validateSceneState(next);
+          // Ordinary group deletion must explicitly move/delete widgets in the
+          // same transaction. A concurrent widget addition cannot become orphaned.
+          // Replacement/import/sync increments the epoch and keeps recovery data.
+          if (Object.hasOwn(payload, 'folders') && !Object.hasOwn(payload, EPOCH_KEY) && snapshot.widgetWorkspace !== undefined) {
+            const model = root.OpenTabWidgetModel || (node ? require('./lib/widget-model.js') : null);
+            if (!model) throw new Error('WIDGET_MODEL_UNAVAILABLE');
+            const before = model.parse(snapshot.widgetWorkspace), after = model.parse(next.widgetWorkspace);
+            const removed = new Set((snapshot.folders || []).filter(group => !(next.folders || []).some(item => item.id === group.id)).map(group => group.id));
+            if (before.widgets.some(widget => removed.has(widget.groupId) && after.widgets.some(item => item.id === widget.id && item.groupId === widget.groupId))) throw conflict();
+          }
+          if (Object.hasOwn(payload, 'widgetWorkspace')) {
+            const model = root.OpenTabWidgetModel || (node ? require('./lib/widget-model.js') : null);
+            if (!model) throw new Error('WIDGET_MODEL_UNAVAILABLE');
+            model.parse(payload.widgetWorkspace);
+            // Any writer that upgrades v1 (including an early group operation)
+            // must retain its exact raw source atomically, not just the UI migrator.
+            let oldVersion;
+            try { oldVersion = JSON.parse(snapshot.widgetWorkspace).version; } catch (_) { /* Explicit restore can replace damaged raw data. */ }
+            if (oldVersion === 1 && typeof payload.widgetWorkspace === 'string' && JSON.parse(payload.widgetWorkspace).version === 2 && !Object.hasOwn(payload, 'opentab.widgetMigrationBackup')) {
+              const key = 'opentab.widgetMigrationBackup';
+              // Normal commit snapshots omit recovery blobs. Read this key
+              // under the same lock before appending, so no earlier record is lost.
+              await read([key]);
+              const previous = snapshot[key];
+              const entries = previous?.version === 2 && Array.isArray(previous.entries) ? clone(previous.entries) : Object.hasOwn(snapshot, key) ? [clone(previous)] : [];
+              if (!entries.some(entry => entry?.raw === snapshot.widgetWorkspace)) entries.push({ version: 1, raw: snapshot.widgetWorkspace, reason: 'before-unified-desktop' });
+              payload = { ...payload, [key]: { version: 2, entries } };
+              next[key] = payload[key];
+            }
+          }
           await call(chrome, area.set.bind(area), payload);
           snapshot = clone(next);
         };

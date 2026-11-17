@@ -24,6 +24,11 @@
     if (!value) fail('SCENE_SYNC_UNAVAILABLE');
     return value;
   }
+  function widgets() {
+    const value = typeof module === 'object' && module.exports ? require('./lib/widget-model.js') : root.OpenTabWidgetModel;
+    if (!value) fail('WIDGET_MODEL_UNAVAILABLE');
+    return value;
+  }
   function record(value) { return !!value && typeof value === 'object' && !Array.isArray(value) && Object.prototype.toString.call(value) === '[object Object]'; }
   function keys(value, allowed) { if (!record(value) || Object.keys(value).some(key => !allowed.includes(key))) fail(); }
   function pick(value, fields) { return Object.fromEntries(fields.filter(key => own(value, key) && value[key] !== undefined).map(key => [key, clone(value[key])])); }
@@ -92,6 +97,7 @@
     });
     keys(payload.settings, globalKeys(allowed));
     for (const [key, value] of Object.entries(payload.settings)) {
+      if (key === 'widgetWorkspace') { widgets().parse(value); continue; }
       if (key === 'customSearchEngines') {
         if (!Array.isArray(value)) fail();
         value.forEach(item => { keys(item, ['id', 'name', 'template']); if (Object.values(item).some(field => typeof field !== 'string')) fail(); });
@@ -148,6 +154,28 @@
     next.folders = payload.folders.map(item => mergeRecord(item, groups.get(item.id), GROUP_KEYS)).concat(clone(recoveryGroups));
     next.icons = payload.icons.map(item => mergeSite(item, icons.get(item.id))).concat(clone(recoveryIcons));
     Object.assign(next, clone(payload.settings));
+    if (own(payload.settings, 'widgetWorkspace') && local.widgetWorkspace !== undefined) {
+      // The remote graph may omit locally recovered scenes/groups. Keep their
+      // instances, layouts and definitions, including unknown local types.
+      const model = widgets(), old = model.parse(local.widgetWorkspace), incoming = model.parse(payload.settings.widgetWorkspace);
+      const remoteGroups = new Set(payload.folders.map(group => group.id));
+      const retained = old.widgets.filter(widget => !remoteGroups.has(widget.groupId));
+      const neededTypes = new Set(retained.map(widget => widget.type));
+      for (const def of old.definitions.filter(def => neededTypes.has(def.id))) {
+        const match = incoming.definitions.find(item => item.id === def.id);
+        if (match && !equal(match, def)) fail('WIDGET_RECOVERY_COLLISION');
+        if (!match) incoming.definitions.push(def);
+      }
+      for (const widget of retained) {
+        const match = incoming.widgets.find(item => item.id === widget.id);
+        if (match && !equal(match, widget)) fail('WIDGET_RECOVERY_COLLISION');
+        if (!match) incoming.widgets.push(widget);
+      }
+      for (const page of old.pages.filter(page => !remoteGroups.has(page.groupId))) {
+        if (!incoming.pages.some(item => item.groupId === page.groupId)) incoming.pages.push(page);
+      }
+      next.widgetWorkspace = model.serialize(incoming);
+    }
     schema().validate(next);
     return { patch: pick(next, ['scenes', 'sceneProfiles', 'folders', 'icons'].concat(Object.keys(payload.settings))), recoveredSceneIds: recovered.map(item => item.id) };
   }

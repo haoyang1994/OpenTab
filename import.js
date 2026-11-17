@@ -275,6 +275,7 @@
   const BACKUP_MAX_SNAPSHOTS = 20;
   const BACKUP_SNAPSHOT_MAX_BYTES = 1500 * 1024;
   const BACKUP_CORE_KEYS = [
+    'widgetWorkspace',
     ...SCENE_KEYS,
     'icons',
     'folders',
@@ -369,6 +370,24 @@
       GRAPH_KEYS.forEach(key => { merged[key] = restored[key]; });
       const requested = payload.currentFolderId;
       merged.currentFolderId = restored.folders.some(group => group.id === requested) ? requested : HOME_GROUP_ID;
+    }
+    if (payload.widgetWorkspace === undefined && current.widgetWorkspace !== undefined) {
+      // A pre-widget backup has no ownership information for local instances.
+      // Retain them for explicit recovery, never attach them to unrelated groups
+      // that merely reuse the same IDs in the restored graph.
+      const model = typeof module === 'object' && module.exports ? require('./lib/widget-model.js') : globalThis.OpenTabWidgetModel;
+      if (!model) throw compatibilityError('WIDGET_MODEL_UNAVAILABLE');
+      const preserved = model.parse(current.widgetWorkspace);
+      const occupied = new Set((merged.folders || []).map(group => group.id)), mapping = new Map();
+      let serial = 0;
+      for (const item of [...preserved.widgets, ...preserved.pages]) {
+        if (!mapping.has(item.groupId)) {
+          let id; do { id = `recovered-widgets-${serial++}`; } while (occupied.has(id));
+          occupied.add(id); mapping.set(item.groupId, id);
+        }
+        item.groupId = mapping.get(item.groupId);
+      }
+      merged.widgetWorkspace = model.serialize(preserved);
     }
     if (typeof OpenTabSearch !== 'undefined' && OpenTabSearch.normalizeBackup) {
       const normalizedSearch = OpenTabSearch.normalizeBackup({ ...current, ...payload });

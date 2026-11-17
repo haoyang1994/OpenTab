@@ -269,5 +269,6 @@ OpenTabI18n.register({
   "已保存本地图标": "Custom icon saved",
   "专注中": "Focusing",
   "已暂停": "Paused",
-  "已完成": "Completed"
+  "已完成": "Completed",
+  "添加小组件": "Add widget"
 });

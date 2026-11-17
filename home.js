@@ -944,7 +944,10 @@
 
     const mountNewIcons = () => {
       if (token !== iconSwitchToken) return;
-      container.innerHTML = '';
+      const focusedIconId = container.contains(document.activeElement) ? document.activeElement.closest('.icon-widget[data-id]')?.dataset.id : null;
+      // Widget nodes own live content and renderer cleanup. Never destroy them
+      // when the existing website renderer refreshes a group.
+      container.querySelectorAll('.icon-widget, .add-shortcut-tile').forEach(node => node.remove());
       nextIcons.forEach((icon, idx) => {
         const node = createIconWidget(icon);
         if (!skipEnter) {
@@ -954,8 +957,10 @@
         container.appendChild(node);
       });
       container.appendChild(createAddShortcutTile());
+      window.OpenTabWidgets?.attach(container);
+      if (focusedIconId) container.querySelector(iconSelector(focusedIconId))?.focus({ preventScroll: true });
       window.OpenTabFolders?.animateGroupIcons?.(container);
-      if (elements.iconsEmptyHint) elements.iconsEmptyHint.classList.toggle('hidden', nextIcons.length !== 0);
+      if (elements.iconsEmptyHint) elements.iconsEmptyHint.classList.toggle('hidden', nextIcons.length !== 0 || Boolean(container.querySelector('.widget-card')));
       if (!skipEnter) {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -984,6 +989,7 @@
 
   function selectFolder(folderId, animated = false) {
     if (!getFolderById(folderId)) return false;
+    if (window.OpenTabWidgets?.canSwitch() === false) { showToast(t('请先保存或取消小组件编辑。')); return false; }
     if (sceneRuntime?.isActive()) return window.OpenTabSceneNavigation.selectGroup(folderId);
     state.currentFolderId = folderId;
     const saved = saveState();
@@ -1508,7 +1514,8 @@
     event.preventDefault();
     hideIconContextMenu();
     rememberFocus();
-    openAddIconModal();
+    if (window.OpenTabWidgets) OpenTabWidgets.openLibrary();
+    else openAddIconModal();
   });
 
   document.addEventListener('keydown', handleEscape);
@@ -1705,7 +1712,7 @@
       closeAddIconModal, elements
     }),
     onViewDeferred() { showToast(t('场景已保存，请完成或取消当前编辑后重新选择。')); },
-    beforeSwitch: () => OpenTabSceneHome.canSwitch({ isSaving: iconSaveGate.has(iconDraftIntent), todoAddPending, elements }),
+    beforeSwitch: () => (window.OpenTabWidgets?.canSwitch() !== false) && OpenTabSceneHome.canSwitch({ isSaving: iconSaveGate.has(iconDraftIntent), todoAddPending, elements }),
     onInvalidate() {
       OpenTabBingCache.invalidatePending(); OpenTabSiteSelection.cancel(false);
       OpenTabFolders.closeOverlay(); hideIconContextMenu();
@@ -1718,6 +1725,15 @@
     loadState();
   });
 
+  // Context bridge: widgets retain their own entity model and use the shared
+  // atomic coordinator. Website/folder actions continue to use their existing host.
+  window.OpenTabDesktop = Object.freeze({
+    getContext: () => ({ groupId: state.currentFolderId, sceneId: sceneRuntime?.getView()?.sceneId || 'scene-default', generation: sceneRuntime?.getView()?.generation || 0 }),
+    getSnapshot: () => ({ icons: state.icons, folders: state.folders, columns: window.OpenTabLayout?.get()?.layoutColumns >= 4 ? OpenTabLayout.get().layoutColumns : 6 }),
+    isBlocked: () => sceneReadOnly || sceneInteractionBusy,
+    adoptWidgets: value => { state.widgetWorkspace = value; },
+    endDrag: endDesktopDrag, hideDropIndicator
+  });
   applyBootMirror();
   loadState();
   OpenTabWeather.init({ onUpdate: (data) => {

@@ -33,6 +33,7 @@
   const utf8 = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
   const utf8dec = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
   const SYNC_SETTING_KEYS = [
+    'widgetWorkspace',
     'searchEngine',
     'customSearchEngines',
     'searchOpenInNewTab',

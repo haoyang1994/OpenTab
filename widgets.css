@@ -1,0 +1,185 @@
+:is(.desktop-grid, .widget-feedback) {
+  --text-primary: var(--glass-text); --text-secondary: var(--glass-muted);
+  --control-bg: var(--glass-control-bg); --control-hover: var(--glass-control-hover);
+  --field-bg: var(--glass-field-bg); --field-border: color-mix(in srgb, var(--glass-text) 75%, transparent);
+  inline-size: min(100%, var(--layout-max-width, 900px)); flex: none; margin-block: 24px; color: var(--text-primary);
+}
+:is(.desktop-grid, .widget-feedback)[hidden], :is(.desktop-grid, .widget-feedback) [hidden], .widget-dialog [hidden] { display: none; }
+#widget-add { inline-size: auto; block-size: auto; min-block-size: 32px; gap: 6px; padding: 6px 10px; font-size: 12.5px; white-space: nowrap; border-color: color-mix(in srgb, var(--glass-text) 75%, transparent); }
+#widget-add svg { flex: none; }
+#widget-add:focus-visible { outline: 2px solid var(--glass-text); outline-offset: 3px; }
+.widget-toolbar { display: flex; align-items: center; padding: 12px 16px; margin-block-end: 12px; }
+.widget-toolbar h2 { font-size: 14px; font-weight: 600; }
+.widget-toolbar, .widget-card, .widget-feedback:has(.widget-status:not(:empty)) {
+  background: var(--glass-bg); border: 1px solid var(--card-border); border-radius: 16px;
+  backdrop-filter: blur(var(--ui-blur-strong)); -webkit-backdrop-filter: blur(var(--ui-blur-strong));
+}
+:is(.widget-card, .widget-feedback) button, .widget-dialog button, .widget-settings summary, .widget-help summary {
+  min-block-size: 36px; min-inline-size: 36px; padding: 7px 10px;
+  border: 1px solid var(--section-border); border-radius: var(--radius-sm); background: var(--control-bg);
+  color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+:is(.widget-card, .widget-feedback) button:hover, .widget-dialog button:hover { background: var(--control-hover); }
+:is(.desktop-grid, .widget-feedback) :focus-visible, .widget-dialog :focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+:is(.widget-card, .widget-feedback) button:disabled, .widget-dialog button:disabled { opacity: .55; cursor: wait; }
+.widget-help { font-size: 12px; color: var(--text-secondary); }
+.widget-help summary { inline-size: fit-content; }
+.widget-status { font-size: 13px; margin-block: 8px; overflow-wrap: anywhere; }
+.widget-status:empty { margin: 0; }
+.widget-feedback:has(.widget-status:not(:empty)) { padding: 4px 14px 12px; margin-block-end: 12px; }
+
+
+.widget-card {
+  min-inline-size: 0; min-block-size: 0; display: flex; flex-direction: column;
+  box-shadow: var(--shadow-card);
+}
+.widget-card header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+.widget-card h3 { font-size: 13px; margin: 0; overflow-wrap: anywhere; min-inline-size: 0; }
+:is(.desktop-grid, .widget-feedback) .widget-handle { cursor: grab; touch-action: pan-y; -webkit-user-select: none; user-select: none; flex: none; }
+.widget-dragging { position: relative; z-index: 50; opacity: .85; }
+:is(.desktop-grid, .widget-feedback) .widget-dragging .widget-handle { cursor: grabbing; }
+.widget-body { padding: 0 10px 12px; overflow: auto; min-block-size: 0; overscroll-behavior: contain; scrollbar-gutter: stable; overflow-wrap: anywhere; }
+.widget-form, .widget-layout-form { display: grid; gap: 6px; margin-block: 10px; }
+.widget-form label, .widget-layout-form label { font-size: 12px; color: var(--text-secondary); }
+.widget-form input, .widget-form textarea, .widget-layout-form input, .widget-dialog select {
+  inline-size: 100%; min-inline-size: 0; box-sizing: border-box; padding: 9px 13px; background: var(--field-bg);
+  color: var(--text-primary); border: 1px solid var(--field-border); border-radius: var(--radius-sm); font: inherit; font-size: 14px;
+}
+.widget-form textarea { resize: vertical; min-block-size: 60px; }
+.widget-settings summary { font-size: 12px; cursor: pointer; }
+.widget-countdown { font-size: 24px; margin-block: 14px; font-variant-numeric: tabular-nums; }
+.widget-check-row { display: flex; align-items: start; gap: 6px; margin-block: 8px; }
+.widget-check-row label { flex: 1; min-inline-size: 0; font-size: 13px; }
+.widget-check-row input { min-inline-size: 24px; min-block-size: 24px; }
+.widget-body ul { padding-inline-start: 20px; }
+.widget-body li { margin-block: 8px; }
+.widget-body a { color: var(--text-primary); text-decoration: underline; overflow-wrap: anywhere; }
+.widget-dialog {
+  margin: auto; max-inline-size: none;
+  box-sizing: border-box; inline-size: min(760px, calc(100% - 32px)); max-block-size: calc(100dvh - 40px);
+  color: var(--text-primary); overflow: auto;
+}
+.widget-dialog[open] { display: grid; gap: 12px; }
+.widget-dialog-header, .widget-dialog-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.widget-dialog-header { justify-content: space-between; }
+.widget-dialog button.btn-primary { background: var(--accent-1); color: var(--text-on-accent); border-color: transparent; }
+.widget-dialog button.btn-primary:hover { background: var(--accent-1); filter: brightness(1.08); }
+.widget-dialog-actions { justify-content: flex-end; }
+.widget-dialog-actions button { flex: none; min-inline-size: 80px; }
+.widget-dialog h2 { font-size: 20px; margin: 0; }
+.widget-dialog-header > button { flex: none; }
+.widget-dialog p, .widget-dialog summary { font-size: 13px; line-height: 1.6; }
+.widget-dialog:modal { overscroll-behavior: contain; }
+.widget-dialog::backdrop { background: rgba(2, 5, 12, .52); backdrop-filter: blur(10px); overflow: hidden; overscroll-behavior: contain; }
+@media (pointer: coarse) { #widget-add, :is(.widget-card, .widget-feedback) button, .widget-dialog button { min-block-size: 44px; min-inline-size: 44px; } }
+@media (max-width: 560px) { .widget-dialog { padding: 20px; } .widget-toolbar { padding: 10px 12px; } }
+@media (forced-colors: active) {
+  :is(.desktop-grid, .widget-feedback), .widget-dialog { --text-primary: CanvasText; --text-secondary: CanvasText; --card-border: CanvasText; --field-border: ButtonText; --field-bg: Canvas; --control-bg: ButtonFace; --control-hover: ButtonFace; }
+  .widget-toolbar, .widget-card, .widget-feedback:has(.widget-status:not(:empty)), .widget-dialog { background: Canvas; }
+  #widget-add, .widget-dialog button.btn-primary { color: ButtonText; background: ButtonFace; border-color: ButtonText; }
+}
+
+/* The sole desktop grid contains website/folder nodes and real widget articles. */
+#icons-container.desktop-grid,
+body.layout-fixed-cols #icons-container.desktop-grid {
+  display: grid; grid-template-columns: repeat(var(--desktop-columns, 6), minmax(0, 1fr));
+  grid-auto-rows: 120px; grid-auto-flow: row; gap: 12px; align-items: stretch; justify-items: stretch;
+  box-sizing: border-box; padding: 0 0 16px; margin-block-start: 12px;
+}
+#icons-container.desktop-grid > .icon-widget { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; align-self: stretch; }
+.desktop-grid .widget-card {
+  position: relative; background: var(--card-bg); color: var(--glass-text); border-color: var(--card-border);
+  border-radius: 20px; box-shadow: 0 10px 30px -24px var(--shadow-color); overflow-wrap: anywhere;
+  --text-primary: var(--glass-text); --text-secondary: var(--glass-muted);
+  --control-bg: var(--glass-control-bg); --control-hover: var(--glass-control-hover); --field-border: var(--card-border);
+}
+.widget-card header { flex-wrap: wrap; align-items: start; padding: 6px; gap: 4px; }
+.widget-card h3 { flex: 1; font-size: 12px; }
+.widget-card-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.desktop-grid .widget-card button { min-block-size: 24px; min-inline-size: 24px; padding: 3px 5px; font-size: 11px; }
+.desktop-grid .widget-card .widget-handle { align-self: start; margin: auto 6px 5px; font-size: 10px; cursor: grab; touch-action: pan-y; }
+.widget-card .widget-delete { text-decoration: none; }
+.widget-body { flex: 1; padding: 0 8px 4px; font-size: 13px; }
+.widget-note { white-space: pre-wrap; margin: 4px 0; }
+.widget-countdown, .widget-clock { font-size: clamp(16px, 3vw, 28px); font-variant-numeric: tabular-nums; margin: 0; }
+.widget-clock { display: block; }
+.widget-body p { margin-block: 4px; }
+.widget-block { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-block: 6px; white-space: pre-wrap; }
+.widget-block-label { color: var(--text-secondary); font-size: 12px; }
+.widget-block-number { font-size: 24px; font-variant-numeric: tabular-nums; }
+.widget-block progress { max-inline-size: 100%; flex: 1; min-inline-size: 40px; }
+.desktop-drop-preview { pointer-events: none; z-index: 40; border: 3px dashed #15803d; background: rgb(21 128 61 / .2); border-radius: 16px; min-inline-size: 0; }
+.desktop-drop-preview[data-valid="false"] { border-color: #dc2626; border-style: double; background: rgb(220 38 38 / .2); }
+.widget-dragging { opacity: .55; }
+.widget-feedback { inline-size: min(var(--layout-max-width), 94%); color: var(--glass-text); margin-inline: auto; }
+.widget-feedback[hidden], .widget-feedback [hidden], .widget-dialog [hidden] { display: none; }
+.widget-library { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; }
+.widget-library-card { border: 1px solid var(--card-border); border-radius: var(--radius-md); background: var(--section-bg); padding: 14px; min-inline-size: 0; display: flex; flex-direction: column; gap: 8px; }
+.widget-library-card h3, .widget-library-card p { margin: 0; }
+.widget-library-card > button { margin-block-start: auto; }
+.widget-preview { min-block-size: 72px; max-block-size: 140px; overflow: auto; overflow-wrap: anywhere; font-size: 13px; }
+.widget-size-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.widget-form fieldset { display: grid; gap: 6px; min-inline-size: 0; border: 1px solid var(--field-border); border-radius: 8px; }
+.widget-form legend { font-weight: 600; }
+.widget-editor-row { display: grid; gap: 6px; border-block-end: 1px solid var(--field-border); padding-block: 10px; }
+.widget-form input[type="checkbox"] { inline-size: 24px; block-size: 24px; }
+.widget-dialog textarea, .widget-card textarea { inline-size: 100%; box-sizing: border-box; min-inline-size: 0; }
+@media (pointer: coarse) { .desktop-grid .widget-card button { min-block-size: 32px; min-inline-size: 32px; } }
+@media (forced-colors: active) { .desktop-drop-preview { border-color: Highlight; } .desktop-drop-preview[data-valid="false"] { border-color: Mark; } }
+
+.desktop-drop-preview { color: var(--form-text); background: var(--form-surface); font-size: 12px; padding: 6px; box-sizing: border-box; }
+.desktop-drop-preview[data-valid="false"] { background: var(--form-surface); }
+@media (forced-colors: active) {
+  .desktop-grid .widget-card { background: Canvas; color: CanvasText; --text-primary: CanvasText; --text-secondary: CanvasText; --control-bg: ButtonFace; --control-hover: ButtonFace; --field-border: ButtonText; }
+  .desktop-drop-preview, .desktop-drop-preview[data-valid="false"] { background: Canvas; color: CanvasText; }
+}
+
+/* Widget gallery: reference the iTab catalogue structure while keeping OpenTab theme tokens. */
+#widget-dialog { inline-size: min(1000px, calc(100% - 32px)); padding: 22px; }
+.widget-library-shell { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 22px; min-inline-size: 0; align-items: start; }
+.widget-library-nav { display: flex; flex-direction: column; gap: 6px; }
+#widget-dialog .widget-library-nav button { text-align: start; border-color: transparent; background: transparent; font-weight: 500; padding: 11px 14px; }
+#widget-dialog .widget-library-nav button[aria-pressed="true"] { background: var(--control-active); color: var(--text-primary); }
+#widget-dialog .widget-library-nav button:hover { background: var(--control-hover); }
+.widget-library-main, .widget-library-page { min-inline-size: 0; }
+.widget-library-page > h3, .widget-catalog-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.widget-catalog-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-block-end: 16px; }
+.widget-library-search { inline-size: min(240px, 100%); min-block-size: 38px; padding: 8px 12px; color: var(--text-primary); background: var(--field-bg); border: 1px solid var(--field-border); border-radius: var(--radius-sm); font: inherit; font-size: 13px; }
+.widget-library { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.widget-library-card { min-block-size: 260px; padding: 18px; gap: 12px; text-align: center; }
+.widget-library-card h3 { font-size: 15px; font-weight: 600; }
+.widget-preview-stage { flex: 1; display: grid; place-items: center; min-block-size: 155px; padding: 8px; }
+.widget-preview { inline-size: min(100%, 180px); min-block-size: 138px; max-block-size: 160px; padding: 16px; border: 1px solid var(--card-border); border-radius: 18px; background: var(--glass-bg); box-shadow: var(--shadow-card); color: var(--glass-text); text-align: start; }
+.widget-preview p { margin: 0; }
+.widget-preview .widget-note { line-height: 1.6; }
+.widget-preview .widget-check-row { margin-block: 5px; }
+.widget-preview .widget-check-row input { min-inline-size: 16px; min-block-size: 16px; }
+.widget-preview ul { padding-inline-start: 20px; }
+.widget-preview a { color: inherit; }
+.widget-preview .widget-clock, .widget-preview .widget-countdown { display: block; margin-block: 24px 4px; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.widget-library-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; text-align: start; }
+.widget-library-size { color: var(--text-secondary); font-size: 12px; }
+#widget-dialog .widget-library-add { margin-inline-start: auto; min-block-size: 32px; padding: 5px 16px; border-color: transparent; border-radius: 999px; background: var(--accent-1); color: var(--text-on-accent); }
+#widget-dialog .widget-library-add:hover { filter: brightness(1.08); }
+.widget-library-empty { color: var(--text-secondary); }
+.widget-library-page .widget-form { max-inline-size: 560px; margin-block: 18px; }
+.widget-library-page details { margin-block: 18px; }
+.widget-library-page summary { cursor: pointer; }
+/* Keep edit and delete discoverable without letting controls dominate widget content. */
+.desktop-grid .widget-card header { padding: 10px 10px 4px; align-items: center; }
+.desktop-grid .widget-card h3 { font-size: 12px; font-weight: 600; }
+.desktop-grid .widget-card-actions { flex-wrap: nowrap; }
+.desktop-grid .widget-card-actions button, .desktop-grid .widget-card .widget-handle { background: transparent; border-color: transparent; font-weight: 500; }
+.desktop-grid .widget-card-actions button:hover, .desktop-grid .widget-card .widget-handle:hover { background: var(--control-hover); }
+.desktop-grid .widget-body { padding: 4px 12px; }
+@media (max-width: 650px) {
+  #widget-dialog { padding: 18px; }
+  .widget-library-shell { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .widget-library-nav { flex-direction: row; flex-wrap: wrap; }
+  .widget-catalog-header { align-items: stretch; }
+  .widget-library-search { inline-size: 100%; }
+}
+@media (forced-colors: active) {
+  .widget-preview { background: Canvas; color: CanvasText; border-color: CanvasText; }
+  #widget-dialog .widget-library-add { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
+}

@@ -12,6 +12,7 @@
     const { state, HOME_FOLDER_ID, LEGACY_PRESET_FOLDER_IDS, activeHomeId, t, ensureFolders, normalizeIconType, migrateBackground, backgroundsEqual, getFolderById, renderTimezoneList, initCalendar, renderWorkspaceSettings, workspace, refreshIconViews, renderTodos, setTodoPanelOpen, saveState, writeBootMirror } = host;
     return function applyLoadedState(result, raw = result) {
     const sceneEnabled = result[OpenTabSceneSchema.SCHEMA_KEY] === 2;
+    state.widgetWorkspace = result.widgetWorkspace;
     if (sceneEnabled) {
       for (const key of [OpenTabSceneSchema.SCHEMA_KEY, 'scenes', 'sceneProfiles', 'lastOpenedSceneId', OpenTabWorkspace.EPOCH_KEY]) {
         if (Object.hasOwn(result, key)) state[key] = structuredClone(result[key]);

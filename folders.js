@@ -200,6 +200,7 @@
       icons: state().icons.map((icon) => ({ ...icon })),
       folders: state().folders.map((folder) => ({ ...folder })),
       currentFolderId: state().currentFolderId,
+      widgetWorkspace: state().widgetWorkspace,
       ...(state()['opentab.sceneSchemaVersion'] ? {
         'opentab.sceneSchemaVersion': state()['opentab.sceneSchemaVersion'],
         scenes: state().scenes.map(scene => ({ ...scene })),
@@ -213,6 +214,7 @@
     state().icons = before.icons.map((icon) => ({ ...icon }));
     state().folders = before.folders.map((folder) => ({ ...folder }));
     state().currentFolderId = before.currentFolderId;
+    state().widgetWorkspace = before.widgetWorkspace;
     if (sceneView() && (!state().folders.some(group => group.id === state().currentFolderId) || !groupInView(state().currentFolderId))) {
       state().currentFolderId = activeHomeId();
     }
@@ -1141,6 +1143,15 @@
       });
     } else {
       state().icons = state().icons.filter((icon) => icon.folderId !== folderId);
+    }
+    // Include widgets in the same save/undo as the group and its websites.
+    if (state().widgetWorkspace !== undefined) {
+      try {
+        const model = window.OpenTabWidgetModel;
+        state().widgetWorkspace = model.serialize(model.removeGroup(model.parse(state().widgetWorkspace), folderId, choice === 'move' ? activeHomeId() : null, before.icons));
+      } catch (_) {
+        restore(before); host.showToast(t('组件数据需要恢复，分组未删除。')); return;
+      }
     }
     state().folders = state().folders.filter((item) => item.id !== folderId);
     if (state().currentFolderId === folderId) state().currentFolderId = activeHomeId();

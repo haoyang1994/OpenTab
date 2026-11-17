@@ -1,4 +1,4 @@
-importScripts('lib/bing-daily.js', 'scene-schema.js', 'workspace-persistence.js', 'lib/window-fullscreen.js');
+importScripts('lib/bing-daily.js', 'scene-schema.js', 'lib/widget-model.js', 'lib/widget-renderers.js', 'workspace-persistence.js', 'lib/window-fullscreen.js');
 
 const windowFullscreen = OpenTabWindowFullscreen.create(chrome);
 chrome.commands?.onCommand.addListener((command, tab) => {
