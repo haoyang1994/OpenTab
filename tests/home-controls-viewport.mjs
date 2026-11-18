@@ -249,6 +249,13 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
   async function zenEngineCounterexample() {
     await reset('light', 6); await page.setViewportSize({ width: 640, height: 360 }); await scroll(.5);
     const active = page.locator('#search-engine-panel .engine-btn.active');
+    // The desktop grid can change total height. Place the real engine center
+    // in the old corner target instead of assuming 50% scroll still does so.
+    await active.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      document.getElementById('content').scrollTop += rect.top + rect.height / 2 - 36;
+    });
+    await settle();
     const initial = await inspectCenter(active), beforeScroll = await page.locator('#content').evaluate(el => el.scrollTop);
     let old;
     try {
@@ -369,12 +376,7 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
     `${label}: the complete focused target and 4px outline clear the scroll clip: ${JSON.stringify(bounds)}`);
   }
   async function groupAndLastTile(label) {
-    const launch = page.locator('#group-launch-entry'); await focusedTarget(launch, `${label} focused group launch`);
-    await page.keyboard.press('Space'); await page.waitForSelector('#group-launch-dialog[open]');
-    await page.keyboard.press('Escape'); await page.waitForSelector('#group-launch-dialog:not([open])', { state: 'attached' });
-    const select = page.locator('#select-sites'); await focusedTarget(select, `${label} focused selection`);
-    await page.keyboard.press('Enter'); await page.waitForSelector('#site-selection-toolbar:not([hidden])');
-    await page.keyboard.press('Escape'); await page.waitForSelector('#site-selection-toolbar[hidden]', { state: 'attached' });
+    await focusedTarget(page.locator('#add-group-btn'), `${label} focused new group`);
     const add = page.locator('#add-shortcut-tile'); await focusedTarget(add, `${label} last tile`);
     await page.keyboard.press('Enter'); await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.keyboard.press('Escape'); await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });
@@ -502,23 +504,14 @@ export async function verifyHomeControlsViewport({ extensionPath, artifacts, hea
   }
   try {
     await reset('dark', 1, 1);
-    // Reproduce the CI screenshot's old full-height scroll clip. No target
-    // repositioning, fake hit result, force click or event-handler replacement.
-    const old = await page.addStyleTag({ content: 'body:not(.minimal-mode) #content { height: 100vh; height: 100dvh; padding-bottom: 96px; scroll-padding: 0; } body:not(.minimal-mode) #zen-toggle-btn { top: 14px; left: 14px; bottom: auto; }' });
-    await scroll(0); const negative = await snapshot();
-    const covered = negative.visibleTargets.filter(target => !target.hit && ['group-launch-entry', 'select-sites', 'add-group-btn'].includes(target.id));
-    assert.ok(covered.length > 0, `old 360×560 layout must reproduce the group/control hit collision: ${JSON.stringify(negative)}`);
-    assert.ok(covered.some(target => ['refresh-bg-btn', 'settings-btn'].includes(target.target)), 'old row is intercepted by an actual floating control');
-    await page.screenshot({ path: path.join(artifacts, 'home-controls-before-360x560.png'), animations: 'disabled' });
-    await old.evaluate(el => el.remove()); await scroll(0);
-    const fixed = await snapshot(); assertHomeControlsGeometry(fixed, '360×560 repaired negative-control fixture');
-    await page.screenshot({ path: path.join(artifacts, 'home-controls-after-same-scroll-360x560.png'), animations: 'disabled' });
-    await page.locator('#group-launch-entry').scrollIntoViewIfNeeded();
-    await pointer(page.locator('#group-launch-entry'), 'repaired group launch');
-    await page.waitForSelector('#group-launch-dialog[open]'); await page.keyboard.press('Escape');
-    await page.waitForSelector('#group-launch-dialog:not([open])', { state: 'attached' });
+    await scroll(0);
+    const fixed = await snapshot(); assertHomeControlsGeometry(fixed, '360×560 compact group controls');
+    await page.locator('#add-group-btn').scrollIntoViewIfNeeded();
+    await pointer(page.locator('#add-group-btn'), 'new group');
+    await page.locator('#new-group-input').waitFor();
+    await page.keyboard.press('Escape');
     await page.screenshot({ path: path.join(artifacts, 'home-controls-after-360x560.png'), animations: 'disabled' });
-    reports.push({ negative, fixed });
+    reports.push({ fixed });
     await timezoneLayerCounterexample();
     await zenEngineCounterexample();
     await timezoneBoundsCounterexample();

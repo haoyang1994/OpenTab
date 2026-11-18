@@ -77,13 +77,14 @@ function harness() {
   for (const id of ['icons-container', 'folder-icons-container', 'folder-overlay', 'site-selection-toolbar', 'site-selection-dialog']) body.appendChild(new Element('div', id));
   const dialog = elements.get('site-selection-dialog');
   for (const [tag, id] of [['select', 'site-selection-destination'], ['button', 'site-selection-dialog-cancel'], ['button', 'site-selection-confirm'], ['p', 'site-selection-error'], ['p', 'site-selection-preview']]) dialog.appendChild(new Element(tag, id));
-  const entry = new Element('button', 'select-sites'); entry.entry = true; body.appendChild(entry);
+  const entry = new Element('button', 'folder-select-sites'); entry.entry = true; body.appendChild(entry);
   const root = elements.get('icons-container');
   for (const id of ['a', 'b']) { const tile = new Element('a'); tile.className = 'icon-widget'; tile.dataset.id = id; tile.setAttribute('href', `https://${id}.example/`); root.appendChild(tile); }
   let selectedCaptures = 0, destinationCaptures = 0, moves = 0, resolveMove, destinationValid = true;
   const context = { scope: { groupId: 'home', parentId: '' }, sites: [site('a'), site('b')], destinations: [{ kind: 'group', id: 'work', name: 'Work', groupId: 'work' }] };
   const window = { OpenTabFolders: {
     bulkMoveContext: () => context, isFolderId: () => false,
+    createFolderFromSelection: () => new Promise(resolve => { resolveMove = resolve; }),
     captureBulkSelection: () => ({ original: ++selectedCaptures }), captureBulkDestination: destination => destinationValid ? ({ destination, original: ++destinationCaptures }) : null,
     moveSites: (intent, ids, destination) => { moves++; assert.equal(intent.original, 1); assert.deepEqual([...ids], ['a']); assert.equal(destination.original, 1); return new Promise(resolve => { resolveMove = resolve; }); }
   } };
@@ -197,3 +198,21 @@ console.log('Changed destination capture disables confirmation and preserves sel
 }
 
 assert.match(fs.readFileSync(new URL('../home.css', import.meta.url), 'utf8'), /\.site-selection-dialog\s*\{\s*margin:\s*auto;/, 'modal explicitly overrides the global margin reset');
+
+for (const ok of [false, true]) {
+  const h = harness(), el = id => h.elements.get(id);
+  h.dispatch(h.entry); assert.equal(el('site-selection-folder').disabled, true);
+  h.dispatch(h.root.children[0]); assert.equal(el('site-selection-folder').disabled, true);
+  h.dispatch(h.root.children[1]); assert.equal(el('site-selection-folder').disabled, false);
+  h.dispatch(el('site-selection-folder')); assert.equal(h.selection.isPending(), true);
+  assert.equal(el('site-selection-cancel').disabled, true);
+  h.resolve({ ok }); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.selection.isPending(), false);
+  assert.equal(h.selection.isActive(), !ok);
+  if (!ok) {
+    assert.equal(el('site-selection-cancel').disabled, false, 'failed creation keeps explicit cancel usable');
+    assert.equal(el('site-selection-folder').disabled, false, 'failed creation keeps the selection available');
+    h.dispatch(el('site-selection-cancel')); assert.equal(h.selection.isActive(), false);
+  }
+}
+console.log('Explicit folder UI: two-site minimum, single-flight, successful exit and cancel after failure passed');

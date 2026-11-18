@@ -1,3 +1,4 @@
+import { nativeModifier } from './native-input.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -92,8 +93,8 @@ export async function verifyPasteSites(page, worker, requests = []) {
     node.addEventListener('paste', event => window.__siteListPaste.push({ trusted: event.isTrusted, type: event.type }));
   });
   await page.keyboard.insertText(pasteSitesInput);
-  await page.keyboard.press('Control+A'); await page.keyboard.press('Control+C');
-  await page.keyboard.press('Backspace'); await page.keyboard.press('Control+V');
+  await page.keyboard.press(`${nativeModifier}+A`); await page.keyboard.press(`${nativeModifier}+C`);
+  await page.keyboard.press('Backspace'); await page.keyboard.press(`${nativeModifier}+V`);
   await page.waitForFunction(expected => document.getElementById('site-list-input').value === expected, pasteSitesInput);
   assert.deepEqual(await page.evaluate(() => window.__siteListPaste), [{ trusted: true, type: 'paste' }]);
   await page.locator('#site-list-group').selectOption('work');
@@ -164,9 +165,10 @@ export async function verifyPasteSites(page, worker, requests = []) {
   const added = (await workspace()).icons.find(icon => icon.url === expectedNew);
   assert.equal(added.folderId, 'work'); assert.equal(added.parentId || '', '');
   assert.equal((await workspace()).icons.length, 2);
-  await page.waitForSelector('#toast:not(.hidden) button');
-  await goReload(() => page.locator('#toast button').click());
-  assert.equal((await workspace()).icons.some(icon => icon.url === expectedNew), false, 'native toast Undo restores workspace');
+  await page.waitForFunction(() => OpenTabDesktop.canUndo());
+  await page.locator('#add-shortcut-tile').focus();
+  await goReload(() => page.keyboard.press(`${nativeModifier}+z`));
+  assert.equal((await workspace()).icons.some(icon => icon.url === expectedNew), false, 'native keyboard Undo restores workspace');
   assert.equal((await workspace()).icons.some(icon => icon.id === 'existing-site'), true);
 
   // A second add survives an independent reload, then the durable settings Undo.

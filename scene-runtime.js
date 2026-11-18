@@ -455,6 +455,9 @@
     root.OpenTabSceneNavigation = navigation;
     root.OpenTabImport?.setReloader?.(reload);
     const relevant = new Set([...(coordinator.KEYS || []), ...LAYOUT_KEYS]);
+    // Widgets reconcile their own storage changes, including edits from another
+    // tab. Full scene loads still read widgetWorkspace along with the scene graph.
+    relevant.delete('widgetWorkspace');
     const changedKeys = new Set();
     function committedViewIsCurrent() {
       const view = getView(), scene = active(committedSnapshot, view?.sceneId);

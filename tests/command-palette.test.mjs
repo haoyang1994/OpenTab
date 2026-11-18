@@ -1,3 +1,4 @@
+import { nativeModifier } from './native-input.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -122,7 +123,7 @@ try {
   assert.equal(await page.locator('[role="option"][aria-selected="true"]').getAttribute('data-entry-id'), 'work-docs');
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await closed();
   assert.deepEqual((await log()).at(-1), { url: 'https://docs.example.com/start', openInNewTab: false });
-  await open(); await type('docs'); await page.locator(row('site', 'work-docs')).click({ modifiers: ['Control'] }); await closed();
+  await open(); await type('docs'); await page.locator(row('site', 'work-docs')).click({ modifiers: [nativeModifier] }); await closed();
   assert.deepEqual((await log()).at(-1), { url: 'https://work.example.com/docs', openInNewTab: true });
   await open(); await type('reference.example');
   assert.equal(await page.locator('#command-palette-results img, #command-palette-results svg').count(), 0, 'user strings are literal text with no injected nodes');

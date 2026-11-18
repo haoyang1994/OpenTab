@@ -810,7 +810,7 @@ function homeIconEditor(h, state, editId = null) {
   elements.iconType.value = 'shortcut'; elements.iconName.value = 'Submitted'; elements.iconUrl.value = 'https://synthetic.example.test';
   elements.cancelBtn = { id: 'cancel-btn', disabled: false };
   elements.saveBtn = { disabled: false }; elements.addIconModal = { querySelectorAll: () => Object.values(elements).filter((node) => node !== elements.addIconModal), classList: { contains() { return hidden; }, add() { hidden = true; } } };
-  const context = vm.createContext({ t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  state, elements, window: {}, workspace: c, saveState: c.save,
+  const context = vm.createContext({ OpenTabIcons: require('../icons.js'), t: (source, values = {}) => source.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values, key) ? String(values[key]) : token),  state, elements, window: {}, workspace: c, saveState: c.save,
     editingIconId: editId, iconUploadGate: require('../icons.js').createUploadGate(), iconSaveGate: require('../icons.js').createSaveGate(), iconDraftIntent: c.captureIntent(editId ? { icons: [editId] } : {}), pendingIconUploadDataUrl: '',
     ICON_TYPE_SHORTCUT: 'shortcut', ICON_TYPE_SSH: 'ssh', ICON_TYPE_TOOL: 'tool', HOME_FOLDER_ID: 'folder-home', activeHomeId: () => 'folder-home',
     normalizeIconType: (value) => value || 'shortcut', normalizeUrl: (value) => value, normalizeOptionalUrl: (value) => value,

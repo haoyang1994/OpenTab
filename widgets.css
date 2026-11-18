@@ -1,4 +1,4 @@
-/* Widgets share the existing desktop and theme; dialogs use opaque form surfaces. */
+/* Widgets share the existing desktop and theme. */
 .desktop-grid {
   --text-primary: var(--glass-text); --text-secondary: var(--glass-muted);
   --control-bg: var(--glass-control-bg); --control-hover: var(--glass-control-hover);
@@ -6,9 +6,6 @@
   inline-size: min(100%, var(--layout-max-width, 900px)); flex: none; margin-block: 24px; color: var(--text-primary);
 }
 .desktop-grid[hidden], .widget-dialog [hidden], .widget-menu[hidden] { display: none; }
-#widget-add { inline-size: auto; block-size: auto; min-block-size: 32px; gap: 6px; padding: 6px 10px; font-size: 12.5px; white-space: nowrap; border-color: var(--nav-border); }
-#widget-add svg { flex: none; }
-#widget-add:focus-visible { outline: 2px solid var(--glass-text); outline-offset: 3px; }
 .widget-card button, .widget-dialog button {
   min-block-size: 36px; min-inline-size: 36px; padding: 7px 10px;
   border: 1px solid var(--field-border); border-radius: var(--radius-sm); background: var(--control-bg);
@@ -40,6 +37,8 @@
 }
 .widget-card header { display: flex; flex-wrap: nowrap; align-items: center; padding: 6px 6px 0 8px; gap: 2px; }
 .widget-card h3 { flex: 1; min-inline-size: 0; font-size: 12px; margin: 0; }
+.desktop-grid #add-shortcut-tile { cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+.desktop-grid #add-shortcut-tile:active { cursor: grabbing; }
 .desktop-grid .widget-card .widget-handle {
   display: flex; align-items: center; gap: 5px; inline-size: 100%; min-inline-size: 0; block-size: 30px;
   margin: 0; padding: 3px 2px; text-align: start; border: 0; background: transparent; border-radius: 6px;
@@ -98,23 +97,48 @@ body.theme-light :is(.widget-dialog, .widget-menu) { --widget-danger: #b91c1c; }
 .widget-dialog-actions button { flex: none; min-inline-size: 80px; }
 .widget-dialog .widget-status:not(:empty) { padding: 10px 12px; border-radius: 10px; background: var(--form-field); border: 1px solid var(--form-border); margin: 0; }
 
-/* Gallery, with separate layout and custom-definition pages. */
-#widget-dialog { inline-size: min(900px, calc(100% - 32px)); padding: 24px; }
-.widget-library-shell { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 24px; min-inline-size: 0; align-items: start; }
-.widget-library-nav { display: flex; flex-direction: column; gap: 6px; }
-#widget-dialog .widget-library-nav button { text-align: start; border-color: transparent; background: transparent; padding: 11px 14px; }
-#widget-dialog .widget-library-nav button[aria-pressed="true"] { background: var(--control-hover); font-weight: 600; }
-#widget-dialog .widget-library-nav button:hover { background: var(--control-hover); }
-.widget-library-main, .widget-library-page { min-inline-size: 0; }
+/* Management shares the surface and controls used by settings. */
+#widget-dialog {
+  inline-size: min(620px, calc(100% - 32px)); padding: 24px;
+  --form-text: var(--glass-text); --form-muted: var(--glass-muted);
+  --form-field: var(--glass-field-bg); --form-border: var(--section-border);
+  --control-bg: var(--glass-control-bg); --control-hover: var(--glass-control-hover);
+  border-color: var(--panel-border); border-radius: var(--radius-lg); background: var(--panel-bg);
+  box-shadow: var(--shadow-panel); backdrop-filter: blur(var(--ui-blur-strong));
+}
+#widget-dialog::backdrop { background: rgba(30, 41, 59, .28); backdrop-filter: blur(calc(2 * var(--ui-blur-strong))); }
+#widget-dialog > .widget-dialog-header { position: static; background: transparent; flex-wrap: wrap; }
+#widget-dialog .widget-header-actions { flex-wrap: wrap; margin-inline-start: auto; }
+#widget-dialog :focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.widget-management-body { display: grid; min-inline-size: 0; gap: 12px; }
+.widget-management-body > :is(section, details) {
+  min-inline-size: 0; padding: 14px 16px; border: 1px solid var(--section-border);
+  border-radius: var(--radius-md); background: var(--section-bg);
+}
+.widget-management-body h3 { margin: 0; font-size: 14px; }
+.widget-management-body .form-hint { margin: 8px 0 0; }
+.widget-management-body summary { cursor: pointer; font-weight: 600; }
+.widget-management-body details[open] > summary { margin-block-end: 12px; }
+.widget-management-body .widget-form { margin-block: 12px 0; }
+.widget-management-body textarea { font-family: ui-monospace, monospace; max-block-size: 32dvh; }
+.widget-register-actions, .widget-management-recovery { display: flex; flex-wrap: wrap; gap: 8px; }
+.widget-register-actions { justify-content: flex-end; }
+#widget-dialog .widget-management-recovery[hidden] { display: none; }
+#widget-dialog:has(.widget-management-recovery:not([hidden])) .widget-management-export { display: none; }
+.widget-definition-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 8px; border-block-end: 1px solid var(--section-border); }
+.widget-definition-row:last-child { padding-block-end: 0; border: 0; }
+.widget-definition-row span { min-inline-size: 0; overflow-wrap: anywhere; }
+.widget-definition-row button { flex: none; }
+.widget-library-page { min-inline-size: 0; }
 .widget-library-page > h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.widget-catalog-header { margin-block-end: 16px; }
-.widget-library-search { box-sizing: border-box; inline-size: 100%; min-block-size: 38px; padding: 8px 12px; color: var(--text-primary); background: var(--field-bg); border: 1px solid var(--field-border); border-radius: var(--radius-sm); font: inherit; font-size: 13px; }
+.widget-catalog-header { margin-block-end: 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.widget-library-search { box-sizing: border-box; inline-size: 100%; min-block-size: 38px; padding: 8px 12px; color: var(--text-primary); background: var(--field-bg); border: 1px solid var(--field-border); border-radius: var(--radius-sm); font: inherit; font-size: 13px; flex: 1 1 160px; min-inline-size: 0; }
 .widget-library { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; }
-.widget-library-card { min-inline-size: 0; min-block-size: 206px; padding: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--form-border); border-radius: 16px; background: var(--form-field); text-align: start; }
+.widget-library-card { min-inline-size: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--form-border); border-radius: 16px; background: var(--section-bg); text-align: start; }
 .widget-library-card h3, .widget-library-card p { margin: 0; }
 .widget-library-card h3 { font-size: 14px; font-weight: 600; }
-.widget-preview-stage { flex: 1; display: grid; place-items: center; min-block-size: 116px; }
-.widget-preview { box-sizing: border-box; inline-size: 100%; min-block-size: 116px; max-block-size: 132px; overflow: auto; overflow-wrap: anywhere; padding: 14px; border: 1px solid var(--form-border); border-radius: 12px; background: var(--form-surface); color: var(--form-text); font-size: 13px; }
+.widget-preview-stage { flex: 1; display: grid; place-items: center; min-block-size: 78px; }
+.widget-preview { box-sizing: border-box; inline-size: 100%; min-block-size: 78px; max-block-size: 132px; overflow: auto; overflow-wrap: anywhere; padding: 14px; border: 0; border-radius: 12px; background: var(--field-bg); color: var(--text-primary); font-size: 13px; }
 .widget-preview p { margin: 0; }
 .widget-preview .widget-note { line-height: 1.6; }
 .widget-preview .widget-check-row { margin-block: 5px; }
@@ -124,7 +148,7 @@ body.theme-light :is(.widget-dialog, .widget-menu) { --widget-danger: #b91c1c; }
 .widget-preview .widget-clock, .widget-preview .widget-countdown { margin-block: 12px 4px; font-size: 24px; font-weight: 600; }
 .widget-library-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .widget-library-size, .widget-library-empty { color: var(--text-secondary); font-size: 12px; }
-#widget-dialog .widget-library-add { margin-inline-start: auto; min-block-size: 32px; padding: 5px 16px; border-color: transparent; border-radius: 999px; background: var(--accent-1); color: var(--text-on-accent); }
+.widget-library-add { margin-inline-start: auto; }
 .widget-library-page .widget-form { max-inline-size: 560px; margin-block: 18px; }
 .widget-library-page details { margin-block: 18px; }
 .widget-library-page summary { cursor: pointer; }
@@ -151,9 +175,8 @@ body.theme-light :is(.widget-dialog, .widget-menu) { --widget-danger: #b91c1c; }
 .widget-editor-row .widget-field:not(.widget-field-check) { grid-column: 1 / -1; }
 .widget-editor-row > button { justify-self: end; color: var(--widget-danger); }
 .widget-dialog textarea, .widget-card textarea { inline-size: 100%; box-sizing: border-box; min-inline-size: 0; }
-@media (max-width: 650px) { .widget-library-shell { grid-template-columns: minmax(0, 1fr); gap: 14px; } .widget-library-nav { flex-direction: row; flex-wrap: wrap; } }
 @media (max-width: 560px) { #widget-dialog, #widget-settings { padding: 18px; inline-size: calc(100% - 20px); max-block-size: calc(100dvh - 20px); } .widget-dialog-actions { inset-block-end: -18px; } }
-@media (pointer: coarse) { #widget-add, .widget-dialog button { min-block-size: 44px; min-inline-size: 44px; } .desktop-grid .widget-card .widget-more, .desktop-grid .widget-card .widget-handle { min-block-size: 36px; } .widget-menu button { min-block-size: 44px; } }
+@media (pointer: coarse) { #add-panel-navigation button, #add-widget-catalog button, .widget-dialog button { min-block-size: 44px; min-inline-size: 44px; } .desktop-grid .widget-card .widget-more, .desktop-grid .widget-card .widget-handle { min-block-size: 36px; } .widget-menu button { min-block-size: 44px; } }
 @media (forced-colors: active) {
   .widget-dialog, .widget-menu { --form-surface: Canvas; --form-field: Canvas; --form-text: CanvasText; --form-muted: CanvasText; --form-border: CanvasText; --text-primary: CanvasText; --text-secondary: CanvasText; }
   .desktop-grid .widget-card { background: Canvas; color: CanvasText; --text-primary: CanvasText; --text-secondary: CanvasText; --control-bg: ButtonFace; --control-hover: ButtonFace; --field-border: ButtonText; }
@@ -172,3 +195,17 @@ body.theme-light :is(.widget-dialog, .widget-menu) { --widget-danger: #b91c1c; }
 
 .widget-header-actions { display: flex; align-items: center; gap: 8px; }
 .widget-dialog-header .widget-dialog-close { flex: none; font-size: 24px; font-weight: 400; padding: 0; inline-size: 36px; block-size: 36px; background: transparent; border-color: transparent; }
+
+/* One add surface, with management and group layout in settings. */
+#add-icon-modal [hidden], #group-tabs[hidden] { display: none; }
+#add-icon-modal:has(#add-widget-catalog:not([hidden])) > .modal-content { width: min(900px, calc(100vw - 32px)); max-width: 900px; }
+#add-widget-catalog { --widget-danger: #f87171; min-width: 0; }
+.add-mode-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); width: fit-content; margin-block: 12px; }
+.add-mode-tab { padding-inline: 18px; }
+#add-icon-modal :focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+#add-icon-modal:has(#add-widget-catalog:not([hidden])) #modal-paste-sites { display: none; }
+.widget-library-search::placeholder { color: var(--text-secondary); }
+#add-widget-catalog .widget-status:empty { display: none; }
+#desktop-layout-settings .widget-field input { max-inline-size: 100%; }
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }

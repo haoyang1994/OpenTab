@@ -176,7 +176,7 @@
     function modalOpen() { return modal && !modal.classList.contains('hidden'); }
     function newModal() {
       return modalOpen() && $('save-btn').textContent === t('保存')
-        && [t('添加快捷图标'), t('添加 SSH 链接'), t('添加工具')].includes($('icon-modal-title').textContent);
+        && [t('添加内容'), t('添加快捷图标'), t('添加 SSH 链接'), t('添加工具')].includes($('icon-modal-title').textContent);
     }
     function modalBusy() {
       return $('save-btn').disabled || $('cancel-btn').disabled

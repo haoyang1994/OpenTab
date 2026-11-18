@@ -61,9 +61,8 @@ export async function runUiRefinement(page, worker, artifacts) {
     await store({ languagePreference: language, themeMode: theme, todoButtonVisible: true, todoPanelOpen: false,
       background: { type: 'gradient', value: 'linear-gradient(135deg, #d69b72, #64748b)', source: 'gradient' } });
     await page.reload(); await ready(language, theme); await page.setViewportSize({ width: 390, height: 844 });
-    const selection = page.locator('#select-sites');
-    assert.equal((await selection.textContent()).trim(), '', 'selection entry is icon-only');
-    assert.ok(await selection.getAttribute('aria-label')); assert.ok(await selection.getAttribute('title'));
+    assert.equal(await page.locator('#group-tabs-bar #select-sites, #group-tabs-bar #group-launch-entry').count(), 0);
+    assert.ok(await page.locator('#add-group-btn').isVisible());
     await page.screenshot({ path: path.join(artifacts, `refined-home-${language}-${theme}.png`) });
     await page.click('#add-shortcut-tile'); await page.waitForSelector('#add-icon-modal:not(.hidden)');
     await page.fill('#icon-name', 'Design reference'); await page.fill('#icon-url', 'https://example.test/design');

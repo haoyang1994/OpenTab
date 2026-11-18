@@ -1915,7 +1915,8 @@ body.theme-light .tab-btn.active {
 }
 
 /* Theme controls */
-.theme-mode-tabs {
+.theme-mode-tabs,
+.add-mode-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 3px;
@@ -1925,7 +1926,8 @@ body.theme-light .tab-btn.active {
   background: var(--seg-bg);
 }
 
-.theme-mode-tab {
+.theme-mode-tab,
+.add-mode-tab {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1941,17 +1943,20 @@ body.theme-light .tab-btn.active {
   transition: background 0.2s var(--transition), color 0.2s var(--transition), box-shadow 0.2s var(--transition);
 }
 
-.theme-mode-tab:hover {
+.theme-mode-tab:hover,
+.add-mode-tab:hover {
   color: var(--text-primary);
 }
 
-.theme-mode-tab.active {
+.theme-mode-tab.active,
+.add-mode-tab[aria-pressed="true"] {
   background: var(--seg-active);
   color: var(--text-primary);
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
 }
 
-body.theme-light .theme-mode-tab.active {
+body.theme-light .theme-mode-tab.active,
+body.theme-light .add-mode-tab[aria-pressed="true"] {
   box-shadow: 0 1px 5px rgba(20, 40, 70, 0.12);
 }
 
@@ -3371,13 +3376,14 @@ body.theme-light {
 .group-tab-count { background: transparent; color: var(--glass-text); }
 .site-selection-entry { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 10px; }
 .search-shortcut-hint { border-radius: 6px; padding: 4px 6px; }
-#add-icon-modal { background: rgba(30, 41, 59, .28); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+#add-icon-modal { background: rgba(30, 41, 59, .28); backdrop-filter: blur(calc(2 * var(--ui-blur-strong))); -webkit-backdrop-filter: blur(calc(2 * var(--ui-blur-strong))); }
 #add-icon-modal .modal-content {
-  --panel-bg-solid: var(--form-surface); --text-primary: var(--form-text); --text-secondary: var(--form-muted); --text-hint: var(--form-muted);
-  --field-border: var(--form-border); --field-bg: var(--form-field);
-  background: var(--form-surface); border-color: var(--form-border); border-radius: 20px; padding: 24px;
-  backdrop-filter: none; -webkit-backdrop-filter: none;
-  box-shadow: 0 20px 60px rgba(30,41,59,.18), 0 2px 8px rgba(30,41,59,.08);
+  --form-text: var(--glass-text);
+  --form-muted: var(--glass-muted);
+  --text-hint: var(--form-muted);
+  --form-border: var(--section-border);
+  --form-field: var(--glass-field-bg);
+  padding: 24px;
 }
 .icon-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 #add-icon-modal .icon-modal-header h2 { margin: 0; font-size: 18px; line-height: 1.4; }

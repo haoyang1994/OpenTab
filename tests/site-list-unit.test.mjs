@@ -164,6 +164,8 @@ for (const options of [
 {
   const h = harness(); await h.showModal();
   assert.equal(h.$('modal-paste-sites').hidden, false);
+  h.$('icon-modal-title').textContent = '添加内容'; h.mutate('add-icon-modal');
+  assert.equal(h.$('modal-paste-sites').hidden, false, 'unified Add content keeps the explicit batch entry');
   h.$('save-btn').textContent = '更新'; h.mutate('add-icon-modal'); assert.equal(h.$('modal-paste-sites').hidden, true);
   h.$('save-btn').textContent = '保存'; h.$('icon-upload-status').textContent = '正在读取图片…'; h.mutate('add-icon-modal');
   assert.equal(h.$('modal-paste-sites').disabled, true); await h.api.switchFromModal(); assert.equal(h.calls.opens.length, 0);

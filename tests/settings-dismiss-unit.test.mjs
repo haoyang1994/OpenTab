@@ -13,7 +13,13 @@ function harness() {
       id, parent, hidden: false, value: '', disabled: false, dataset: {}, open: false,
       classList: { contains: v => classes.has(v), add: v => classes.add(v), remove: v => classes.delete(v), toggle(v, on) { on ? classes.add(v) : classes.delete(v); } },
       contains(target) { return target === this || !!target?.parent && this.contains(target.parent); },
-      closest(selector) { return selector === '.hidden' && (classes.has('hidden') || parent?.closest(selector)) ? this : null; },
+      closest(selector) {
+        const selectors = selector.split(',').map(value => value.trim());
+        if (selectors.includes('.hidden') && classes.has('hidden')
+          || selectors.includes('[hidden]') && this.hidden
+          || selectors.includes('[inert]') && this.inert) return this;
+        return parent?.closest(selector) || null;
+      },
       querySelectorAll() { return []; },
       querySelector(selector) { return selector === '[aria-busy="true"]' && this.busy ? {} : null; },
       addEventListener(type, fn) { handlers.set(type, fn); },

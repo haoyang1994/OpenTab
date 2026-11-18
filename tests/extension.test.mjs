@@ -1,3 +1,4 @@
+import { runDesktopAction } from './desktop-action.mjs';
 import { verifyWallpaperReadability } from './wallpaper-readability.mjs';
 import { verifyBingCacheRepair } from './bing-cache-repair.mjs';
 import { verifyBingTransportLifecycle } from './bing-transport-lifecycle.mjs';
@@ -287,7 +288,7 @@ function readMasterManifest() {
 
 async function waitForGrid(page) {
   await page.waitForSelector('#add-shortcut-tile', { timeout: 10000 });
-  await page.waitForSelector('#group-tabs .group-tab', { timeout: 10000 });
+  await page.waitForSelector('#group-tabs .group-tab', { state: 'attached', timeout: 10000 });
   await page.waitForFunction(
     () => performance.getEntriesByName('opentab:grid-ready').length > 0 && document.querySelector('#icons-container')?.dataset.widgetsReady === 'true',
     null,
@@ -617,6 +618,11 @@ async function runExtensionE2E() {
     const timeText = (await page.locator('#time').textContent())?.trim() || '';
     assert.ok(timeText.length > 0, 'Clock text should not be empty');
 
+    // The navigation contrast fixture needs two groups to display the tabs.
+    await resetHome(page, {
+      folders: [{ id: HOME, name: '主页' }, { id: 'readability-work', name: '工作' }],
+      icons: [], currentFolderId: HOME
+    });
     await page.click('#date');
     await page.waitForSelector('#calendar-popover:not(.hidden) .flatpickr-calendar', { timeout: 5000 });
     assert.equal(
@@ -1301,7 +1307,7 @@ async function runExtensionE2E() {
     );
     console.log('focus stack passed');
 
-    // --- AC1 merge into folder ---
+    // --- AC1 explicit multi-select folder creation ---
     await resetHome(page, {
       folders: folders(),
       currentFolderId: HOME,
@@ -1311,7 +1317,10 @@ async function runExtensionE2E() {
         shortcut('c', 'C', 'https://example.com/c')
       ]
     });
-    await html5DragHover(page, 'b', 'a');
+    await runDesktopAction(page, 'select-sites');
+    await page.locator(`${widgetSelector('a')} .site-selection-checkbox`).check();
+    await page.locator(`${widgetSelector('b')} .site-selection-checkbox`).check();
+    await page.click('#site-selection-folder');
     await page.waitForSelector('#icons-container .icon-widget.icon-folder', { timeout: 5000 });
     const ac1Desktop = await desktopOrder(page);
     assert.equal(ac1Desktop.length, 2, 'AC1: desktop has folder + leftover C');

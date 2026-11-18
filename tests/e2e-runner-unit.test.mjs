@@ -370,7 +370,8 @@ try {
     assert.equal(fs.readFileSync(wmLog, 'utf8'), '');
   }
   const notReady = spawnSync(bash, [desktop, 'node', suites[2]], {
-    env: desktopEnv({ FAKE_WM_NOT_READY: '1' }), encoding: 'utf8', timeout: 10000,
+    // Include the 5s readiness loop, both bounded child cleanups and spawn overhead.
+    env: desktopEnv({ FAKE_WM_NOT_READY: '1' }), encoding: 'utf8', timeout: 20000,
   });
   assert.ifError(notReady.error);
   assert.equal(notReady.status, 1);

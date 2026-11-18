@@ -73,3 +73,10 @@ globalThis.OpenTabI18n?.register({
 });
 
 globalThis.OpenTabI18n?.register({ '超出桌面边界，原布局已保留。': 'Outside the desktop bounds. Your layout is unchanged.' });
+
+globalThis.OpenTabI18n?.register({
+  '当前分组：{name}': 'Current group: {name}', '选择组件': 'Choose widgets', '添加内容': 'Add content', '网站': 'Sites', '组件管理': 'Widget management',
+  '尚未注册自定义组件。': 'No custom widgets registered yet.',
+  '新建文件夹': 'Create folder', '已新建文件夹': 'Folder created',
+  '默认列数用于尚未单独设置的分组；启用多场景后按场景保存。当前分组列数优先，修改默认值不会整理已有分组。': 'Default columns apply to groups without their own saved layout. With scenes enabled, this default is saved per scene. Group columns take priority; changing the default does not reorganize saved groups.'
+});

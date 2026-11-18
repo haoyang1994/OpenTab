@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { formatConsoleError, isAllowedConsoleError } from './console-allow.mjs';
-import { verifyTimezoneRegression } from './timezone.mjs';
+import { installTimezoneWallClock, verifyTimezoneRegression } from './timezone.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_PATH = path.resolve(__dirname, '..');
@@ -247,11 +247,17 @@ async function run() {
       value?.background?.value === 'assets/default_background/default.webp'
     ));
     assert.equal(stored.background.value, 'assets/default_background/default.webp');
+    // Make placeholder negatives independent of the host timezone/current time.
+    // Beijing/10:30 are valid real values on some hosts, so use a known UTC clock.
+    const clockSession = await ext.context.newCDPSession(ext.page);
+    await clockSession.send('Emulation.setTimezoneOverride', { timezoneId: 'UTC' });
+    await ext.page.addInitScript(installTimezoneWallClock, Date.parse('2026-07-15T07:30:00Z'));
     await openHome(ext.page, ext.extensionId);
     await ext.page.waitForTimeout(600);
     assert.equal(ext.net.bing.length, 0, `E1 bing requests: ${ext.net.bing.join(' | ')}`);
     const timeText = (await ext.page.locator('#time').textContent() || '').trim();
-    assert.match(timeText, /\d{1,2}:\d{2}/);
+    assert.equal(timeText, '07:30', 'fresh install follows the controlled system clock');
+    assert.match(await ext.page.locator('#timezone-label').textContent(), /UTC\+0/);
     for (const banned of BANNED) {
       const body = await ext.page.locator('#clock-widget').innerText();
       assert.equal(body.includes(banned), false, `E1 saw ${banned}`);

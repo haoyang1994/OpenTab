@@ -24,7 +24,7 @@ function harness(items = [item('a'), item('b')]) {
     querySelectorAll(selector) { return this.children.flatMap(node => [node, ...node.querySelectorAll('*')]).filter(node => selector === '*' || selector.split(',').map(x => x.trim().toUpperCase()).includes(node.tagName)); }
   }
   document = { activeElement: null, createElement: tag => new Element(tag), getElementById: id => elements.get(id) };
-  const entry = new Element('button', 'group-launch-entry'), dialog = new Element('dialog', 'group-launch-dialog');
+  const entry = new Element('button', 'add-shortcut-tile'), dialog = new Element('dialog', 'group-launch-dialog');
   for (const [tag, id] of [['h2', 'title'], ['p', 'status'], ['span', 'count'], ['p', 'limit'], ['button', 'all'], ['button', 'clear'], ['div', 'list'], ['p', 'empty'], ['button', 'cancel'], ['button', 'confirm']]) dialog.append(new Element(tag, `group-launch-${id}`));
   let calls = [], resolve, blocked = false, canceled = 0;
   const preview = { items, groupName: '<script>Group</script>' };
@@ -50,8 +50,8 @@ const tick = () => new Promise(setImmediate);
 {
   const h = harness(), el = suffix => h.elements.get(`group-launch-${suffix}`);
   assert.equal(h.api.isActive(), false); assert.equal(h.dialog.open, false); assert.equal(h.calls.length, 0);
-  h.setBlocked(true); h.event(h.entry); assert.equal(h.api.isActive(), false);
-  h.setBlocked(false); h.event(h.entry);
+  h.setBlocked(true); h.api.begin(h.entry); assert.equal(h.api.isActive(), false);
+  h.setBlocked(false); h.api.begin(h.entry);
   assert.equal(h.api.isActive(), true); assert.equal(h.dialog.open, true); assert.equal(h.calls.length, 0);
   assert.equal(h.document.activeElement, el('cancel'), 'preview never autofocuses the destructive confirm');
   assert.match(el('title').textContent, /<script>Group<\/script>/, 'untrusted names are assigned as text');
@@ -64,7 +64,7 @@ const tick = () => new Promise(setImmediate);
   el('confirm').focus(); e = h.event(el('confirm'), 'keydown', { key: 'Tab' }); assert.equal(e.prevented, true); assert.equal(h.document.activeElement, el('clear'), 'first enabled action (all is already selected)');
   e = h.event(el('clear'), 'keydown', { key: 'Tab', shiftKey: true }); assert.equal(e.prevented, true); assert.equal(h.document.activeElement, el('confirm'));
   h.event(el('cancel'), 'keydown', { key: 'Escape' }); assert.equal(h.api.isActive(), false); assert.equal(h.document.activeElement, h.entry); assert.equal(h.calls.length, 0);
-  h.event(h.entry); h.event(el('confirm')); assert.equal(h.api.isPending(), true); assert.equal(h.calls.length, 1);
+  h.api.begin(h.entry); h.event(el('confirm')); assert.equal(h.api.isPending(), true); assert.equal(h.calls.length, 1);
   h.event(el('confirm')); h.event(el('cancel'), 'keydown', { key: 'Escape' }); h.event(el('cancel'), 'cancel');
   assert.equal(h.calls.length, 1); assert.equal(h.dialog.open, true); assert.equal(h.api.cancel(), false);
   h.finish({ ok: false, reason: 'partial', opened: [item('a').key], failed: [{ ...item('b'), reason: 'create-failed' }] }); await tick();
@@ -77,7 +77,7 @@ const tick = () => new Promise(setImmediate);
 }
 {
   const h = harness(Array.from({length: 21}, (_, i) => item(`site${i}`))), el = suffix => h.elements.get(`group-launch-${suffix}`);
-  h.event(h.entry); assert.equal(h.rows().length, 21); assert.ok(h.rows().every(row => row.children[0].checked));
+  h.api.begin(h.entry); assert.equal(h.rows().length, 21); assert.ok(h.rows().every(row => row.children[0].checked));
   assert.equal(el('confirm').disabled, true); assert.match(el('limit').textContent, /20/);
   h.event(el('confirm')); assert.equal(h.calls.length, 0, 'programmatic confirm cannot bypass limit');
   const check = h.rows()[0].children[0]; check.checked = false; h.event(check, 'change');
@@ -89,7 +89,7 @@ const tick = () => new Promise(setImmediate);
 }
 {
   const h = harness([]), el = suffix => h.elements.get(`group-launch-${suffix}`);
-  h.event(h.entry); assert.equal(el('empty').hidden, false); assert.equal(el('confirm').disabled, true); assert.equal(el('all').disabled, true);
+  h.api.begin(h.entry); assert.equal(el('empty').hidden, false); assert.equal(el('confirm').disabled, true); assert.equal(el('all').disabled, true);
   h.event(el('confirm')); assert.equal(h.calls.length, 0); h.event(el('cancel'));
 }
 console.log('Group launch UI unit regressions passed: inert preview, explicit max-20 confirmation, focus/keyboard isolation, singleflight and partial retry.');

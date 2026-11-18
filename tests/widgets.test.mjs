@@ -1,9 +1,11 @@
+import { runDesktopAction } from './desktop-action.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { startWidgetWebFixture } from './widget-web-fixture.mjs';
+import { waitForAsync } from './wait-for-async.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webFixture = process.argv.includes('--web-fixture');
@@ -48,7 +50,8 @@ try {
   const handle = id => page.locator(`[id="widget-move-${id}"]`);
   async function edit(id) { await more(id).click(); await page.getByRole('menuitem', { name: '编辑', exact: true }).click(); }
   const submit = () => page.locator('#widget-settings button[type="submit"]');
-  async function add(kind) { await page.click('#widget-add'); await page.locator(`.widget-library-card[data-kind="${kind}"] .widget-library-add`).click(); }
+  async function catalog() { await page.click('#add-shortcut-tile'); await page.click('#widget-add'); }
+  async function add(kind) { await catalog(); await page.locator(`.widget-library-card[data-kind="${kind}"] .widget-library-add`).click(); }
   async function grab(id) { await page.waitForFunction(id => !document.getElementById(`widget-move-${id}`).closest('.widget-card').getAnimations().some(animation => animation.id === 'opentab-desktop-shift'), id); const rect = await handle(id).boundingBox(); await page.mouse.move(rect.x + 20, rect.y + 12); await page.mouse.down(); return { x: rect.x + 20, y: rect.y + 12 }; }
   async function pointerDrag(id, dx, dy, cancel = false) {
     const point = await grab(id); await page.mouse.move(point.x + dx, point.y + dy, { steps: 8 });
@@ -56,14 +59,99 @@ try {
   }
   const cellWidth = () => page.locator('#icons-container').evaluate(node => (node.getBoundingClientRect().width + 12) / 6);
 
+  // The add button remains an ordinary button until movement crosses the drag threshold.
+  const addTile = page.locator('#add-shortcut-tile');
+  async function dragAddTo(x, y, cancel = false) {
+    await addTile.scrollIntoViewIfNeeded();
+    await addTile.evaluate(node => Promise.all(node.getAnimations().map(animation => animation.finished.catch(() => {}))));
+    const from = await addTile.boundingBox();
+    const to = await page.locator('#icons-container').evaluate((node, { x, y }) => {
+      const rect = node.getBoundingClientRect(), css = getComputedStyle(node), gap = parseFloat(css.columnGap);
+      const columns = Number(css.getPropertyValue('--desktop-columns'));
+      return { x: rect.left + x * (rect.width + gap) / columns + 16, y: rect.top + y * (parseFloat(css.gridAutoRows) + gap) + 16 };
+    }, { x, y });
+    await page.mouse.move(from.x + 16, from.y + 16); await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    if (cancel) await page.keyboard.press('Escape');
+    await page.mouse.up();
+    assert.equal(await page.locator('#add-icon-modal').isVisible(), false, 'releasing a drag must not open Add');
+  }
+  const twoGroups = seed([note()]);
+  twoGroups.folders.push({ id: 'other', name: '第二组' });
+  await reset(twoGroups);
+  await dragAddTo(0, 0, true);
+  assert.deepEqual(await state(), JSON.parse(twoGroups.widgetWorkspace), 'Escape leaves the original layout intact');
+  await dragAddTo(0, 0);
+  await saved(value => value.pages[0].addTile?.x === 0);
+  assert.notDeepEqual([ (await state()).widgets[0].x, (await state()).widgets[0].y ], [0, 0]);
+  await page.keyboard.press('ControlOrMeta+z'); await saved(value => !value.pages[0].addTile);
+  assert.deepEqual((await state()).widgets, JSON.parse(twoGroups.widgetWorkspace).widgets);
+  await addTile.press('ArrowRight'); await saved(value => value.pages[0].addTile?.x === 3);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#add-shortcut-tile')?.style.gridColumnStart === '4');
+  await addTile.click(); await page.locator('#icon-url').fill('https://saved.example/'); await page.locator('#icon-url').press('Enter');
+  await page.locator('#add-icon-modal').waitFor({ state: 'hidden' });
+  assert.equal(await addTile.evaluate(node => node.style.gridColumnStart), '4');
+  await page.locator('#group-tabs [data-group-id="other"]').click();
+  await page.waitForFunction(() => OpenTabDesktop.getContext().groupId === 'other' && document.querySelector('#add-shortcut-tile').style.gridColumnStart === '1');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.querySelector('#icons-container').dataset.projected === 'true');
+  await dragAddTo(1, 0);
+  await saved(value => value.pages.find(p => p.groupId === 'other')?.addTile?.x === 1);
+  assert.equal((await state()).pages.find(p => p.groupId === 'folder-home').addTile.x, 3);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  console.log('widgets: add tile pointer and keyboard moves, cancellation, displacement undo, activation, reload, groups and narrow projection passed');
+
   await reset(seed());
-  await page.click('#widget-add'); await page.screenshot({ path: path.join(artifacts, 'gallery-light.png') });
+  const pristine = await page.evaluate(async () => (await chrome.storage.local.get('widgetWorkspace')).widgetWorkspace);
+  assert.equal(await page.locator('#group-tabs').isVisible(), false, 'one group hides redundant tabs');
+  assert.equal(await page.locator('#add-group-btn').isVisible(), true, 'new group remains available');
+  assert.equal(await page.locator('#widget-add').isVisible(), false, 'no permanent widget add button');
+  await page.click('#add-shortcut-tile');
+  assert.equal(await page.locator('#icon-url').evaluate(node => node === document.activeElement), true);
+  await page.locator('#icon-url').fill('https://docs.example.com/path');
+  await page.locator('#icon-url').press('Enter'); await page.locator('#add-icon-modal.hidden').waitFor({ state: 'attached' });
+  await waitForAsync(page, async () => (await chrome.storage.local.get('icons')).icons.some(icon => icon.name === 'docs.example.com'));
+  await page.reload(); await page.waitForFunction(() => document.querySelector('#icons-container')?.dataset.widgetsReady === 'true');
+  assert.equal(await page.evaluate(async () => (await chrome.storage.local.get('widgetWorkspace')).widgetWorkspace), pristine, 'refresh and website add do not relocate the desktop');
+  await page.locator('#icons-container').click({ button: 'right', position: { x: 2, y: 2 } });
+  assert.equal(await page.locator('#icon-url').evaluate(node => node === document.activeElement), true, 'empty grid context menu opens the same website-first panel');
+  await page.keyboard.press('Escape');
+  await reset(seed());
+  await catalog(); await page.screenshot({ path: path.join(artifacts, 'gallery-light.png') });
   await page.keyboard.press('Escape');
   await add('note');
   assert.equal(await page.locator('#widget-settings textarea').evaluate(node => node === document.activeElement), true, 'content receives initial focus');
   await page.locator('#widget-settings textarea').fill('取消不会留下空卡片'); await page.keyboard.press('Escape');
   assert.equal((await state()).widgets.length, 0, 'cancel add is atomic');
   assert.equal(await page.evaluate(() => OpenTabWidgets.canSwitch()), true, 'Escape leaves no invisible draft blocking navigation');
+  // Drafts now live in layout settings and widget management, separately.
+  for (const action of ['cancel', 'save']) {
+    await reset(seed()); await page.click('#settings-btn'); await page.click('#settings-nav-shortcuts');
+    await page.locator('#desktop-column-count').fill('8'); await page.keyboard.press('Escape');
+    await add('note');
+    if (action === 'save') { await submit().click(); await saved(value => value.widgets.length === 1); }
+    else await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#desktop-column-count').isVisible(), true);
+    assert.equal(await page.locator('#desktop-column-count').inputValue(), '8');
+    await page.getByRole('button', { name: '取消桌面列数修改', exact: true }).click(); await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => OpenTabWidgets.canSwitch()), true);
+    await catalog(); await page.getByRole('button', { name: '组件管理', exact: true }).click();
+    const registration = page.locator('#widget-dialog .widget-register');
+    assert.equal(await registration.evaluate(node => node.open), false);
+    await registration.locator('summary').press('Enter');
+    const input = page.locator('#widget-dialog textarea');
+    const definition = (await input.inputValue()).replace('my.project', 'my.draft'); await input.fill(definition);
+    await page.getByRole('button', { name: '选择组件', exact: true }).click();
+    await page.locator('.widget-library-card[data-kind="note"] .widget-library-add').click();
+    if (action === 'save') { await submit().click(); await saved(value => value.widgets.length === 2); }
+    else await page.keyboard.press('Escape');
+    await page.locator('#widget-dialog[open]').waitFor();
+    assert.equal(await input.inputValue(), definition);
+    await page.getByRole('button', { name: '舍弃注册草稿', exact: true }).click(); await page.keyboard.press('Escape');
+  }
+  console.log('widgets: layout and registration drafts remain visible in their settings after add cancel/save');
+  await reset(seed());
   await add('note'); await page.locator('#widget-settings textarea').fill('新便笺');
   await submit().evaluate(button => { button.click(); button.click(); });
   await page.waitForSelector('#widget-settings:not([open])', { state: 'attached' });
@@ -83,6 +171,15 @@ try {
   assert.equal(await page.locator('#desktop-widget-feedback').count(), 0, 'the desktop notification panel is removed');
   assert.equal(await page.locator('#toast').isVisible(), false, 'delete is silent');
   await page.screenshot({ path: path.join(artifacts, 'delete-without-notice.png') });
+  await page.evaluate(() => {
+    const area = chrome.storage.local, original = area.set.bind(area); let failOnce = true;
+    area.set = (patch, callback) => { if (failOnce && Object.hasOwn(patch, 'widgetWorkspace')) { failOnce = false; throw new Error('transient undo storage failure'); } return original(patch, callback); };
+  });
+  // Use the keyboard path: feedback must keep the action when undo returns false.
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('保存失败'));
+  assert.equal((await state()).widgets.length, 0);
+  assert.equal(await page.evaluate(() => OpenTabDesktop.canUndo()), true, 'failed keyboard undo remains retryable');
   await page.keyboard.press('ControlOrMeta+z'); await saved(value => value.widgets.length === 1);
   assert.equal(await page.locator('#toast').isVisible(), false, 'undo is silent');
   console.log('widgets: atomic add/edit/cancel, repeated submit, accessible action menu, delete and undo passed');
@@ -116,8 +213,8 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => document.querySelector('#icons-container')?.dataset.projected === 'true');
   assert.deepEqual(await state(), siteLayout, 'responsive reflow cannot write positions');
-  await page.click('#widget-add'); await page.screenshot({ path: path.join(artifacts, 'gallery-narrow.png') });
-  assert.equal(await page.locator('#widget-dialog').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'narrow gallery has no horizontal overflow');
+  await catalog(); await page.screenshot({ path: path.join(artifacts, 'gallery-narrow.png') });
+  assert.equal(await page.locator('#add-widget-catalog').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'narrow gallery has no horizontal overflow');
   await page.keyboard.press('Escape'); await edit('note'); await page.screenshot({ path: path.join(artifacts, 'editor-narrow.png') });
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -258,15 +355,36 @@ try {
 
 
   await reset(seed([], [icon('a'), icon('b'), icon('c')]));
-  const previewValid = await page.evaluate(() => {
+  const dropTrace = await page.evaluate(async () => {
     const source = document.querySelector('.icon-widget[data-id="c"]'), target = document.querySelector('.icon-widget[data-id="a"]');
     const sr = source.getBoundingClientRect(), tr = target.getBoundingClientRect(), dt = new DataTransfer();
+    // Hold the real save until the neighbor has finished moving into the preview.
+    let unlock;
+    await new Promise(ready => navigator.locks.request('opentab-workspace-v1', () =>
+      new Promise(resolve => { unlock = resolve; ready(); })));
     source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: sr.x + sr.width / 2, clientY: sr.y + sr.height / 2 }));
     const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: tr.x + 4, clientY: tr.y + tr.height / 2 };
     target.dispatchEvent(new DragEvent('dragover', opts)); const valid = document.querySelector('.desktop-drop-preview')?.dataset.valid;
-    target.dispatchEvent(new DragEvent('drop', opts)); source.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt })); return valid;
+    target.dispatchEvent(new DragEvent('drop', opts)); source.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+    const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+    try {
+      await Promise.all(target.getAnimations().map(animation => animation.finished.catch(() => {})));
+      await nextFrame();
+    } finally { unlock(); }
+    const previewX = target.getBoundingClientRect().left;
+    let furthestRewind = 0;
+    for (let frame = 0; frame < 30; frame++) {
+      await nextFrame();
+      const x = document.querySelector('.icon-widget[data-id="a"]').getBoundingClientRect().left;
+      furthestRewind = Math.max(furthestRewind, previewX - x);
+    }
+    return { valid, advanced: previewX - tr.left, furthestRewind, sameNode: target.isConnected };
   });
-  assert.equal(previewValid, 'true'); await saved(value => value.pages[0].icons.find(icon => icon.id === 'c')?.x === 0);
+  assert.equal(dropTrace.valid, 'true');
+  assert.ok(dropTrace.advanced > 10, 'the neighbor reached its displaced slot while the save was pending');
+  assert.ok(dropTrace.furthestRewind < 2, 'committing must not replay a completed displacement');
+  assert.ok(dropTrace.sameNode, 'the displaced icon survives the layout commit');
+  await saved(value => value.pages[0].icons.find(icon => icon.id === 'c')?.x === 0);
   const visualIds = () => page.locator('#icons-container .icon-widget[data-id]').evaluateAll(nodes => nodes.map(node => node.dataset.id));
   assert.deepEqual(await visualIds(), ['c', 'a', 'b'], 'quick drop inserts before the target');
   await page.reload(); await page.waitForFunction(() => document.querySelector('#icons-container')?.dataset.widgetsReady === 'true');
@@ -306,6 +424,7 @@ try {
   await page.waitForTimeout(600); assert.equal(await page.locator('#widget-menu').isVisible(), false, 'scrolling does not trigger long press');
 
   async function mergeGesture(drop) {
+    await page.waitForFunction(() => !document.getAnimations().some(animation => animation.id === 'opentab-desktop-shift'));
     await page.evaluate(async drop => {
       const source = document.querySelector('.icon-widget[data-id="a"]'), target = document.querySelector('.icon-widget[data-id="b"]');
       const sr = source.getBoundingClientRect(), tr = target.getBoundingClientRect(), dt = new DataTransfer();
@@ -313,6 +432,7 @@ try {
       const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: tr.x + tr.width / 2, clientY: tr.y + tr.height / 2 };
       target.dispatchEvent(new DragEvent('dragover', opts));
       await new Promise(resolve => setTimeout(resolve, 600));
+      if (!document.querySelector('.desktop-drop-preview')) throw new Error('ordinary-site hover keeps its sort preview');
       if (drop) target.dispatchEvent(new DragEvent('drop', opts));
       else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       source.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
@@ -320,9 +440,46 @@ try {
   }
   await mergeGesture(false);
   assert.equal(await page.locator('.icon-folder').count(), 0, 'hover and Escape cannot merge icons');
-  await mergeGesture(true); await page.waitForSelector('.icon-folder');
-  await page.waitForFunction(() => OpenTabDesktop.canUndo()); assert.equal(await page.locator('#toast').isVisible(), false, 'folder creation is silent');
-  console.log('widgets: touch long press, scroll cancellation and explicit-drop folder merge passed');
+  await mergeGesture(true);
+  assert.equal(await page.locator('.icon-folder').count(), 0, 'dropping on an ordinary site only sorts');
+  await page.waitForFunction(() => OpenTabDesktop.canUndo()); assert.equal(await page.locator('#toast').isVisible(), false, 'sorting is silent');
+  console.log('widgets: touch long press, scroll cancellation and ordinary-site sorting passed');
+  // Explicit creation is separate from sorting; existing folders accept an
+  // immediate drop, including Shift, without a hover timer.
+  await reset(seed([], [icon('a'), icon('b'), icon('c')]));
+  await runDesktopAction(page, 'select-sites');
+  assert.equal(await page.locator('#site-selection-folder').isDisabled(), true);
+  await page.locator('.icon-widget[data-id="a"] .site-selection-checkbox').check();
+  assert.equal(await page.locator('#site-selection-folder').isDisabled(), true);
+  await page.locator('.icon-widget[data-id="b"] .site-selection-checkbox').check();
+  await page.click('#site-selection-folder');
+  await waitForAsync(page, async () => (await chrome.storage.local.get('icons')).icons.some(item => item.type === 'folder'));
+  const created = await page.evaluate(async () => (await chrome.storage.local.get('icons')).icons.find(item => item.type === 'folder'));
+  await page.locator('#site-selection-toolbar').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.querySelector('#icons-container')?.dataset.widgetsReady === 'true' && !document.getElementById('widget-add').disabled);
+  await page.evaluate(folderId => {
+    const source = document.querySelector('.icon-widget[data-id="c"]'), target = document.querySelector(`.icon-widget[data-id="${CSS.escape(folderId)}"]`);
+    const a = source.getBoundingClientRect(), b = target.getBoundingClientRect(), dataTransfer = new DataTransfer();
+    source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer, clientX: a.x + a.width / 2, clientY: a.y + a.height / 2 }));
+    const options = { bubbles: true, cancelable: true, dataTransfer, clientX: b.x + b.width / 2, clientY: b.y + b.height / 2, shiftKey: true };
+    target.dispatchEvent(new DragEvent('dragover', options)); target.dispatchEvent(new DragEvent('drop', options));
+    source.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+  }, created.id);
+  await waitForAsync(page, async id => (await chrome.storage.local.get('icons')).icons.find(item => item.id === 'c').parentId === id, created.id);
+  await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z');
+  await waitForAsync(page, async () => !(await chrome.storage.local.get('icons')).icons.find(item => item.id === 'c').parentId);
+  console.log('widgets: explicit multi-select folder creation, immediate Shift drop into existing folder and guarded inverse passed');
+  await reset(seed([note('note', 0, 0), note('neighbor', 2, 0)], [icon('a'), icon('b')]));
+  const layoutNow = () => page.evaluate(async () => {
+    const saved = await chrome.storage.local.get(['widgetWorkspace', 'icons']);
+    return OpenTabWidgetModel.desktop(OpenTabWidgetModel.parse(saved.widgetWorkspace), 'folder-home', saved.icons, 6);
+  });
+  const layoutBefore = await layoutNow();
+  await pointerDrag('note', (await cellWidth()) * 2, 0); await saved(value => value.widgets.find(item => item.id === 'note').x === 2);
+  await handle('note').focus(); await page.keyboard.press('ControlOrMeta+z');
+  await saved(value => value.widgets.find(item => item.id === 'note').x === 0);
+  assert.deepEqual(await layoutNow(), layoutBefore, 'one keyboard undo restores every widget and website displacement');
+  console.log('widgets: native Ctrl/Cmd+Z restores the complete group layout transaction');
   const display = [note(),
     { ...note('tasks', 2, 0), type: 'builtin.checklist', data: { items: [{ id: 'one', text: '完成今日计划', done: true }, { id: 'two', text: '准备下一个版本', done: false }] } },
     { ...note('links', 4, 0), type: 'builtin.links', data: { links: [{ label: '项目文档', url: 'https://example.com/docs' }] } },

@@ -1,3 +1,4 @@
+import { nativeModifier } from './native-input.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -127,11 +128,14 @@ export async function verifySavedSites(page, worker) {
     await page.locator('#search-input').press(`${modifier}+Enter`);
     assert.equal((await log()).length, count + 1);
     assert.equal((await log()).at(-1).openInNewTab, true);
-    await type('doc'); count = (await log()).length;
-    await page.locator(siteSelector).first().click({ modifiers: [modifier] });
-    assert.equal((await log()).length, count + 1);
-    assert.equal((await log()).at(-1).openInNewTab, true);
   }
+  // A Control-click is the native context menu on macOS. Exercise the actual
+  // host's new-tab pointer gesture; both keyboard modifiers remain covered above.
+  await type('doc');
+  const beforeModifiedClick = (await log()).length;
+  await page.locator(siteSelector).first().click({ modifiers: [nativeModifier] });
+  assert.equal((await log()).length, beforeModifiedClick + 1);
+  assert.equal((await log()).at(-1).openInNewTab, true);
   await type('doc');
   let count = (await log()).length;
   await page.locator(siteSelector).first().click({ button: 'middle' });

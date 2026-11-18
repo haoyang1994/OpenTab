@@ -868,6 +868,7 @@
   function onGridKeydown(event) {
     const widget = event.target.closest('.icon-widget[data-id]');
     if (!widget) return;
+    if (window.OpenTabIcons?.handleMenuKeydown(event, widget, openIconContextMenu)) return;
     if ((event.key === 'Enter' || event.key === ' ') && window.OpenTabFolders && OpenTabFolders.isFolderId(widget.dataset.id)) {
       event.preventDefault();
       OpenTabFolders.openOverlay(widget.dataset.id);
@@ -1148,7 +1149,8 @@
     elements.sshSocksPassword.value = '';
     updateIconModalTypeView();
 
-    elements.iconName.focus();
+    OpenTabIcons.showAddPanel(state, false);
+    elements.iconUrl.focus();
   }
 
   function openEditIconModal(iconId) {
@@ -1186,6 +1188,7 @@
       ? t('已保存本地图标')
       : '';
     elements.toolSubtype.value = icon.toolSubtype || '';
+    OpenTabIcons.showAddPanel(state, true);
     elements.iconName.focus();
   }
 
@@ -1208,7 +1211,7 @@
     const iconType = normalizeIconType(elements.iconType.value);
     const isSsh = iconType === ICON_TYPE_SSH;
     const isTool = iconType === ICON_TYPE_TOOL;
-    const name = elements.iconName.value.trim();
+    const name = OpenTabIcons.defaultName(elements.iconName.value, elements.iconUrl.value, !editingIconId && !isSsh && !isTool);
     const rawUrl = elements.iconUrl.value.trim();
     const rawCustomUrl = elements.iconCustomUrl.value.trim();
     const rawGatewayUrl = elements.sshGatewayUrl.value.trim();
@@ -1489,8 +1492,7 @@
     event.preventDefault();
     hideIconContextMenu();
     rememberFocus();
-    if (window.OpenTabWidgets) OpenTabWidgets.openLibrary();
-    else openAddIconModal();
+    openAddIconModal();
   });
 
   document.addEventListener('keydown', handleEscape);
@@ -1704,6 +1706,7 @@
   // Context bridge: widgets retain their own entity model and use the shared
   // atomic coordinator. Website/folder actions continue to use their existing host.
   window.OpenTabDesktop = Object.freeze({
+    openAdd: openAddIconModal, closeAdd: closeAddIconModal,
     offerUndo, canUndo, undo: undoLastAction, showError: (text, source) => showToast(text, { source }),
     getContext: () => ({ groupId: state.currentFolderId, sceneId: sceneRuntime?.getView()?.sceneId || 'scene-default', generation: sceneRuntime?.getView()?.generation || 0 }),
     getSnapshot: () => ({ icons: state.icons, folders: state.folders, columns: window.OpenTabLayout?.get()?.layoutColumns >= 4 ? OpenTabLayout.get().layoutColumns : 6 }),

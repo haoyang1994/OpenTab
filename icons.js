@@ -791,6 +791,18 @@
     if (ui.letter) ui.letter.focus();
   }
 
+  function handleMenuKeydown(event, widget, open) {
+    // macOS Chromium does not synthesize contextmenu for Shift+F10.
+    if (event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey
+      || !(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) return false;
+    event.preventDefault();
+    const rect = widget.getBoundingClientRect();
+    host.rememberFocus?.(widget);
+    open({ clientX: rect.left, clientY: rect.bottom }, widget.dataset.id);
+    document.getElementById('icon-context-menu')?.querySelector('button:not([disabled]):not([hidden]):not(.hidden)')?.focus();
+    return true;
+  }
+
   function placeMenu(menu, event) {
     if (!menu) return;
     const pad = 8;
@@ -960,6 +972,7 @@
       async run(draft, form, task, onSuccess) {
         if (pending.has(draft)) return;
         pending.add(draft);
+        const doc = globalThis.document, focused = doc?.activeElement;
         const controls = [...form.querySelectorAll('input, select, textarea, button')].map((node) => [node, node.disabled]);
         controls.forEach(([node]) => { if (node.id !== 'cancel-btn') node.disabled = true; });
         let released = false;
@@ -969,8 +982,17 @@
           controls.forEach(([node, disabled]) => { node.disabled = disabled; });
         };
         releaseCurrent = release;
-        try { if (await task()) onSuccess(); }
-        finally { pending.delete(draft); release(); }
+        let saved = false;
+        try { if (await task()) { saved = true; onSuccess(); } }
+        finally {
+          pending.delete(draft);
+          const restore = !saved && !released;
+          release();
+          // Disabling the submit button can leave native keyboard focus on body.
+          // Restore only a failed, still-open draft; never steal a new focus.
+          if (restore && doc && doc.activeElement === doc.body && focused?.isConnected && !focused.disabled
+            && form.contains(focused) && !form.classList.contains('hidden')) focused.focus();
+        }
       }
     };
   }
@@ -990,6 +1012,32 @@
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return icon.url;
     } catch (error) { /* invalid */ }
     return '';
+  }
+
+  function defaultName(name, rawUrl, adding) {
+    if (name.trim() || !adding) return name.trim();
+    try {
+      const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`);
+      return ['http:', 'https:'].includes(url.protocol) && !!url.hostname ? url.hostname : '';
+    } catch (_) { return ''; }
+  }
+  function showAddPanel(state, editing) {
+    const byId = id => document.getElementById(id);
+    const choose = widgets => {
+      byId('add-shortcut-editor').hidden = widgets;
+      byId('add-widget-catalog').hidden = !widgets;
+      byId('save-btn').hidden = widgets;
+      byId('add-website').setAttribute('aria-pressed', String(!widgets));
+      byId('widget-add').setAttribute('aria-pressed', String(widgets));
+      if (widgets) globalThis.OpenTabWidgets?.prepareCatalog();
+      else byId('icon-url').focus();
+    };
+    if (!editing) byId('icon-modal-title').textContent = t('添加内容');
+    byId('add-panel-navigation').hidden = editing;
+    byId('add-target-group').textContent = t('当前分组：{name}', { name: (state.folders || []).find(group => group.id === state.currentFolderId)?.name || '' });
+    byId('add-website').onclick = () => choose(false);
+    byId('widget-add').onclick = () => choose(true);
+    choose(false);
   }
 
   function bindSaveInputs(elements, save) {
@@ -1041,9 +1089,10 @@
     createUploadGate,
     closeChanger,
     placeMenu,
+    handleMenuKeydown,
     handleEscape,
     gridIsReady,
-    bindSaveInputs,
+    bindSaveInputs, defaultName, showAddPanel,
     init
   };
 }));

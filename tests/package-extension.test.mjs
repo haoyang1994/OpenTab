@@ -1,3 +1,4 @@
+import { runDesktopAction } from './desktop-action.mjs';
 // Real Chromium MV3 smoke of the extracted ZIP, never the repository root.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -198,7 +199,7 @@ try {
       await page.waitForFunction(() => globalThis.OpenTabGroupLaunch && document.querySelector('.icon-widget[data-id="packaged-launch-site"]'));
       await page.waitForLoadState('networkidle');
       const launchBefore = await page.evaluate(() => chrome.storage.local.get(['icons', 'folders']));
-      await page.click('#group-launch-entry');
+      await runDesktopAction(page, 'preview-group');
       assert.equal(await page.locator('#group-launch-list input[type="checkbox"]').count(), 1);
       assert.equal(await page.locator('#group-launch-list input').inputValue(), launchUrl);
       assert.equal(await page.locator('#group-launch-confirm').textContent(), 'Open 1 selected websites');
@@ -241,7 +242,7 @@ try {
       const moveBefore = await page.evaluate(keys => chrome.storage.local.get(keys), moveKeys);
       const sourceSession = await page.evaluate(() => sessionStorage.getItem('opentab.scene.view'));
       const pagesBefore = context.pages().length;
-      await page.click('#select-sites');
+      await runDesktopAction(page, 'select-sites');
       await page.locator('.icon-widget[data-id="packaged-move-site"] .site-selection-checkbox').check();
       await page.click('#site-selection-move');
       const destinationOption = page.locator('#site-selection-destination option[data-kind="group"][data-destination-id="packaged-work-home"]');

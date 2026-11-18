@@ -1,3 +1,4 @@
+import { nativeModifier } from './native-input.mjs';
 import assert from 'node:assert/strict';
 import { waitForAsync } from './wait-for-async.mjs';
 
@@ -296,7 +297,7 @@ export async function verifyEngineDeck(page, serviceWorker, screenshot = async (
   await page.keyboard.press('Escape'); await waitClosed();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await selected.click(); await waitOpen();
-  await page.keyboard.press('Control+k');
+  await page.keyboard.press(`${nativeModifier}+k`);
   await page.waitForSelector('#command-palette:not(.hidden)'); await waitClosed();
   assert.equal(await choices.evaluateAll((buttons) => buttons.filter((button) => !button.inert).length), 1);
   await page.keyboard.press('Escape');

@@ -182,7 +182,9 @@ async function switchTo(id, p = page) {
   await p.waitForSelector('.scene-dialog[open]', { state: 'detached' }); await viewIs(p, id);
 }
 async function selectGroup(id, p = page) {
-  await click(p, `#group-tabs [data-group-id="${id}"]`);
+  // A scene with one group hides the tabs. The already-selected group needs
+  // no navigation; every actual group change still uses the native tab click.
+  if ((await currentView(p))?.currentFolderId !== id) await click(p, `#group-tabs [data-group-id="${id}"]`);
   await p.waitForFunction(id => OpenTabSceneNavigation.getView().currentFolderId === id, id);
 }
 async function settings(section, p = page) {

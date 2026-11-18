@@ -1,3 +1,4 @@
+import { nativeModifier } from './native-input.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -260,9 +261,9 @@ async function verifyReducedMotionFocusFlows() {
     { name: 'TODO', open: async () => { await page.click('[data-clock-card="2"]'); await page.click('#clock-todo-open'); }, focused: '#todo-input',
       close: () => page.keyboard.press('Escape'), opener: '#clock-todo-open', persistsTodoPanel: true, finish: () => page.click('[data-clock-card="0"]') },
     { name: 'settings', open: () => page.click('#settings-btn'), focused: '#settings-search', close: () => page.click('#close-settings'), opener: '#settings-btn' },
-    { name: 'command palette', open: async () => { await page.locator('#zen-toggle-btn').focus(); await page.keyboard.press('Control+k'); },
+    { name: 'command palette', open: async () => { await page.locator('#zen-toggle-btn').focus(); await page.keyboard.press(`${nativeModifier}+k`); },
       focused: '#command-palette-input', close: () => page.keyboard.press('Escape'), opener: '#zen-toggle-btn' },
-    { name: 'add-site dialog', open: () => page.click('#add-shortcut-tile'), focused: '#icon-name', close: () => page.click('#cancel-btn'), opener: '#add-shortcut-tile' },
+    { name: 'add-site dialog', open: () => page.click('#add-shortcut-tile'), focused: '#icon-url', close: () => page.click('#cancel-btn'), opener: '#add-shortcut-tile' },
     { name: 'change-icon dialog', open: async () => { await page.click('.icon-widget[data-id="study-docs"]', { button: 'right' }); await page.click('#change-icon-btn'); },
       focused: '#change-icon-letter', close: () => page.click('#change-icon-close'), opener: '.icon-widget[data-id="study-docs"]' },
     { name: 'timezone', open: () => page.click('#timezone-btn'), focused: `#timezone-list [data-tz=${JSON.stringify(timezone)}]`,

@@ -11,6 +11,22 @@ assert.equal(layout.entries.find(e => e.id === 'i:new').x, 1);
 M.saveDesktop(value, 'folder-home', layout);
 const byId = entries => entries.slice().sort((a, b) => a.id.localeCompare(b.id));
 assert.deepEqual(byId(M.desktop(M.parse(M.serialize(value)), 'folder-home', [icon('last'), icon('saved'), icon('new')]).entries), byId(layout.entries), 'reload and icon array order preserve saved coordinates');
+{
+  const saved = M.copy(value);
+  saved.pages[0].addTile = { x: 2, y: 0 };
+  const ids = ['saved', 'last', 'new', 'another'].map(icon);
+  const layout = M.desktop(M.parse(M.serialize(saved)), 'folder-home', ids);
+  const tile = layout.entries.find(entry => entry.id === M.ADD_TILE);
+  assert.deepEqual([tile.x, tile.y], [2, 0]);
+  assert.ok(layout.entries.filter(entry => entry !== tile).every(entry => !M.overlap(tile, entry)));
+  assert.ok(!M.desktop(saved, 'other', []).entries.some(entry => entry.id === M.ADD_TILE));
+  M.saveDesktop(saved, 'folder-home', M.moveLayout(layout, M.ADD_TILE, { x: 0, y: 0 }));
+  assert.deepEqual(M.parse(M.serialize(saved)).pages[0].addTile, { x: 0, y: 0 });
+  assert.ok(!saved.pages[0].icons.some(entry => entry.id === M.ADD_TILE));
+  saved.pages[0].addTile.x = saved.pages[0].columns;
+  assert.throws(() => M.serialize(saved));
+}
+
 const original = M.serialize(value);
 const narrow = M.arrange(layout.entries, 1);
 assert.equal(M.serialize(value), original, 'narrow projection never mutates persisted positions');

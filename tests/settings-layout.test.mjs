@@ -509,11 +509,15 @@ async function runSettingsLayoutE2E() {
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'modal-paste-sites',
       'AC6 add-icon modal traps Tab from Save to its new first batch-add entry');
-    await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate(() => document.activeElement?.id), 'icon-type',
-      'AC6 the batch-add entry participates in the native form tab order');
-    await page.keyboard.press('Shift+Tab');
-    assert.equal(await page.evaluate(() => document.activeElement?.id), 'modal-paste-sites');
+    for (const id of ['add-website', 'widget-add', 'icon-type']) {
+      await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement?.id), id,
+        'AC6 batch entry and unified Add navigation participate in native form tab order');
+    }
+    for (const id of ['widget-add', 'add-website', 'modal-paste-sites']) {
+      await page.keyboard.press('Shift+Tab');
+      assert.equal(await page.evaluate(() => document.activeElement?.id), id);
+    }
     await page.keyboard.press('Shift+Tab');
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'save-btn',
       'AC6 add-icon modal traps Shift+Tab from its first entry back to Save');

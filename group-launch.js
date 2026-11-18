@@ -8,7 +8,7 @@
     const trigger = mode.trigger;
     mode = null;
     byId('group-launch-dialog').close();
-    if (restore && trigger?.isConnected) trigger.focus();
+    if (restore) (trigger?.isConnected ? trigger : byId('add-shortcut-tile'))?.focus();
     return true;
   }
   function sync() {
@@ -32,7 +32,7 @@
     byId('group-launch-cancel').textContent = mode.attempted ? t('关闭') : t('取消');
     byId('group-launch-dialog').setAttribute('aria-busy', String(pending));
   }
-  function begin(trigger = byId('group-launch-entry')) {
+  function begin(trigger = byId('add-shortcut-tile')) {
     if (mode || pending || host.isEditingBlocked?.() || global.OpenTabSiteSelection?.isPending()) return;
     global.OpenTabSiteSelection?.cancel(false);
     host.endDesktopDrag(); host.hideIconContextMenu();
@@ -118,7 +118,6 @@
       transaction: task => global.OpenTabWorkspace.transaction(task),
       createTab: url => global.chrome.tabs.create({ url, active: false })
     });
-    byId('group-launch-entry').addEventListener('click', () => begin());
     byId('group-launch-cancel').addEventListener('click', () => close());
     byId('group-launch-confirm').addEventListener('click', confirm);
     byId('group-launch-all').addEventListener('click', () => { if (!mode || pending || mode.stale) return; mode.selected = new Set(mode.preview.items.filter(item => !mode.opened.has(item.key)).map(item => item.key)); sync(); });

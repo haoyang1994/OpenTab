@@ -73,7 +73,7 @@
   function isShown(el) {
     if (!el || el.disabled) return false;
     if (el.hidden) return false;
-    if (el.closest && el.closest('.hidden')) return false;
+    if (el.closest && el.closest('.hidden, [hidden], [inert]')) return false;
     if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return true;
     const style = window.getComputedStyle(el);
     return style.display !== 'none' && style.visibility !== 'hidden';

@@ -1,3 +1,5 @@
+import { runDesktopAction } from './desktop-action.mjs';
+import { nativeSelectIndex } from './native-input.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,6 +10,9 @@ import { waitForAsync } from './wait-for-async.mjs';
 import { PIXEL, graphKeys } from './scenes-fixtures.mjs';
 const Schema = createRequire(import.meta.url)('../scene-schema.js');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+console.log(process.env.OPENTAB_NATIVE_SELECT_KEYBOARD === 'true'
+  ? 'Site selection: native popup keyboard path (Home/ArrowDown), with unchanged destination assertions.'
+  : 'Site selection: selectOption functional path; native popup keyboard selection is NOT verified. Tab/Shift+Tab checks remain enabled.');
 const artifacts = path.join(root, 'artifacts'); fs.mkdirSync(artifacts, { recursive: true });
 const site = (id, folderId = 'folder-home', parentId = '') => ({ id, name: `Site ${id}`, url: `https://${id}.example.test/`, type: 'shortcut', folderId, parentId });
 const fixture = {
@@ -54,16 +59,16 @@ async function reset(extra = {}) {
     && document.body.classList.contains('theme-light') === (themeMode === 'light'),
   { languagePreference: data.languagePreference, themeMode: data.themeMode });
 }
-async function start(folder = false) { await page.click(folder ? '#folder-select-sites' : '#select-sites'); await page.waitForSelector('#site-selection-toolbar:not([hidden])'); }
+async function start(folder = false) {
+  if (folder) await page.click('#folder-select-sites');
+  else await runDesktopAction(page, 'select-sites');
+  await page.waitForSelector('#site-selection-toolbar:not([hidden])');
+}
 async function choose(kind, id) {
   await page.click('#site-selection-move');
   const index = await page.locator('#site-selection-destination option').evaluateAll((options, identity) => options.findIndex(option => option.textContent.endsWith(`(${identity})`)), id);
   assert.ok(index >= 0, `${kind} destination ${id} exists`);
-  await page.locator('#site-selection-destination').focus();
-  await page.keyboard.press('Home');
-  for (let step = 0; step < index; step++) await page.keyboard.press('ArrowDown');
-  // Closed native selects apply Home/ArrowDown immediately. Enter here can
-  // open the native option popup rather than confirm an already applied value.
+  await nativeSelectIndex(page, '#site-selection-destination', index);
   assert.equal(await page.locator('#site-selection-destination').inputValue(), String(index));
   assert.equal(await page.evaluate(() => document.activeElement.id), 'site-selection-destination');
 }
@@ -153,8 +158,7 @@ async function chooseScene(kind, id) {
   const option = page.locator(`#site-selection-destination option[data-kind="${kind}"][data-destination-id="${id}"]`);
   assert.equal(await option.count(), 1, 'destination uses a stable kind and ID despite duplicate labels');
   const value = await option.getAttribute('value');
-  await page.locator('#site-selection-destination').focus(); await page.keyboard.press('Home');
-  for (let step = 0; step < Number(value); step++) await page.keyboard.press('ArrowDown');
+  await nativeSelectIndex(page, '#site-selection-destination', Number(value));
   assert.equal(await page.locator('#site-selection-destination').inputValue(), value);
   assert.equal(await page.evaluate(() => document.activeElement.id), 'site-selection-destination');
   assert.equal(await option.getAttribute('data-scene-id'), B);
@@ -199,7 +203,7 @@ try {
   await start();
   assert.equal(await page.locator('.site-selection-checkbox').count(), 3, 'only HTTP(S) root websites are selectable');
   assert.equal(await page.locator('#site-selection-move').isDisabled(), true);
-  await page.click(tile('a'), { modifiers: ['Control'] });
+  await page.click(tile('a'), { modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
   assert.equal(await page.locator(check('a')).isChecked(), true);
   await page.click(tile('b'), { button: 'middle' });
   assert.equal(await page.locator(check('b')).isChecked(), false);
@@ -224,7 +228,7 @@ try {
   assert.equal(await page.locator('#site-selection-dialog').isVisible(), false);
   assert.equal(await page.evaluate(() => OpenTabSiteSelection.isActive()), true, 'dialog Escape leaves selection');
   await page.keyboard.press('Escape'); await assertClosed();
-  assert.equal(await page.evaluate(() => document.activeElement.id), 'select-sites');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'add-shortcut-tile');
   assert.deepEqual(await read(), before, 'cancel has zero workspace writes');
   assert.deepEqual(navigations, [], 'modifier and middle clicks did not navigate');
   // No dormant toolbar or dialog controls can enter the normal tab sequence.
@@ -235,7 +239,7 @@ try {
   await page.click(check('a')); await page.click(check('b')); await choose('group', 'work');
   await page.click('#site-selection-confirm'); await assertClosed();
   assert.equal((await read()).icons.find(icon => icon.id === 'a').folderId, 'work');
-  await page.click('#toast button');
+  await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z');
   await page.waitForFunction(() => OpenTabFolders.bulkMoveContext().sites.some(site => site.id === 'a'));
   await waitForAsync(worker, async () => (await chrome.storage.local.get('icons')).icons.some(icon => icon.id === 'a' && icon.folderId === 'folder-home'));
   assert.equal((await read()).icons.find(icon => icon.id === 'a').folderId, 'folder-home', 'Undo is durable');
@@ -310,7 +314,7 @@ try {
 
   // Native palette/search interaction remains normal outside selection and
   // exits selection before showing the palette from its non-text controls.
-  await reset(); await start(); await page.locator(check('a')).focus(); await page.keyboard.press('Control+k');
+  await reset(); await start(); await page.locator(check('a')).focus(); await page.keyboard.press('ControlOrMeta+k');
   await page.waitForSelector('#command-palette:not(.hidden)'); await assertClosed(); await page.keyboard.press('Escape');
   await start(); await page.click('[data-group-id="work"]'); await assertClosed();
   await page.click('[data-group-id="folder-home"]');
@@ -366,7 +370,7 @@ try {
     const expected = expectedMove(before, ['a', 'b'], destination.groupId, destination.parentId);
     assert.deepEqual(await readScenes(), expected, 'only the two memberships change: IDs, URLs, assets, metadata, order, todos and profiles survive');
     assert.deepEqual(await viewState(), sourceView, 'moving does not switch scenes, groups, or tab-local selection');
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'select-sites');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'add-shortcut-tile');
     assert.equal(await page.locator(tile('a')).count(), 0);
     assert.equal(expected.icons.filter(icon => icon.url === before.icons.find(icon => icon.id === 'a').url).length, 3, 'duplicate URLs are moved as independent records, never deduplicated');
     await assertNoBrowserWork(startNetwork, startNavigation);
@@ -407,7 +411,7 @@ try {
     concurrent.icons.find(icon => icon.id === 'c').name = 'Unrelated change while Undo waits';
     concurrent.todos.find(todo => todo.id === 'todo-b').text = 'Concurrent Work task';
     await holdSceneWrite({ icons: concurrent.icons, todos: concurrent.todos });
-    await page.click('#toast button'); await releaseSceneWrite(); await settleSceneWrites();
+    await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z'); await releaseSceneWrite(); await settleSceneWrites();
     await waitForAsync(worker, async () => (await chrome.storage.local.get('icons')).icons.some(icon => icon.id === 'source'));
     const expected = structuredClone(before);
     expected.icons.find(icon => icon.id === 'c').name = 'Unrelated change while Undo waits';
@@ -486,7 +490,7 @@ try {
     await resetScene(); await start(); await page.click(check('a')); await chooseScene('folder', 'work-target');
     await page.click('#site-selection-confirm'); assert.equal((await waitMove()).ok, true); await assertClosed();
     const expected = await readScenes(); change(expected); Schema.validate(expected);
-    await holdSceneWrite(expected); await page.click('#toast button'); await releaseSceneWrite(); await settleSceneWrites();
+    await holdSceneWrite(expected); await page.locator('#add-shortcut-tile').focus(); await page.keyboard.press('ControlOrMeta+z'); await releaseSceneWrite(); await settleSceneWrites();
     assert.deepEqual(await readScenes(), expected, `${label} blocks stale Undo without losing the concurrent change`);
   }
 
@@ -545,7 +549,7 @@ try {
     }
     await page.screenshot({ path: path.join(artifacts, `site-selection-cross-scene-${languagePreference}-${themeMode}-${width}.png`), animations: 'disabled' });
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await assertClosed();
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'select-sites');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'add-shortcut-tile');
     assert.deepEqual(await readScenes(), before, 'visual preview and Cancel never write the workspace');
   }
   assert.deepEqual(errors, []);

@@ -1,3 +1,4 @@
+import { runDesktopAction } from './desktop-action.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -181,8 +182,7 @@ async function reset(extra = {}) {
   return data;
 }
 async function open(key) {
-  await page.locator('#group-launch-entry').focus();
-  if (key) await page.keyboard.press(key); else await page.click('#group-launch-entry');
+  await runDesktopAction(page, 'preview-group', key === 'Enter');
   await page.waitForSelector(`${dialog}[open]`);
   assert.equal(await page.locator(dialog).evaluate(el => el instanceof HTMLDialogElement && el.matches(':modal')), true, 'launch preview is a native modal dialog');
   assert.equal(await page.locator(dialog).evaluate(el => el.contains(document.activeElement)), true, 'opening moves focus into the modal');
@@ -190,7 +190,7 @@ async function open(key) {
 async function close(key = 'Escape') {
   if (key === 'Escape') await page.keyboard.press(key); else await page.click('#group-launch-cancel');
   await page.waitForFunction(() => !document.querySelector('#group-launch-dialog')?.open && !OpenTabGroupLaunch.isActive());
-  assert.equal(await focused(), 'group-launch-entry', 'closing restores focus to the launch entry');
+  assert.equal(await focused(), 'add-shortcut-tile', 'closing restores focus to the command palette opener');
 }
 async function select(urls) {
   await page.click('#group-launch-clear');
@@ -198,7 +198,11 @@ async function select(urls) {
   assert.deepEqual((await boxes().evaluateAll(nodes => nodes.filter(node => node.checked).map(node => node.value))).sort(), [...urls].sort());
 }
 async function finished() {
-  await page.waitForFunction(() => !OpenTabGroupLaunch.isPending() && document.querySelector('#group-launch-status')?.textContent.trim().length > 0);
+  // Successful batches are deliberately silent. Observe settled real tab API
+  // calls (or a visible failure), then keep the per-tab outcome assertions below.
+  await page.waitForFunction(() => !OpenTabGroupLaunch.isPending() && (
+    (window.__groupLaunchCalls.length > 0 && window.__groupLaunchCalls.every(call => call.result !== 'pending'))
+    || document.querySelector('#group-launch-status')?.textContent.trim().length > 0));
 }
 async function boundedLaunchRead(read) {
   let timer;
@@ -296,7 +300,7 @@ try {
     await close(); await assertNoLaunch(before, 'opening, typing and cancelling do not create any tabs');
     assert.equal(network.length, requestCount, 'preview/selection/cancellation send no intercepted network requests');
     assert.equal(loopbackRequests.length, loopbackCount, 'preview/selection/cancellation send no direct loopback requests');
-    await open('Space'); await close('button'); await assertNoLaunch(before, 'both explicit Cancel and Escape are read-only');
+    await open(); await close('button'); await assertNoLaunch(before, 'both explicit Cancel and Escape are read-only');
     for (let step = 0; step < 30; step++) {
       await page.keyboard.press('Tab');
       assert.equal(await page.evaluate(() => Boolean(document.activeElement.closest('#group-launch-dialog'))), false, 'closed dialog controls leave the normal tab order');

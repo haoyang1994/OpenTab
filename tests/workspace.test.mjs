@@ -50,11 +50,11 @@ try {
   // Let first-install initialization finish before replacing synthetic fixtures.
   const bootstrap = await context.newPage();
   await bootstrap.goto(home); await ready(bootstrap); await bootstrap.close();
-  async function pair(icons = [icon('x'), icon('y')]) {
+  async function pair(icons = [icon('x'), icon('y')], folders = [{ id: HOME, name: '主页' }]) {
     caseNumber += 1;
     for (const page of pages) if (!page.isClosed()) await page.close();
     await worker.evaluate(async (fixture) => { await chrome.storage.local.clear(); await chrome.storage.local.set(fixture); }, {
-      icons, folders: [{ id: HOME, name: '主页' }], currentFolderId: HOME,
+      icons, folders, currentFolderId: HOME,
       background, clockFormat: '24h', themeMode: 'light', todos: [], todoPanelOpen: false
     });
     writeTrace.push({ type: 'fixture-installed', caseNumber, icons: icons.map(({ id, name }) => ({ id, name })) });
@@ -192,7 +192,7 @@ try {
   console.log('workspace: icon changer draft cannot overwrite a rebased item');
 
 
-  [a, b] = await pair();
+  [a, b] = await pair(undefined, [{ id: HOME, name: '主页' }, { id: 'rename-secondary', name: 'Second group' }]);
   await b.locator(`.group-tab[data-group-id="${HOME}"]`).dblclick();
   await b.fill('.group-rename-input', 'Uncommitted group draft');
   await add(a, 'New independent item'); await expectNames(a, ['x', 'y', 'New independent item']);
@@ -216,15 +216,15 @@ try {
   await backup(b, [icon('imported', 'Imported')]);
   // This case tests an old Undo intent across a settings rebase, not sidebar
   // navigation. Invoke the real change handler without opening/closing the
-  // sidebar inside the six-second Undo window; native settings is covered above.
+  // sidebar while the guarded Undo intent exists; native settings is covered above.
   await a.evaluate(() => {
     const input = document.querySelector('#time-format');
     input.value = '12h'; input.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await waitForAsync(a, async () => (await chrome.storage.local.get('clockFormat')).clockFormat === '12h');
   await a.waitForFunction(() => document.querySelector('#icons-container .icon-widget[data-id="imported"] .icon-name')?.textContent === 'Imported');
-  await a.locator('#toast button').click();
-  await a.waitForFunction(() => /其他标签页|冲突|重试|已变化|已更新|失效/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal(await a.evaluate(() => OpenTabDesktop.canUndo()), false, 'replacement invalidates the old keyboard undo intent');
+  await a.locator('#add-shortcut-tile').focus(); await a.keyboard.press('ControlOrMeta+z');
   await expectNames(a, ['Imported']); await reloadCheck(['Imported']);
   console.log('workspace: old undo cannot cross replacement after a setting rebase');
 
@@ -239,7 +239,8 @@ try {
   [a, b] = await pair();
   await remove(a, 'x'); await expectNames(a, ['y']);
   await add(b, 'After deletion'); await expectNames(b, ['y', 'After deletion']);
-  await a.locator('#toast button').click();
+  await a.waitForFunction(() => OpenTabDesktop.canUndo());
+  await a.locator('#add-shortcut-tile').focus(); await a.keyboard.press('ControlOrMeta+z');
   await expectNames(a, ['x', 'y', 'After deletion']); await reloadCheck(['x', 'y', 'After deletion']);
   console.log('workspace: delete undo preserves another tab addition');
 

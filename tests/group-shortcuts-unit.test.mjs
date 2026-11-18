@@ -118,3 +118,12 @@ for (const [navigator, , label] of platforms) {
   assert.equal(h.calls.length, 0);
 }
 console.log('Group shortcut units passed: Mac Option/digit keys untouched and unadvertised, Windows/Linux defaults retained, UA-data fallback, typing/IME/browser guards, and click/API navigation.');
+
+{
+  const h = harness({ platform: 'Linux' });
+  h.state.folders = [{ id: 'single', name: 'Only group' }]; h.state.currentFolderId = 'single'; h.api.renderChrome();
+  assert.equal(h.tabs.hidden, true, 'one group suppresses redundant tab labels');
+  h.state.folders.push({ id: 'second', name: 'Second group' }); h.api.renderChrome();
+  assert.equal(h.tabs.hidden, false, 'creating a second group restores switching tabs');
+  assert.equal(h.tabs.children.length, 2);
+}

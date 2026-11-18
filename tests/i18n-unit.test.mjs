@@ -176,7 +176,11 @@ for (const options of [{ readError: true }, { noStorage: true }]) {
 }
 // Every static annotation must have an English catalog entry. Brand marks are excluded.
 {
-  const { api } = create();
+  const { api, context } = create();
+  // The real page loads feature catalogs as well as the static shell catalog.
+  for (const name of ['core', 'services', 'scenes', 'widgets']) {
+    vm.runInContext(readFileSync(new URL(`../locales/${name}-en.js`, import.meta.url), 'utf8'), context);
+  }
   await api.ready;
   for (const file of ['home.html', 'popup.html']) {
     const html = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');

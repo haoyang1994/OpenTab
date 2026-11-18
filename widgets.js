@@ -3,14 +3,15 @@
   const M = g.OpenTabWidgetModel, KEY = M.KEY, EPOCH = g.OpenTabWorkspace.EPOCH_KEY;
   const BACKUP = 'opentab.widgetMigrationBackup';
   const t = (source, params) => g.OpenTabI18n.t(source, params);
-  let state = M.parse(), raw, epoch = 0, pending = false, blocked = false, loaded = false;
+  let state = M.parse(), raw, epoch = 0, pending = false, loading = false, blocked = false, loaded = false;
   let grid, library, settings, libraryStatus, settingsStatus, previews, registerInput, recovery, undoButton, librarySearch;
   let context, desktop, projected, libraryContext, settingsContext, undoRecord, settingsDraft = false, registrationDraft = false, layoutDraft = false;
+  let layoutContext, layoutReceipt, managementList, registrationPanel;
   const cards = new Map();
   let deferredChanges = {};
-  let menu, menuTrigger, libraryTrigger, editorTrigger, libraryPages, lastMessage = '';
+  let menu, menuTrigger, libraryTrigger, editorTrigger, lastMessage = '';
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
-  function button(text, action) { const node = el('button', t(text)); node.type = 'button'; if (action) node.addEventListener('click', action); return node; }
+  function button(text, action, className) { const node = el('button', t(text), className); node.type = 'button'; if (action) node.addEventListener('click', action); return node; }
   function field(form, labelText, value, type = 'text', options = {}) {
     const input = el(type === 'textarea' ? 'textarea' : 'input'), label = el('label', t(labelText));
     if (type !== 'textarea') input.type = type;
@@ -29,6 +30,7 @@
     lastMessage = text;
     if (settings?.open) settingsStatus.textContent = text;
     else if (library?.open) libraryStatus.textContent = text;
+    else if (document.getElementById('add-widget-status') && !document.getElementById('add-widget-catalog').hidden && !document.getElementById('add-icon-modal').classList.contains('hidden')) document.getElementById('add-widget-status').textContent = text;
     else g.OpenTabDesktop?.showError?.(text, 'widgets');
   }
   function failure(error) {
@@ -41,7 +43,7 @@
   function busy(value) {
     pending = value;
     document.getElementById('widget-add').disabled = value || (!loaded && !blocked);
-    for (const control of document.querySelectorAll('.widget-card button, .widget-card input, .widget-dialog button, .widget-dialog input, .widget-dialog textarea')) {
+    for (const control of document.querySelectorAll('.widget-card button, .widget-card input, .widget-dialog button, .widget-dialog input, .widget-dialog textarea, #add-widget-catalog button, #add-widget-catalog input, #desktop-layout-settings button, #desktop-layout-settings input')) {
       if (control.dataset.recovery) continue;
       const textInput = control.matches('textarea, input:not([type="checkbox"])');
       control.disabled = value || control.dataset.unavailable === 'true' || (blocked && !textInput && !control.dataset.close);
@@ -67,11 +69,11 @@
     try {
       const next = M.copy(state); update(next);
       const encoded = M.serialize(next);
-      const saved = await g.OpenTabWorkspace.commit({ [KEY]: raw, [EPOCH]: epoch }, { [KEY]: encoded }, latest => validTarget(latest, expected, expectedIcons));
+      const saved = await g.OpenTabWorkspace.commit({ [KEY]: raw, [EPOCH]: epoch }, { [KEY]: encoded }, latest => validTarget(latest, expected, expectedIcons) && (!options.guard || options.guard(latest)));
       raw = saved[KEY]; epoch = saved[EPOCH] || 0; state = M.parse(raw);
       g.OpenTabDesktop?.adoptWidgets(raw);
       if (!options.keepUndo) undoRecord = null;
-      render(); message(''); return true;
+      render(false, options.settle ? captureRects() : null); message(''); return true;
     } catch (error) {
       if (error?.code === 'WORKSPACE_CONFLICT') blocked = true;
       message(failure(error)); return false;
@@ -144,9 +146,9 @@
     card.cancelPress = cancelPress;
     return card;
   }
-  function render(force = false) {
+  function render(force = false, before = null) {
     if (!grid || !loaded || !context) return;
-    const before = settleRects; settleRects = null; if (before) endDragView(false);
+    if (before) endDragView(false);
     closeMenu();
     const visible = state.widgets.filter(item => item.groupId === context.groupId);
     const emptyHint = document.getElementById('icons-empty-hint');
@@ -159,8 +161,21 @@
     }
     desktop = M.desktop(state, context.groupId, snapshot().icons, snapshot().columns || 6);
     reflow(); settleFrom(before); busy(pending);
+    if (!layoutDraft && document.getElementById('desktop-column-count')) document.getElementById('desktop-column-count').value = desktop.columns;
   }
-  function nodeFor(id) { return id.startsWith('w:') ? cards.get(id.slice(2)) : grid.querySelector(`.icon-widget[data-id="${CSS.escape(id.slice(2))}"]`); }
+  function nodeFor(id) {
+    if (id === M.ADD_TILE) return grid.querySelector('#add-shortcut-tile');
+    return id.startsWith('w:') ? cards.get(id.slice(2)) : grid.querySelector(`.icon-widget[data-id="${CSS.escape(id.slice(2))}"]`);
+  }
+  // Unmoved add buttons follow the first vacancy without reserving a saved cell.
+  function visibleLayout(layout, columns) {
+    const entries = columns === layout.columns ? layout.entries.slice() : M.arrange(layout.entries, columns, M.ADD_TILE);
+    if (!entries.some(entry => entry.id === M.ADD_TILE)) {
+      entries.push({ id: M.ADD_TILE, ...M.free(entries, 1, 1, columns), w: 1, h: 1 });
+    }
+    return { columns, entries };
+  }
+  let boundAddTile;
   function place(node, entry) { node.style.gridColumn = `${entry.x + 1} / span ${entry.w}`; node.style.gridRow = `${entry.y + 1} / span ${entry.h}`; }
   function reflow() {
     if (!desktop || !grid?.clientWidth) return;
@@ -169,7 +184,7 @@
     if ((pointerDrag || iconDrag) && projected?.columns !== available) cancelDrag();
     else if (pointerDrag?.moved || iconDrag || dropPending) return;
     grid.style.setProperty('--desktop-columns', available); grid.dataset.projected = String(narrow);
-    projected = { columns: available, entries: narrow ? M.arrange(desktop.entries, available) : M.copy(desktop.entries) };
+    projected = visibleLayout(desktop, available);
     const sorted = projected.entries.slice().sort((a, b) => a.y - b.y || a.x - b.x), active = document.activeElement;
     let anchor = grid.firstElementChild;
     const order = node => {
@@ -179,23 +194,28 @@
       anchor = node.nextElementSibling;
     };
     for (const entry of sorted) { const node = nodeFor(entry.id); if (!node) continue; place(node, entry); order(node); }
-    const add = grid.querySelector('#add-shortcut-tile');
-    if (add) { place(add, { ...M.free(projected.entries, 1, 1, available), w: 1, h: 1 }); order(add); }
+    const add = nodeFor(M.ADD_TILE);
+    if (add && boundAddTile !== add) {
+      bindDrag(add, add, M.ADD_TILE);
+      add.title = t('拖动移动，方向键调整位置');
+      boundAddTile = add;
+    }
     if (active?.isConnected && active !== document.activeElement) active.focus({ preventScroll: true });
   }
   function movedLayout(id, patch, reorder) {
     if (id.startsWith('i:') && reorder) return M.reorderIcons(desktop, id, reorder.targetId, reorder.after);
-    const entry = desktop.entries.find(item => item.id === id); if (!entry) throw new Error('OCCUPIED');
+    const layout = id === M.ADD_TILE ? visibleLayout(desktop, desktop.columns) : desktop;
+    const entry = layout.entries.find(item => item.id === id); if (!entry) throw new Error('OCCUPIED');
     const next = { ...entry, ...patch };
     if (![next.x, next.y, next.w, next.h].every(Number.isInteger) || next.x < 0 || next.y < 0 || next.y > 511 || next.w < 1 || next.h < 1 || next.h > 12 || next.x + next.w > desktop.columns) throw new Error('OUT_OF_BOUNDS');
     if (id.startsWith('w:')) {
       const def = defFor(state.widgets.find(item => item.id === id.slice(2))), renderer = def && M.renderer(def.kind);
       if (renderer && !renderer.customSizes && !renderer.sizes.some(([w, h]) => w === next.w && h === next.h)) throw new TypeError('INVALID_WIDGET_DATA');
     }
-    return M.moveLayout(desktop, id, patch);
+    return M.moveLayout(layout, id, patch);
   }
   let ghost, pointerDrag, iconDrag, scrollFrame = 0, pointerY = 0, updatePreview;
-  let previewLayout, previewKey = '', dragBaseHeight = 0, dragAvatar, settleRects, dropPending = false;
+  let previewLayout, previewKey = '', dragBaseHeight = 0, dragAvatar, dropPending = false;
   const shifts = new Map(), motion = new Map();
   const reducedMotion = () => g.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function animateShift(node, from, to, duration = 170) {
@@ -226,7 +246,7 @@
     shifts.clear();
   }
   function captureRects() {
-    const nodes = desktop.entries.map(entry => nodeFor(entry.id)); nodes.push(grid.querySelector('#add-shortcut-tile'));
+    const nodes = projected.entries.map(entry => nodeFor(entry.id));
     return new Map(nodes.filter(Boolean).map(node => [node, node.getBoundingClientRect()]));
   }
   function settleFrom(rects) {
@@ -238,23 +258,35 @@
   }
   async function move(id, patch, focusId, reorder, prepared) {
     try {
+      const before = M.copy(desktop), expected = { ...context };
       const layout = prepared || movedLayout(id, patch, reorder);
       if (JSON.stringify(layout) === JSON.stringify(desktop)) { endDragView(true); return true; }
-      settleRects = captureRects();
-      if (await change(next => M.saveDesktop(next, context.groupId, layout))) {
+      // Let the preview continue while storage is pending. Capture its live
+      // rectangles only when the committed grid is about to replace it.
+      if (await change(next => M.saveDesktop(next, expected.groupId, layout), expected, { settle: true })) {
+        const receipt = { before, after: M.copy(desktop), context: expected, epoch };
+        layoutReceipt = receipt;
+        const valid = () => layoutReceipt === receipt && receipt.epoch === epoch && sameContext(receipt.context) && !pending && !blocked && JSON.stringify(desktop) === JSON.stringify(receipt.after);
+        g.OpenTabDesktop?.offerUndo?.(async () => {
+          if (!valid()) return false;
+          const guard = latest => JSON.stringify(M.desktop(M.parse(latest[KEY]), expected.groupId, latest.icons || [], snapshot().columns || 6)) === JSON.stringify(receipt.after);
+          if (!await change(next => M.saveDesktop(next, expected.groupId, receipt.before), expected, { guard })) return false;
+          layoutReceipt = null; return true;
+        }, valid);
+
         (document.getElementById(focusId) || nodeFor(id))?.focus({ preventScroll: true }); return true;
       }
     } catch (error) { message(failure(error)); }
-    settleRects = null; endDragView(true); return false;
+    endDragView(true); return false;
   }
   function metrics() {
     const rect = grid.getBoundingClientRect(), style = getComputedStyle(grid), gap = parseFloat(style.columnGap) || 12;
-    return { rect, gap, stepX: (rect.width + gap) / desktop.columns, stepY: (parseFloat(style.gridAutoRows) || 120) + gap };
+    return { rect, gap, stepX: (rect.width + gap) / projected.columns, stepY: (parseFloat(style.gridAutoRows) || 120) + gap };
   }
   function target(event, entry, offset = { x: 0, y: 0 }) {
     const { rect, stepX, stepY } = metrics();
     if (event.clientX < rect.left || event.clientX >= rect.right || event.clientY < rect.top || event.clientY >= rect.bottom || event.clientY < 0 || event.clientY >= innerHeight) return null;
-    return { x: Math.max(0, Math.min(desktop.columns - entry.w, Math.round((event.clientX - rect.left - offset.x) / stepX))), y: Math.max(0, Math.min(511, Math.round((event.clientY - rect.top - offset.y) / stepY))) };
+    return { x: Math.max(0, Math.min(projected.columns - entry.w, Math.round((event.clientX - rect.left - offset.x) / stepX))), y: Math.max(0, Math.min(511, Math.round((event.clientY - rect.top - offset.y) / stepY))) };
   }
   function clearPreview(animate = true) {
     ghost?.remove(); ghost = null; previewLayout = null; previewKey = ''; restoreShifts(animate);
@@ -279,11 +311,14 @@
   function autoScroll(y, update) {
     pointerY = y; updatePreview = update; if (scrollFrame) return;
     const tick = () => {
-      if (!pointerDrag && !iconDrag) { scrollFrame = 0; return; }
+      scrollFrame = 0;
+      if (!pointerDrag && !iconDrag) return;
       const scroller = document.getElementById('content') || document.scrollingElement;
       const rect = scroller === document.scrollingElement ? { top: 0, bottom: innerHeight } : scroller.getBoundingClientRect();
       const delta = pointerY < rect.top + 48 ? -Math.min(12, rect.top + 48 - pointerY) : pointerY > rect.bottom - 48 ? Math.min(12, pointerY - rect.bottom + 48) : 0;
+      const before = scroller.scrollTop;
       if (delta) scroller.scrollTop += delta;
+      if (scroller.scrollTop === before) return;
       updatePreview?.(); scrollFrame = requestAnimationFrame(tick);
     };
     scrollFrame = requestAnimationFrame(tick);
@@ -295,20 +330,16 @@
     try { layout = movedLayout(id, point, reorder); } catch (_) { clearPreview(); return null; }
     previewKey = key; previewLayout = layout;
     const { stepX, stepY, gap } = metrics();
-    const originals = new Map(desktop.entries.map(entry => [entry.id, entry]));
-    for (const entry of layout.entries) {
+    const screen = visibleLayout(layout, projected.columns);
+    const originals = new Map(projected.entries.map(entry => [entry.id, entry]));
+    for (const entry of screen.entries) {
       if (entry.id === id) continue;
       const original = originals.get(entry.id);
       shift(nodeFor(entry.id), (entry.x - original.x) * stepX, (entry.y - original.y) * stepY);
     }
-    const add = grid.querySelector('#add-shortcut-tile');
-    if (add) {
-      const point = M.free(layout.entries, 1, 1, desktop.columns);
-      shift(add, (point.x - (parseInt(add.style.gridColumnStart, 10) - 1)) * stepX, (point.y - (parseInt(add.style.gridRowStart, 10) - 1)) * stepY);
-    }
     if (!ghost) { ghost = el('div', undefined, 'desktop-drop-preview'); ghost.setAttribute('aria-hidden', 'true'); grid.append(ghost); }
-    place(ghost, layout.entries.find(entry => entry.id === id)); ghost.dataset.valid = 'true';
-    grid.style.minBlockSize = `${Math.max(dragBaseHeight + stepY, ...layout.entries.map(entry => (entry.y + entry.h) * stepY - gap + 16))}px`;
+    place(ghost, screen.entries.find(entry => entry.id === id)); ghost.dataset.valid = 'true';
+    grid.style.minBlockSize = `${Math.max(dragBaseHeight + stepY, ...screen.entries.map(entry => (entry.y + entry.h) * stepY - gap + 16))}px`;
     return layout;
   }
   function followPointer(event, drag) {
@@ -316,35 +347,49 @@
     shift(nodeFor(drag.id), event.clientX - drag.offset.x - rect.left - drag.entry.x * stepX, event.clientY - drag.offset.y - rect.top - drag.entry.y * stepY, false);
   }
   function bindDrag(handle, card, id) {
+    const isAddTile = id === M.ADD_TILE;
+    let suppressClick = false;
+    if (isAddTile) handle.addEventListener('click', event => {
+      if (suppressClick && event.detail > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
     handle.addEventListener('keydown', event => {
       const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
       if (!delta || event.altKey || event.ctrlKey || event.metaKey) return;
       event.preventDefault(); event.stopPropagation(); if (pending || blocked) return;
-      const entry = desktop.entries.find(item => item.id === id); if (entry) void move(id, { x: entry.x + delta[0], y: entry.y + delta[1] }, handle.id);
+      const layout = isAddTile ? projected : desktop;
+      const entry = layout.entries.find(item => item.id === id);
+      if (!entry || (isAddTile && (entry.x + delta[0] < 0 || entry.x + delta[0] >= layout.columns))) return;
+      void move(id, { x: entry.x + delta[0], y: entry.y + delta[1] }, handle.id);
     });
     handle.addEventListener('pointerdown', event => {
-      if (event.button || !event.isPrimary || pending || blocked) return;
-      if (projected.columns !== desktop.columns) { message(t('窄窗口请在设置中输入桌面坐标。')); return; }
-      const entry = desktop.entries.find(item => item.id === id), rect = card.getBoundingClientRect();
-      pointerDrag = { id, context: { ...context }, entry, offset: { x: event.clientX - rect.left, y: event.clientY - rect.top }, startX: event.clientX, startY: event.clientY, moved: false };
+      if (event.button || !event.isPrimary || pointerDrag) return;
+      suppressClick = false;
+      if (pending || blocked) return;
+      if (!isAddTile && projected.columns !== desktop.columns) { message(t('窄窗口请在设置中输入桌面坐标。')); return; }
+      const entry = projected.entries.find(item => item.id === id), rect = card.getBoundingClientRect();
+      pointerDrag = { id, pointerId: event.pointerId, context: { ...context }, entry, offset: { x: event.clientX - rect.left, y: event.clientY - rect.top }, startX: event.clientX, startY: event.clientY, moved: false };
       handle.setPointerCapture(event.pointerId);
     });
     handle.addEventListener('pointermove', event => {
-      if (!pointerDrag || !handle.hasPointerCapture(event.pointerId)) return;
+      if (pointerDrag?.pointerId !== event.pointerId || !handle.hasPointerCapture(event.pointerId)) return;
       if (!sameContext(pointerDrag.context)) { cancelDrag(); return; }
       if (!pointerDrag.moved && Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY) < 5) return;
-      if (!pointerDrag.moved) { pointerDrag.moved = true; beginDrag(); card.classList.add('widget-dragging'); }
+      if (!pointerDrag.moved) { pointerDrag.moved = true; suppressClick = true; beginDrag(); card.classList.add('widget-dragging'); }
       const update = () => { if (pointerDrag) { preview(id, target(event, pointerDrag.entry, pointerDrag.offset)); followPointer(event, pointerDrag); } };
       update(); autoScroll(event.clientY, update);
     });
     handle.addEventListener('pointerup', event => {
-      if (!pointerDrag) return;
+      if (pointerDrag?.pointerId !== event.pointerId || pointerDrag.id !== id) return;
       const drag = pointerDrag, destination = target(event, drag.entry, drag.offset);
-      if (!drag.moved || !destination || !sameContext(drag.context)) { cancelDrag(); return; }
+      if (!drag.moved || !destination || !sameContext(drag.context) ||
+          (isAddTile && destination.x === drag.entry.x && destination.y === drag.entry.y)) { cancelDrag(); return; }
       const plan = preview(id, destination); if (!plan) { cancelDrag(); return; }
       followPointer(event, drag); releaseDrag(); void move(id, destination, handle.id, undefined, plan);
     });
-    for (const type of ['pointercancel', 'lostpointercapture']) handle.addEventListener(type, () => { if (pointerDrag?.id === id) cancelDrag(); });
+    for (const type of ['pointercancel', 'lostpointercapture']) handle.addEventListener(type, event => { if (pointerDrag?.id === id && pointerDrag.pointerId === event.pointerId) cancelDrag(); });
   }
   async function removeWidget(id) {
     const widget = state.widgets.find(item => item.id === id), expected = { ...context }; if (!widget) return;
@@ -352,21 +397,24 @@
     if (await change(next => { next.widgets = next.widgets.filter(item => item.id !== id); }, expected)) {
       undoRecord = { widget: previous, context: expected, raw, epoch };
       const receipt = undoRecord; g.OpenTabDesktop?.offerUndo?.(() => undo(), () => undoRecord === receipt && receipt.raw === raw && receipt.epoch === epoch && sameContext(receipt.context));
-      message(''); busy(false); document.getElementById('widget-add').focus();
+      message(''); busy(false); document.getElementById('add-shortcut-tile')?.focus();
     }
   }
   async function undo() {
-    const receipt = undoRecord; if (!receipt || receipt.raw !== raw || receipt.epoch !== epoch || !sameContext(receipt.context)) { message(t('桌面已变化，无法撤销旧操作。')); return; }
+    const receipt = undoRecord; if (!receipt || receipt.raw !== raw || receipt.epoch !== epoch || !sameContext(receipt.context)) { message(t('桌面已变化，无法撤销旧操作。')); return false; }
     if (await change(next => {
       if (next.widgets.some(item => item.id === receipt.widget.id)) throw new Error('OCCUPIED');
       if (desktop.entries.some(item => M.overlap(receipt.widget, item))) throw new Error('OCCUPIED');
       next.widgets.push(receipt.widget);
-    }, receipt.context, { keepUndo: true })) { undoRecord = null; message(''); busy(false); }
+    }, receipt.context, { keepUndo: true })) { undoRecord = null; message(''); busy(false); return true; }
+    return false;
   }
   function closeSettings() {
     if (pending) return;
     settingsDraft = false; settings.close(); if (!blocked) message('');
-    (editorTrigger?.isConnected ? editorTrigger : document.getElementById('widget-add'))?.focus({ preventScroll: true });
+    if (registrationDraft) { openLibrary(); return; }
+    if (layoutDraft) { g.OpenTabSettingsNav?.openSection('shortcuts'); document.getElementById('desktop-column-count')?.focus(); return; }
+    (editorTrigger?.isConnected && !editorTrigger.closest('[hidden], .hidden') ? editorTrigger : document.getElementById('add-shortcut-tile'))?.focus({ preventScroll: true });
   }
   function openSettings(id, definition = null, trigger = document.activeElement) {
     if (settings.open || pending || blocked) return;
@@ -426,7 +474,7 @@
         if (await change(next => {
           M.saveDesktop(next, settingsContext.groupId, layout);
           if (adding) next.widgets.push({ ...widget, ...patch, data }); else next.widgets.find(item => item.id === id).data = data;
-        }, settingsContext)) { settingsDraft = false; settings.close(); document.getElementById(`widget-more-${id}`)?.focus({ preventScroll: true }); }
+        }, settingsContext)) { closeSettings(); if (!library.open) document.getElementById(`widget-more-${id}`)?.focus({ preventScroll: true }); }
       } catch (error) { details.open = true; message(failure(error)); }
     });
     // Invalid controls inside a collapsed layout section still need to be focusable.
@@ -464,12 +512,8 @@
       if (renderer) renderer.cleanup(disposable); body.inert = true;
       const footer = el('footer', undefined, 'widget-library-footer');
       const add = button('添加', () => addInstance(def));
-      add.dataset.unavailable = String(!renderer || def.size.w > (desktop?.columns || 6)); add.disabled = add.dataset.unavailable === 'true'; add.className = 'widget-library-add'; add.setAttribute('aria-label', `${t('添加')} · ${title(def)}`);
+      add.dataset.unavailable = String(!renderer || def.size.w > (desktop?.columns || 6)); add.disabled = add.dataset.unavailable === 'true'; add.className = 'widget-library-add btn-small ghost'; add.setAttribute('aria-label', `${t('添加')} · ${title(def)}`);
       footer.append(el('span', `${def.size.w} × ${def.size.h}`, 'widget-library-size'), add);
-      if (!def.id.startsWith('builtin.') && !def.id.startsWith('local.')) footer.append(button('注销定义', async () => {
-        if (state.widgets.some(widget => widget.type === def.id)) { message(t('请先移除该类型在所有分组中的实例。')); return; }
-        if (await change(next => { next.definitions = next.definitions.filter(item => item.id !== def.id); }, libraryContext)) renderLibrary();
-      }));
       card.append(heading, stage, footer); previews.append(card);
     }
     if (!count && query) previews.append(el('p', t('没有找到小组件'), 'widget-library-empty'));
@@ -477,33 +521,61 @@
     for (const widget of state.widgets.filter(item => !groups.has(item.groupId))) {
       const recoveryCard = el('article', undefined, 'widget-library-card'); recoveryCard.append(el('h3', t('未找到原分组的组件')), el('p', `${widget.type} · ${widget.groupId}`), button('恢复到当前分组', async () => {
         if (await change(next => { const chosen = next.widgets.find(item => item.id === widget.id), layout = M.desktop(next, libraryContext.groupId, snapshot().icons); const point = M.free(layout.entries, chosen.w, chosen.h, layout.columns); Object.assign(chosen, point, { groupId: libraryContext.groupId }); }, libraryContext)) renderLibrary();
-      })); previews.append(recoveryCard);
+      }, 'btn-small ghost')); previews.append(recoveryCard);
     }
   }
   function addInstance(def) {
     if (pending || blocked || !sameContext(libraryContext) || !M.renderer(def.kind)) return;
     if (def.size.w > desktop.columns) { message(t('请先增加桌面列数，再添加此组件。')); return; }
-    library.close(); openSettings(null, def, document.getElementById('widget-add'));
+    library.close(); g.OpenTabDesktop?.closeAdd?.(); openSettings(null, def, document.getElementById('add-shortcut-tile'));
+    if (!settings.open && registrationDraft) openLibrary();
+  }
+  function prepareCatalog() {
+    if (!loaded && !blocked || pending || !getContext()) return;
+    libraryContext = { ...getContext() }; librarySearch.value = ''; renderLibrary();
+    const status = document.getElementById('add-widget-status'); if (status) status.textContent = blocked ? lastMessage : '';
+    busy(false);
+  }
+  function renderManagement() {
+    managementList.replaceChildren();
+    if (!state.definitions.length && !blocked) {
+      managementList.append(el('p', t('尚未注册自定义组件。'), 'form-hint'));
+    }
+    for (const def of state.definitions) {
+      const row = el('div', undefined, 'widget-definition-row');
+      row.append(el('span', title(def)));
+      if (!def.id.startsWith('builtin.') && !def.id.startsWith('local.')) row.append(button('注销定义', async () => {
+        if (state.widgets.some(widget => widget.type === def.id)) { message(t('请先移除该类型在所有分组中的实例。')); return; }
+        if (await change(next => { next.definitions = next.definitions.filter(item => item.id !== def.id); }, libraryContext)) {
+          renderManagement();
+          (managementList.querySelector('button') || registrationPanel.firstElementChild).focus();
+        }
+      }));
+      managementList.append(row);
+    }
   }
   function openLibrary() {
     if (library.open || settings.open || (!loaded && !blocked) || pending || !getContext() || g.OpenTabDesktop?.isBlocked()) return;
     libraryTrigger = document.activeElement; closeMenu(); libraryContext = { ...getContext() };
-    librarySearch.value = ''; libraryPages?.[0]?.click(); renderLibrary();
-    if (!layoutDraft) document.getElementById('desktop-column-count').value = desktop?.columns || 6;
-    libraryStatus.textContent = blocked ? lastMessage : ''; g.OpenTabDesktop?.showError?.('', 'widgets'); library.showModal(); busy(false); (blocked ? recovery.querySelector('button') : librarySearch).focus();
+    renderManagement();
+    registrationPanel.open = registrationDraft;
+    libraryStatus.textContent = blocked ? lastMessage : ''; g.OpenTabDesktop?.showError?.('', 'widgets'); library.showModal(); busy(false);
+    const initialControl = registrationDraft ? registerInput : registrationPanel.firstElementChild;
+    (blocked ? recovery.querySelector('button') : initialControl).focus();
   }
   function exportButton() { const control = button('导出恢复数据与草稿', exportDraft); control.dataset.recovery = 'true'; return control; }
   function exportDraft() {
-    const forms = [...document.querySelectorAll('.widget-dialog input, .widget-dialog textarea')].map(input => ({ id: input.id, label: document.querySelector(`label[for="${CSS.escape(input.id)}"]`)?.textContent, value: input.value, checked: input.checked }));
-    const blob = new Blob([JSON.stringify({ format: 'opentab-widget-recovery', version: 1, raw, state, forms, context, settingsContext, libraryContext }, null, 2)], { type: 'application/json' });
+    const forms = [...document.querySelectorAll('.widget-dialog input, .widget-dialog textarea, #desktop-layout-settings input')].map(input => ({ id: input.id, label: document.querySelector(`label[for="${CSS.escape(input.id)}"]`)?.textContent, value: input.value, checked: input.checked }));
+    const blob = new Blob([JSON.stringify({ format: 'opentab-widget-recovery', version: 1, raw, state, forms, context, settingsContext, libraryContext, layoutContext }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), link = el('a'); link.href = url; link.download = 'opentab-widget-recovery.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function load(migrate = false) {
-    if (pending) return; busy(true);
+    if (pending) return; loading = true; busy(true);
     try {
       let saved = await g.OpenTabWorkspace.read(null); raw = saved[KEY];
       let next = M.parse(raw);
       if (migrate && raw && JSON.parse(raw).version === 1) {
+        loading = false; // Migration writes still block scene navigation.
         saved = await g.OpenTabWorkspace.transaction(async ({ read, write }) => {
           const latest = await read(null); if (latest[KEY] !== raw) throw Object.assign(new Error(), { code: 'WORKSPACE_CONFLICT' });
           const previous = latest[BACKUP];
@@ -517,7 +589,7 @@
       g.OpenTabDesktop?.adoptWidgets(raw);
       render(); message('');
     } catch (error) { blocked = true; message(failure(error)); }
-    finally { busy(false); flushChanges(); }
+    finally { loading = false; busy(false); flushChanges(); }
   }
   function receiveChanges(changes, area) {
     if (area !== 'local' || ![KEY, EPOCH, 'folders', 'icons', 'scenes'].some(key => changes[key])) return;
@@ -541,7 +613,7 @@
   async function init() {
     await g.OpenTabI18n.ready;
     grid = document.getElementById('icons-container'); grid.classList.add('desktop-grid');
-    recovery = el('div'); const reload = button('舍弃设置和注册草稿并重新读取', () => { settingsDraft = false; registrationDraft = false; layoutDraft = false; settings.close(); library.close(); void load(true); }); reload.dataset.recovery = 'true';
+    recovery = el('div', undefined, 'widget-management-recovery'); const reload = button('舍弃设置和注册草稿并重新读取', () => { settingsDraft = false; registrationDraft = false; layoutDraft = false; settings.close(); library.close(); void load(true); }); reload.dataset.recovery = 'true';
     recovery.append(exportButton(), reload); undoButton = button('撤销删除', () => { void undo(); }); undoButton.setAttribute('aria-keyshortcuts', 'Control+Z Meta+Z');
     menu = el('div', undefined, 'widget-menu'); menu.id = 'widget-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', t('小组件操作')); menu.hidden = true; document.body.append(menu);
     document.addEventListener('pointerdown', event => { if (!menu.contains(event.target) && !event.target.closest('.widget-more')) closeMenu(); }, true);
@@ -554,63 +626,81 @@
     g.addEventListener('blur', () => { closeMenu(); cancelDrag(); });
     g.addEventListener('resize', () => closeMenu());
     document.addEventListener('scroll', event => { if (!menu.contains(event.target)) closeMenu(); }, true);
-    library = createDialog('widget-dialog', '组件库');
-    const closeLibrary = () => { if (pending) return; registrationDraft = false; layoutDraft = false; registerInput.value = JSON.stringify(example, null, 2); library.close(); if (!blocked) message(''); (libraryTrigger?.isConnected ? libraryTrigger : document.getElementById('widget-add'))?.focus({ preventScroll: true }); };
+    library = createDialog('widget-dialog', '组件管理');
+    const closeLibrary = () => { if (pending) return; registrationDraft = false; registerInput.value = JSON.stringify(example, null, 2); library.close(); if (!blocked) message(''); (libraryTrigger?.isConnected ? libraryTrigger : document.getElementById('add-shortcut-tile'))?.focus({ preventScroll: true }); };
     const close = button('×', closeLibrary); close.setAttribute('aria-label', t('关闭'));
     library.addEventListener('cancel', event => { event.preventDefault(); closeLibrary(); }); close.dataset.close = 'true';
-    const libraryHeader = el('div', undefined, 'widget-dialog-header'), headerActions = el('div', undefined, 'widget-header-actions'); close.classList.add('widget-dialog-close'); headerActions.append(undoButton, close); libraryHeader.append(library.firstElementChild, headerActions); library.append(libraryHeader);
-    const libraryShell = el('div', undefined, 'widget-library-shell');
-    const navigation = el('nav', undefined, 'widget-library-nav'); navigation.setAttribute('aria-label', t('组件库导航'));
-    const libraryMain = el('div', undefined, 'widget-library-main');
+    const libraryHeader = el('div', undefined, 'widget-dialog-header'), headerActions = el('div', undefined, 'widget-header-actions'); close.classList.add('widget-dialog-close'); headerActions.append(button('选择组件', () => { if (pending) return; library.close(); g.OpenTabDesktop?.openAdd?.(); document.getElementById('widget-add').click(); }), undoButton, close); libraryHeader.append(library.firstElementChild, headerActions); library.append(libraryHeader);
     const catalog = el('section', undefined, 'widget-library-page');
     const layoutPage = el('section', undefined, 'widget-library-page');
-    const customPage = el('section', undefined, 'widget-library-page');
-    const pageButtons = []; libraryPages = [];
-    for (const [label, page] of [[t('小组件'), catalog], [t('桌面布局'), layoutPage], [t('自定义组件'), customPage]]) {
-      const tab = button(label, () => { for (const [control, target] of pageButtons) { const active = target === page; target.hidden = !active; control.setAttribute('aria-pressed', String(active)); } });
-      tab.setAttribute('aria-pressed', String(page === catalog)); page.hidden = page !== catalog; pageButtons.push([tab, page]); libraryPages.push(tab); navigation.append(tab);
-    }
+    const customPage = el('section', undefined, 'widget-management-body');
     const catalogHeader = el('div', undefined, 'widget-catalog-header');
     librarySearch = el('input', undefined, 'widget-library-search'); librarySearch.type = 'search'; librarySearch.placeholder = t('搜索小组件'); librarySearch.setAttribute('aria-label', t('搜索小组件'));
     librarySearch.addEventListener('input', renderLibrary); catalogHeader.append(librarySearch);
     previews = el('div', undefined, 'widget-library'); catalog.append(catalogHeader, previews);
-    libraryMain.append(catalog, layoutPage, customPage); libraryShell.append(navigation, libraryMain); library.append(libraryShell);
+    const catalogHost = document.getElementById('add-widget-catalog');
+    const catalogStatus = el('p', '', 'widget-status'); catalogStatus.id = 'add-widget-status'; catalogStatus.setAttribute('role', 'status');
+    const manage = button('组件管理', () => { g.OpenTabDesktop?.closeAdd?.(); openLibrary(); }, 'btn-small ghost');
+    manage.dataset.recovery = 'true';
+    catalogHeader.append(manage);
+    catalogHost.append(catalogStatus, catalog);
+    library.append(customPage);
+    document.getElementById('desktop-layout-settings').append(layoutPage);
     const desktopForm = el('form', undefined, 'widget-form');
+    desktopForm.addEventListener('keydown', event => { if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) event.preventDefault(); });
     desktopForm.append(el('p', t('桌面列数按分组保存。应用列数会整理位置；已有组件大小保持不变。')));
     const columnsInput = field(desktopForm, '桌面列数', 6, 'number', { min: 1, max: 12, required: true }); columnsInput.id = 'desktop-column-count';
     desktopForm.querySelector('label').htmlFor = columnsInput.id;
     const applyColumns = button('应用列数并整理'); applyColumns.type = 'submit'; desktopForm.append(applyColumns);
-    desktopForm.addEventListener('input', () => { layoutDraft = true; });
+    desktopForm.addEventListener('input', () => { if (!layoutDraft) layoutContext = { ...getContext() }; layoutDraft = true; });
     desktopForm.append(button('取消桌面列数修改', () => { columnsInput.value = desktop?.columns || 6; layoutDraft = false; }));
     desktopForm.addEventListener('submit', async event => {
       event.preventDefault(); const columns = Number(columnsInput.value);
+      if (!layoutDraft) layoutContext = { ...getContext() };
       if (await change(next => {
-        const layout = M.desktop(next, libraryContext.groupId, snapshot().icons, snapshot().columns || 6), packed = [];
+        const layout = M.desktop(next, layoutContext.groupId, snapshot().icons, snapshot().columns || 6), packed = [];
         for (const entry of layout.entries.slice().sort((a, b) => a.y - b.y || a.x - b.x)) {
           if (entry.w > columns) throw new TypeError('INVALID_WIDGET_DATA');
           packed.push({ ...entry, ...M.free(packed, entry.w, entry.h, columns) });
         }
-        M.saveDesktop(next, libraryContext.groupId, { columns, entries: packed });
-      }, libraryContext)) layoutDraft = false;
+        M.saveDesktop(next, layoutContext.groupId, { columns, entries: packed });
+      }, layoutContext || getContext())) layoutDraft = false;
     });
     layoutPage.append(el('h3', t('桌面布局')), desktopForm);
-    const details = el('details'); details.append(el('summary', t('注册组合组件')));
-    details.append(el('p', t('用文本、数字、列表、日期、进度和链接组合自己的组件。只接受声明式 JSON，不执行脚本、HTML 或远程代码。')));
+    registrationPanel = el('details', undefined, 'widget-register');
+    registrationPanel.append(el('summary', t('注册组合组件')));
+    registrationPanel.append(el('p', t('用文本、数字、列表、日期、进度和链接组合自己的组件。只接受声明式 JSON，不执行脚本、HTML 或远程代码。')));
     const form = el('form', undefined, 'widget-form'); registerInput = field(form, '组件定义 JSON', JSON.stringify(example, null, 2), 'textarea', { required: true, rows: 14, maxLength: 32000 });
     form.addEventListener('input', () => { registrationDraft = true; });
-    const register = button('注册组件'); register.type = 'submit'; register.classList.add('btn-primary'); form.append(register);
-    form.append(button('舍弃注册草稿', () => { registerInput.value = JSON.stringify(example, null, 2); registrationDraft = false; }));
+    const register = button('注册组件', null, 'btn-primary'); register.type = 'submit';
+    const formActions = el('div', undefined, 'widget-register-actions');
+    formActions.append(button('舍弃注册草稿', () => { registerInput.value = JSON.stringify(example, null, 2); registrationDraft = false; }), register);
+    form.append(formActions);
     form.addEventListener('submit', async event => {
-      event.preventDefault(); try { if (await registerDefinition(JSON.parse(registerInput.value), libraryContext)) { registrationDraft = false; renderLibrary(); } } catch (error) { message(failure(error)); }
+      event.preventDefault();
+      try {
+        if (await registerDefinition(JSON.parse(registerInput.value), libraryContext)) {
+          registrationDraft = false;
+          renderManagement();
+          registrationPanel.open = false;
+          registrationPanel.firstElementChild.focus();
+        }
+      } catch (error) { message(failure(error)); }
     });
-    details.append(form); customPage.append(el('h3', t('自定义组件')), details, exportButton());
+    registrationPanel.append(form);
+    managementList = el('div');
+    const definitions = el('section');
+    definitions.append(el('h3', t('自定义组件')), managementList);
+    const exportDetails = el('details', undefined, 'widget-management-export');
+    exportDetails.append(el('summary', t('恢复数据')), exportButton());
+    customPage.append(definitions, registrationPanel, exportDetails);
     libraryStatus = el('p', '', 'widget-status'); libraryStatus.setAttribute('role', 'status'); libraryHeader.after(libraryStatus, recovery);
     settings = createDialog('widget-settings', '设置'); settings.setAttribute('aria-labelledby', 'widget-settings-title');
     settings.addEventListener('cancel', event => { event.preventDefault(); closeSettings(); });
-    document.getElementById('widget-add').addEventListener('click', openLibrary);
+    document.getElementById('widget-management').addEventListener('click', openLibrary);
     grid.addEventListener('contextmenu', event => {
       if (event.target.closest('.widget-card, .icon-widget, input, textarea, a')) return;
-      event.preventDefault(); event.stopPropagation(); openLibrary();
+      event.preventDefault(); event.stopPropagation(); g.OpenTabDesktop?.openAdd?.();
     });
     // Hit-test saved coordinates, not animated DOM boxes, so previews never chase
     // their own moving targets or accidentally arm a folder underneath them.
@@ -626,7 +716,7 @@
     const nativePreview = () => {
       if (!iconDrag?.point) return;
       const event = iconDrag.point, hit = iconHit(event), merge = g.OpenTabFolders?.getMergePreview?.();
-      if (merge?.sourceId === iconDrag.id.slice(2) && merge.targetId === hit?.entry.id.slice(2) && hit.center && !event.shiftKey) { clearPreview(); return; }
+      if (merge?.sourceId === iconDrag.id.slice(2) && merge.targetId === hit?.entry.id.slice(2) && hit.center) { clearPreview(); return; }
       const reorder = hit ? { targetId: hit.entry.id, after: hit.after } : undefined;
       preview(iconDrag.id, target(event, iconDrag.entry, iconDrag.offset), reorder);
     };
@@ -648,7 +738,7 @@
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
       iconDrag.point = { clientX: event.clientX, clientY: event.clientY, shiftKey: event.shiftKey };
       const hit = iconHit(event); g.OpenTabFolders?.setActiveGrid(grid); g.OpenTabDesktop?.hideDropIndicator();
-      if (hit?.center && !event.shiftKey) g.OpenTabFolders?.handleGridDragOver(routed(event, hit), iconDrag.id.slice(2));
+      if (hit?.center) g.OpenTabFolders?.handleGridDragOver(routed(event, hit), iconDrag.id.slice(2), nativePreview);
       else g.OpenTabFolders?.clearMergeHover();
       nativePreview(); autoScroll(event.clientY, nativePreview);
     }, true);
@@ -659,7 +749,7 @@
       event.preventDefault(); event.stopImmediatePropagation();
       if (pending || blocked || !destination || projected.columns !== desktop.columns || !sameContext(drag.context)) { cancelDrag(); return; }
       const hit = iconHit(event);
-      if (hit?.center && !event.shiftKey && g.OpenTabFolders?.handleGridDrop(routed(event, hit), drag.id.slice(2))) { cancelDrag(); return; }
+      if (hit?.center && g.OpenTabFolders?.handleGridDrop(routed(event, hit), drag.id.slice(2))) { cancelDrag(); return; }
       const reorder = hit ? { targetId: hit.entry.id, after: hit.after } : undefined;
       const plan = preview(drag.id, destination, reorder); if (!plan) { cancelDrag(); return; }
       const chosen = plan.entries.find(item => item.id === drag.id), { stepX, stepY } = metrics();
@@ -667,9 +757,10 @@
       nodeFor(drag.id)?.classList.remove('desktop-native-dragging'); releaseDrag(); void move(drag.id, destination, undefined, reorder, plan);
     }, true);
     grid.addEventListener('dragleave', event => {
+      if (!iconDrag) return;
       const rect = grid.getBoundingClientRect();
       if (event.clientX >= rect.left && event.clientX < rect.right && event.clientY >= rect.top && event.clientY < rect.bottom) return;
-      if (iconDrag) iconDrag.point = null; clearPreview(); stopScroll(); g.OpenTabFolders?.clearMergeHover();
+      iconDrag.point = null; clearPreview(); stopScroll(); g.OpenTabFolders?.clearMergeHover();
     });
     document.addEventListener('dragend', cancelDrag);
     document.addEventListener('drop', () => { if (iconDrag) cancelDrag(); });
@@ -693,6 +784,6 @@
     return change(next => { if (types().some(item => item.id === def.id)) throw new TypeError('INVALID_WIDGET_DATA'); next.definitions.push(def); }, expected);
   }
   const ready = init();
-  g.OpenTabWidgets = Object.freeze({ ready, attach, openLibrary, canSwitch: () => !pending && settings?.open !== true && library?.open !== true && !dirty(),
+  g.OpenTabWidgets = Object.freeze({ ready, attach, openLibrary, prepareCatalog, canSwitch: () => (!pending || loading) && settings?.open !== true && library?.open !== true && !dirty(),
     register: async value => { await ready; return registerDefinition(value); } });
 })(globalThis);

@@ -2,7 +2,6 @@
   const t = (s, p) => globalThis.OpenTabI18n ? globalThis.OpenTabI18n.t(s, p) : s.replace(/\{(\w+)\}/g, (m, k) => p?.[k] ?? m);
 
   const ICON_TYPE_FOLDER = 'folder';
-  const MERGE_HOVER_MS = 500;
   const WHEEL_THROTTLE_MS = 250;
   const OPEN_ALL_CONFIRM_LIMIT = 10;
   const HOME_GROUP_ID = 'folder-home';
@@ -86,7 +85,6 @@
   }
 
   let host = null;
-  let mergeTimer = 0;
   let mergeReady = false;
   let mergeTargetId = null;
   let mergeSourceId = null;
@@ -315,10 +313,6 @@
   }
 
   function clearMergeHover() {
-    if (mergeTimer) {
-      clearTimeout(mergeTimer);
-      mergeTimer = 0;
-    }
     mergeTargetId = null;
     mergeSourceId = null;
     mergeReady = false;
@@ -327,17 +321,16 @@
     });
   }
 
-  function armMerge(sourceId, targetId) {
+  function armMerge(sourceId, targetId, onReady) {
     if (mergeTargetId === targetId && mergeSourceId === sourceId) return;
     clearMergeHover();
     mergeSourceId = sourceId;
     mergeTargetId = targetId;
     const target = document.querySelector(iconSelector(targetId));
     if (target) target.classList.add('folder-merge-target');
-    mergeTimer = setTimeout(() => {
-      mergeTimer = 0; mergeReady = true;
-      target?.classList.add('folder-merge-ready');
-    }, MERGE_HOVER_MS);
+    mergeReady = true;
+    target?.classList.add('folder-merge-ready');
+    onReady?.();
   }
 
   function canMerge(source, target) {
@@ -345,10 +338,10 @@
     if (isFolder(source)) return false;
     if (source.parentId) return false;
     if (target.parentId) return false;
-    return true;
+    return isFolder(target);
   }
 
-  function handleGridDragOver(event, draggingId) {
+  function handleGridDragOver(event, draggingId, onMergeReady) {
     const widget = event.target.closest('.icon-widget[data-id]');
     if (!widget || widget.dataset.id === draggingId) {
       if (mergeTargetId) clearMergeHover();
@@ -361,7 +354,7 @@
       return false;
     }
     host.hideDropIndicator();
-    armMerge(draggingId, target.id);
+    armMerge(draggingId, target.id, onMergeReady);
     return true;
   }
 
@@ -369,7 +362,7 @@
     const icon = find(iconId);
     if (!icon) return false;
     const target = event.target.closest('.icon-widget[data-id]');
-    if (mergeReady && mergeSourceId === iconId && target?.dataset.id === mergeTargetId && !event.shiftKey) {
+    if (mergeReady && mergeSourceId === iconId && target?.dataset.id === mergeTargetId) {
       const targetId = mergeTargetId; clearMergeHover(); mergeIcons(iconId, targetId); return true;
     }
     const destRoot = event.currentTarget;
@@ -397,32 +390,9 @@
     const target = find(targetId);
     if (!canMerge(source, target)) return;
     const before = snapshot();
-    if (isFolder(target)) {
-      source.parentId = target.id;
-      source.folderId = target.folderId;
-      persistUndo(before, t('已加入文件夹'));
-      host.refreshIconViews();
-      return;
-    }
-    const folder = {
-      id: `icon-folder-${host.generateId()}`,
-      type: ICON_TYPE_FOLDER,
-      name: t('文件夹'),
-      folderId: target.folderId,
-      parentId: '',
-      url: '',
-      emoji: '',
-      customIconUrl: '',
-      uploadedIconDataUrl: '',
-      resolvedIconUrl: '',
-      iconCandidates: []
-    };
-    const targetIndex = state().icons.findIndex((item) => item.id === target.id);
-    source.parentId = folder.id;
-    target.parentId = folder.id;
+    source.parentId = target.id;
     source.folderId = target.folderId;
-    state().icons.splice(targetIndex < 0 ? state().icons.length : targetIndex, 0, folder);
-    persistUndo(before, t('已创建文件夹'));
+    persistUndo(before, t('已加入文件夹'));
     host.refreshIconViews();
   }
 
@@ -917,6 +887,28 @@
     } finally { bulkMovePending = false; }
   }
 
+  async function createFolderFromSelection(token, selectedIds) {
+    const selection = bulkSelections.get(token);
+    if (bulkMovePending || !selection || selection.scope.parentId || !Array.isArray(selectedIds) || selectedIds.length < 2) return { ok: false, reason: 'invalid' };
+    const ids = new Set(selectedIds), view = selection.scope.view;
+    if (ids.size !== selectedIds.length || !bulkEqual(selection.scope, bulkMoveContext().scope) || !sameView(view) || !sceneActive(view) || !isIntentCurrent(selection.intent)) return { ok: false, reason: 'stale' };
+    const moving = state().icons.filter(icon => ids.has(icon.id));
+    if (moving.length !== ids.size || !moving.every(icon => isBulkWebsite(icon) && !icon.parentId && icon.folderId === selection.scope.groupId && selection.sites.some(site => site.id === icon.id))) return { ok: false, reason: 'invalid' };
+    const before = snapshot(), groupId = selection.scope.groupId;
+    const members = data => data.icons.filter(icon => icon.folderId === groupId);
+    const guard = latest => (latest['opentab.workspaceEpoch'] || 0) === selection.intent.epoch && groupInView(groupId, view, latest) && bulkEqual(members(latest), members(selection.before));
+    const folder = { id: `icon-folder-${host.generateId()}`, type: ICON_TYPE_FOLDER, name: t('文件夹'), folderId: groupId, parentId: '', url: '' };
+    const index = state().icons.findIndex(icon => ids.has(icon.id));
+    state().icons.splice(index, 0, folder);
+    moving.forEach(icon => { icon.parentId = folder.id; });
+    const after = snapshot(); bulkMovePending = true;
+    try {
+      const saving = persistUndo(before, t('已新建文件夹'), { guard, undoGuard: latest => groupInView(groupId, view, latest) && bulkEqual(members(latest), members(after)) });
+      host.refreshIconViews();
+      return await saving ? { ok: true } : { ok: false, reason: 'stale' };
+    } finally { bulkMovePending = false; host.refreshIconViews(); }
+  }
+
   function cancelGroupPop() {
     for (const animation of groupPopAnimations) animation.cancel();
     groupPopAnimations.clear();
@@ -997,6 +989,7 @@
       return;
     }
     ui.tabs.innerHTML = '';
+    ui.tabs.hidden = visibleGroups().length < 2;
     visibleGroups().forEach((folder, index) => {
       const tab = document.createElement('button');
       tab.type = 'button';
@@ -1265,7 +1258,6 @@
   global.OpenTabFolders = {
     HOME_GROUP_ID,
     ICON_TYPE_FOLDER,
-    MERGE_HOVER_MS,
     STORAGE_KEYS,
     iconSelector,
     groupSelector,
@@ -1304,7 +1296,7 @@
     bulkMoveContext,
     captureBulkSelection,
     captureBulkDestination,
-    moveSites,
+    moveSites, createFolderFromSelection,
     selectGroup,
     animateGroupIcons,
     init

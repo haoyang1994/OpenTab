@@ -43,7 +43,7 @@
     document.querySelectorAll('[data-select-sites]').forEach(node => { node.hidden = false; });
     if (restore) {
       if (trigger?.isConnected && !trigger.closest('.hidden')) trigger.focus();
-      else byId('select-sites').focus();
+      else byId('add-shortcut-tile')?.focus();
     }
   }
   function sync() {
@@ -79,10 +79,11 @@
     });
     byId('site-selection-count').textContent = t('已选择 {count} 个网站', { count: mode.ids.size });
     byId('site-selection-move').disabled = !mode.ids.size;
+    byId('site-selection-folder').disabled = !!mode.parentId || mode.ids.size < 2;
     byId('site-selection-clear').disabled = !mode.ids.size;
     byId('site-selection-all').disabled = available.size === mode.ids.size;
   }
-  function begin(trigger) {
+  function begin(trigger = byId('add-shortcut-tile')) {
     if (pending || mode) return;
     host.endDesktopDrag(); host.hideIconContextMenu();
     const context = current();
@@ -176,6 +177,19 @@
     if (!mode) host.showToast(message);
     if (mode) byId('site-selection-confirm').disabled = !mode.ids.size || ['stale', 'invalid'].includes(result?.reason);
   }
+  async function createFolder() {
+    if (pending || !mode || mode.parentId || mode.ids.size < 2) return;
+    pending = true;
+    for (const node of byId('site-selection-toolbar').querySelectorAll('button')) node.disabled = true;
+    let result;
+    try { result = await api().createFolderFromSelection(mode.intent, [...mode.ids]); }
+    catch (_) { result = { ok: false }; }
+    pending = false;
+    for (const node of byId('site-selection-toolbar').querySelectorAll('button')) node.disabled = false;
+    if (result.ok) finish();
+    else { byId('site-selection-status').textContent = t('网站或目标已变化。请取消并重新选择。'); sync(); }
+  }
+
   function intercept(event) {
     if (!mode) return;
     const dialog = byId('site-selection-dialog');
@@ -231,7 +245,7 @@
     for (const [id, text, action] of [
       ['all', '全选当前视图', () => { mode.ids = new Set(current().sites.filter(eligible).map(site => site.id)); sync(); }],
       ['clear', '清除选择', () => { mode.ids.clear(); sync(); }],
-      ['move', '移动到…', chooseDestination], ['cancel', '取消', () => finish()]
+      ['folder', '新建文件夹', createFolder], ['move', '移动到…', chooseDestination], ['cancel', '取消', () => finish()]
     ]) { const node = button(text, action); node.id = `site-selection-${id}`; toolbar.appendChild(node); }
     toolbar.appendChild(Object.assign(document.createElement('span'), { id: 'site-selection-status', role: 'status' }));
     document.querySelectorAll('[data-select-sites]').forEach(node => node.addEventListener('click', () => begin(node)));
@@ -249,6 +263,6 @@
     if (!mode || !target) return false;
     return byId('site-selection-toolbar').contains(target) || byId(mode.parentId ? 'folder-icons-container' : 'icons-container').contains(target);
   }
-  global.OpenTabSiteSelection = { init, containsTarget, cancel: finish, isActive: () => Boolean(mode), isPending: () => pending,
+  global.OpenTabSiteSelection = { init, begin, containsTarget, cancel: finish, isActive: () => Boolean(mode), isPending: () => pending,
     eligible, selectedInView, scopeKey, destinationLabel };
 })(window);

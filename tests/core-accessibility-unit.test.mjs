@@ -186,3 +186,54 @@ await import('./wallpaper-readability-unit.mjs');
   for (const name of ['sync.js', 'import.js']) assert.equal(fs.readFileSync(new URL(name, root), 'utf8').includes("document.getElementById('toast')"), false, `${name} does not construct its own success notice`);
 }
 console.log('Quiet feedback passed: silent successes, guarded keyboard undo, single-flight inverse, native text/IME/modal handling, scoped errors and dismissal.');
+
+// The actual tile handler must open its menu without relying on an OS-generated
+// contextmenu event (which Shift+F10 does not produce on macOS Chromium).
+{
+  const calls = [];
+  const widget = { dataset: { id: 'keyboard-site' }, getBoundingClientRect: () => ({ left: 12, bottom: 64 }) };
+  const menuButton = { focus() { calls.push('focus menu'); } };
+  const c = vm.createContext({
+    document: { getElementById: () => ({ querySelector: selector => { assert.match(selector, /:not\(\.hidden\)/); return menuButton; } }) },
+    host: { rememberFocus: node => { assert.equal(node, widget); calls.push('remember'); } },
+    openIconContextMenu: (point, id) => calls.push([point.clientX, point.clientY, id])
+  });
+  const iconsSource = fs.readFileSync(new URL('icons.js', root), 'utf8');
+  const start = iconsSource.indexOf('  function handleMenuKeydown(');
+  vm.runInContext(iconsSource.slice(start, iconsSource.indexOf('  function placeMenu(', start)), c);
+  assert.match(home, /OpenTabIcons\?\.handleMenuKeydown\(event, widget, openIconContextMenu\)/);
+  const press = flags => {
+    calls.length = 0;
+    c.handleMenuKeydown({ preventDefault() { calls.push('prevent'); }, ...flags }, widget, c.openIconContextMenu);
+  };
+  for (const flags of [{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }]) {
+    press(flags); assert.deepEqual(calls, ['prevent', 'remember', [12, 64, 'keyboard-site'], 'focus menu']);
+  }
+  for (const flags of [{ key: 'F10' }, { key: 'F10', shiftKey: true, isComposing: true },
+    { key: 'F10', shiftKey: true, keyCode: 229 }, { key: 'F10', shiftKey: true, ctrlKey: true },
+    { key: 'ContextMenu', metaKey: true }]) {
+    press(flags); assert.deepEqual(calls, [], 'unrelated modifiers and IME remain owned by their editor');
+  }
+}
+
+// Hidden panels can contain otherwise focusable descendants. Filter the actual
+// production trap list before it tries to focus those invisible controls.
+{
+  const source = fs.readFileSync(new URL('settings-nav.js', root), 'utf8');
+  const doc = { getElementById: () => null, activeElement: null };
+  const control = ancestor => ({ disabled: false, hidden: false,
+    closest: selector => ancestor && selector.includes(ancestor) ? {} : null,
+    focus() { doc.activeElement = this; } });
+  const hidden = ['.hidden', '[hidden]', '[inert]'].map(control), first = control(), last = control();
+  const dialog = { querySelectorAll: () => [...hidden, first, last], contains: node => [...hidden, first, last].includes(node) };
+  const c = vm.createContext({ document: doc, window: { getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) }, FOCUSABLE: 'controls', topDialog: () => dialog });
+  vm.runInContext(source.slice(source.indexOf('  function isShown('), source.indexOf('  function dialogRoot('))
+    + source.slice(source.indexOf('  function onTabTrap('), source.indexOf('  function bindFocusTrap(')), c);
+  assert.deepEqual([...c.focusables(dialog)], [first, last]);
+  for (const [from, shiftKey, to] of [[last, false, first], [first, true, last], [doc.body, false, first]]) {
+    doc.activeElement = from; let prevented = false;
+    c.onTabTrap({ key: 'Tab', shiftKey, preventDefault() { prevented = true; } });
+    assert.equal(prevented, true); assert.equal(doc.activeElement, to);
+  }
+}
+console.log('Hidden-panel focus trap passed: hidden/inert ancestors excluded and both keyboard wrap directions preserved.');

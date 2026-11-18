@@ -245,7 +245,7 @@ assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
     workspace: { isIntentCurrent: (draft) => draft !== null },
     t: (s, params) => s.replace(/\{(\w+)\}/g, (match, key) => params?.[key] ?? match),
     window: { OpenTabIcons: true },
-    OpenTabIcons: { readAndCompressFile: () => new Promise((resolve, reject) => reads.push({ resolve, reject })) }
+    OpenTabIcons: { defaultName: OpenTabIcons.defaultName, readAndCompressFile: () => new Promise((resolve, reject) => reads.push({ resolve, reject })) }
   });
   vm.runInContext(handler, context);
   const select = (name) => {
@@ -320,7 +320,7 @@ assert.ok(candidates.some((url) => url.endsWith('/favicon.ico')));
       normalizeIconType: (v) => v, normalizeUrl: (v) => v, normalizeOptionalUrl: (v) => v,
       t: (s, params) => s.replace(/\{(\w+)\}/g, (match, key) => params?.[key] ?? match),
       showToast() {}, restoreFocus() {}, window: { OpenTabIcons: true },
-      OpenTabIcons: { readAndCompressFile: () => new Promise((resolve, reject) => reads.push({ resolve, reject })) },
+      OpenTabIcons: { defaultName: OpenTabIcons.defaultName, readAndCompressFile: () => new Promise((resolve, reject) => reads.push({ resolve, reject })) },
       addIcon: async (payload) => { writes.push(payload); return true; },
       updateIcon: async (id, payload) => { writes.push({ id, ...payload }); return true; }
     });
@@ -477,3 +477,37 @@ assert.match(appIconSvg, /viewBox="0 0 128 128"/);
 assert.doesNotMatch(appIconSvg, /<(?:script|image|foreignObject)\b|(?:href|onload)=/i,
   'app icon must remain self-contained vector artwork');
 console.log('App icon asset validation passed.');
+
+for (const [name, url, adding, expected] of [
+  ['', 'https://docs.example.com/a', true, 'docs.example.com'],
+  ['', 'example.com/path', true, 'example.com'], ['', 'http://localhost:8080', true, 'localhost'],
+  ['Named', 'https://example.com', true, 'Named'],
+  ['', 'https://example.com', false, ''],
+  ['', 'javascript:alert(1)', true, ''], ['', 'https://[', true, '']
+]) assert.equal(OpenTabIcons.defaultName(name, url, adding), expected);
+
+// Native disabling blurs a submit button. A failed save must return keyboard
+// ownership to that still-open draft, while success/cancel/new focus keep theirs.
+{
+  const doc = { body: {}, activeElement: null }, c = vm.createContext({ document: doc });
+  vm.runInContext(fs.readFileSync(path.join(root, 'icons.js'), 'utf8'), c);
+  let disabled = false;
+  const save = { isConnected: true, focus() { doc.activeElement = save; },
+    get disabled() { return disabled; }, set disabled(value) { disabled = value; if (value && doc.activeElement === save) doc.activeElement = doc.body; } };
+  const form = { querySelectorAll: () => [save], contains: node => node === save, classList: { contains: () => false } };
+  for (const outcome of ['failure', 'throw', 'success', 'cancel', 'new-focus']) {
+    const gate = c.OpenTabIcons.createSaveGate(), other = {};
+    save.focus();
+    const pending = gate.run({}, form, async () => {
+      assert.equal(doc.activeElement, doc.body);
+      if (outcome === 'cancel') gate.release();
+      if (outcome === 'new-focus') doc.activeElement = other;
+      if (outcome === 'throw') throw new Error('save failed');
+      return outcome === 'success';
+    }, () => { doc.activeElement = other; });
+    if (outcome === 'throw') await assert.rejects(pending, /save failed/); else await pending;
+    assert.equal(doc.activeElement, ['failure', 'throw'].includes(outcome) ? save : outcome === 'cancel' ? doc.body : other, outcome);
+    assert.equal(save.disabled, false);
+  }
+}
+console.log('Save failure focus passed: retained draft regains submit focus; success/cancel/new focus are preserved.');

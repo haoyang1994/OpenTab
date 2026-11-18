@@ -81,7 +81,8 @@ try {
   assert.equal(await page.locator('#save-btn').textContent(), 'Save');
   await page.fill('#icon-name', 'Invalid URL'); await page.fill('#icon-url', 'https://[');
   await page.click('#save-btn');
-  assert.equal(await page.locator('#toast').textContent(), 'Enter a valid URL.', 'add validation is in English');
+  assert.equal(await page.locator('#toast').evaluate(node => node.firstChild.textContent), 'Enter a valid URL.', 'add validation is in English');
+  assert.equal(await page.locator('#toast button').getAttribute('aria-label'), 'Close', 'validation dismissal is localized');
   const title = '设置 · My link';
   await page.fill('#icon-name', title); await page.fill('#icon-url', 'https://example.com/mine');
   await page.click('#save-btn'); await page.waitForSelector('#add-icon-modal.hidden', { state: 'attached' });

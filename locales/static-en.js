@@ -272,3 +272,8 @@ OpenTabI18n.register({
   "已完成": "Completed",
   "添加小组件": "Add widget"
 });
+
+globalThis.OpenTabI18n?.register({
+  '添加内容': 'Add content', '小组件': 'Widgets', '组件管理': 'Widget management',
+  '默认列数用于尚未单独设置的分组；启用多场景后按场景保存。当前分组列数优先，修改默认值不会整理已有分组。': 'Default columns apply to groups without their own saved layout. With scenes enabled, this default is saved per scene. Group columns take priority; changing the default does not reorganize saved groups.'
+});

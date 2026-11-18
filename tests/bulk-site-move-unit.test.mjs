@@ -27,7 +27,7 @@ function harness(data = initial(), view = data) {
   const context = { URL, console, setTimeout, clearTimeout, OpenTabWorkspace: Workspace, document: { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] } };
   context.window = context; vm.createContext(context); vm.runInContext(code, context);
   const api = context.OpenTabFolders;
-  api.init({ ...workspace, state, ...(sceneView ? { getSceneView } : {}), saveState: (...args) => controller ? controller.save(...args) : workspace.save(...args), refreshIconViews() {}, getIconsContainer: () => null, rememberFocus() {}, restoreFocus() {}, showToast: (text, options) => toasts.push({ text, options }) });
+  api.init({ ...workspace, generateId: () => 'explicit-folder', state, ...(sceneView ? { getSceneView } : {}), saveState: (...args) => controller ? controller.save(...args) : workspace.save(...args), refreshIconViews() {}, getIconsContainer: () => null, rememberFocus() {}, restoreFocus() {}, showToast: (text, options) => toasts.push({ text, options }) });
   return { api, state, store, writes, toasts, errors, workspace,
     select: () => api.captureBulkSelection(), target: (kind = 'group', id = 'work') => api.captureBulkDestination({ kind, id }),
     failNext() { fail = true; }, race(fn) { intercept = fn; },
@@ -378,3 +378,25 @@ for (const unrelatedChange of [false, true]) {
   if (unrelatedChange) assert.equal(h.state.icons.find(icon => icon.id === 'c').name, 'Independent concurrent edit');
 }
 console.log('Bulk website move real-module unit tests passed.');
+
+// Explicit creation retains the website restrictions and transaction guards.
+for (const data of [initial(), sceneInitial()]) {
+  const h = harness(data), token = h.select(), before = clone(h.state.icons);
+  for (const ids of [[], ['a'], ['a', 'a'], ['a', 'missing'], ['a', 'target']]) assert.equal((await h.api.createFolderFromSelection(token, ids)).ok, false);
+  assert.equal(h.writes.length, 0);
+  assert.equal((await h.api.createFolderFromSelection(token, ['a', 'b'])).ok, true);
+  const created = h.state.icons.find(item => item.id === 'icon-folder-explicit-folder');
+  assert.equal(created.type, 'folder');
+  assert.deepEqual(h.state.icons.filter(item => item.parentId === created.id).map(item => item.id), ['a', 'b']);
+  assert.equal(h.writes.length, 1, 'folder and memberships are one atomic save');
+  h.store.icons.push(site('other-tab', { folderId: data.scenes ? 'target-leaf' : 'work' }));
+  await h.undo();
+  assert.deepEqual(h.state.icons.filter(item => item.id !== 'other-tab'), before, 'undo restores complete source order and membership');
+  assert.ok(h.state.icons.some(item => item.id === 'other-tab'), 'unrelated durable additions survive undo');
+}
+for (const mutation of [h => { h.store.icons[0].name = 'New name'; }, h => { h.store['opentab.workspaceEpoch'] = 9; }]) {
+  const h = harness(); h.race(() => mutation(h));
+  assert.equal((await h.api.createFolderFromSelection(h.select(), ['a', 'b'])).ok, false);
+  assert.equal(h.writes.length, 0); assert.deepEqual(h.state.icons, h.store.icons, 'conflicts recover current durable graph');
+}
+console.log('Explicit folder creation: selection limits, atomic save, scene guard, inverse and concurrent data protection passed');
